@@ -77,6 +77,10 @@ const Auth = {
           align-items: center;
           justify-content: center;
           font-family: 'DM Sans', sans-serif;
+          visibility: visible !important;
+        }
+        #authGate * {
+          visibility: visible !important;
         }
         #authGate .gate-box {
           background: #13132a;
