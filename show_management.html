@@ -7,416 +7,219 @@
   <link rel="icon" type="image/jpeg" href="images/256x256.jpeg">
   <link rel="stylesheet" href="css/style.css">
   <style>
-    /* ---- Show Management Specific Styles ---- */
-
-    /* Ideas Workshop */
-    .ideas-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: var(--space-lg);
+    /* Auth gate styles */
+    #authGate {
+      position: fixed; inset: 0; z-index: 99999;
+      background: #08080f;
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'DM Sans', sans-serif;
     }
-
-    @media (max-width: 1024px) {
-      .ideas-grid { grid-template-columns: 1fr; }
+    #authGate .gate-box {
+      background: #13132a; border: 1px solid #2a2a4a; border-radius: 16px;
+      padding: 48px 40px; max-width: 380px; width: 90%; text-align: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
     }
-
-    .idea-composer {
-      position: sticky;
-      top: 80px;
+    #authGate .gate-logo { width: 80px; border-radius: 8px; margin-bottom: 24px; filter: drop-shadow(0 0 20px rgba(200,168,78,0.2)); }
+    #authGate h2 { font-family: 'Cinzel', serif; color: #d4b85a; font-size: 1.2rem; margin-bottom: 8px; }
+    #authGate .gate-sub { color: #5a5750; font-size: 0.85rem; margin-bottom: 24px; }
+    #authGate input {
+      width: 100%; padding: 10px 16px; background: #0f0f20; border: 1px solid #2a2a4a;
+      border-radius: 8px; color: #e0ddd4; font-family: 'DM Sans', sans-serif;
+      font-size: 0.95rem; text-align: center; letter-spacing: 2px; margin-bottom: 16px;
     }
-
-    .ideas-list {
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-md);
+    #authGate input:focus { outline: none; border-color: #c8a84e; box-shadow: 0 0 0 3px rgba(200,168,78,0.2); }
+    #authGate input.error { border-color: #cc4444; animation: gateShake 300ms ease; }
+    #authGate button {
+      width: 100%; padding: 10px 16px;
+      background: linear-gradient(135deg, #c8a84e 0%, #8a7434 100%);
+      color: #0a0a0f; border: 1px solid #c8a84e; border-radius: 8px;
+      font-family: 'DM Sans', sans-serif; font-size: 0.9rem; font-weight: 600; cursor: pointer;
     }
+    #authGate button:hover { background: linear-gradient(135deg, #e0c868 0%, #c8a84e 100%); }
+    #authGate .gate-error { color: #cc4444; font-size: 0.8rem; margin-top: 12px; min-height: 1.2em; }
+    @keyframes gateShake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
 
+    /* Page-specific styles */
+    .ideas-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-lg); }
+    @media (max-width: 1024px) { .ideas-grid { grid-template-columns: 1fr; } }
+    .idea-composer { position: sticky; top: 80px; }
+    .ideas-list { display: flex; flex-direction: column; gap: var(--space-md); }
     .idea-list-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-lg);
-      padding: var(--space-lg);
-      cursor: pointer;
-      transition: all var(--transition-default);
+      background: var(--bg-card); border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg); padding: var(--space-lg);
+      cursor: pointer; transition: all var(--transition-default);
     }
-
-    .idea-list-card:hover {
-      border-color: var(--border-default);
-      box-shadow: var(--shadow-card);
-    }
-
-    .idea-list-card.expanded {
-      border-color: var(--gold-dim);
-    }
-
-    .idea-list-card .idea-header {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: var(--space-md);
-    }
-
-    .idea-expanded-content {
-      display: none;
-      margin-top: var(--space-lg);
-      padding-top: var(--space-lg);
-      border-top: 1px solid var(--border-subtle);
-    }
-
-    .idea-list-card.expanded .idea-expanded-content {
-      display: block;
-    }
-
+    .idea-list-card:hover { border-color: var(--border-default); box-shadow: var(--shadow-card); }
+    .idea-list-card.expanded { border-color: var(--gold-dim); }
+    .idea-list-card .idea-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-md); }
+    .idea-expanded-content { display: none; margin-top: var(--space-lg); padding-top: var(--space-lg); border-top: 1px solid var(--border-subtle); }
+    .idea-list-card.expanded .idea-expanded-content { display: block; }
     .title-option {
-      display: flex;
-      align-items: center;
-      gap: var(--space-sm);
-      padding: var(--space-sm) var(--space-md);
-      background: var(--bg-surface);
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-md);
-      cursor: pointer;
-      transition: all var(--transition-fast);
+      display: flex; align-items: center; gap: var(--space-sm);
+      padding: var(--space-sm) var(--space-md); background: var(--bg-surface);
+      border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+      cursor: pointer; transition: all var(--transition-fast);
     }
+    .title-option:hover { border-color: var(--border-default); }
+    .title-option.selected { border-color: var(--gold); background: var(--gold-glow); }
+    .title-option input[type="radio"] { accent-color: var(--gold); }
+    .outline-segment { margin-bottom: var(--space-md); }
+    .outline-segment h4 { font-size: 0.85rem; color: var(--ice-bright); margin-bottom: var(--space-xs); }
+    .outline-segment ul { list-style: none; padding-left: var(--space-md); }
+    .outline-segment li { position: relative; padding: var(--space-xs) 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.5; }
+    .outline-segment li::before { content: '›'; position: absolute; left: -14px; color: var(--gold-dim); font-weight: bold; }
 
-    .title-option:hover {
-      border-color: var(--border-default);
-    }
-
-    .title-option.selected {
-      border-color: var(--gold);
-      background: var(--gold-glow);
-    }
-
-    .title-option input[type="radio"] {
-      accent-color: var(--gold);
-    }
-
-    .outline-segment {
-      margin-bottom: var(--space-md);
-    }
-
-    .outline-segment h4 {
-      font-size: 0.85rem;
-      color: var(--ice-bright);
-      margin-bottom: var(--space-xs);
-    }
-
-    .outline-segment ul {
-      list-style: none;
-      padding-left: var(--space-md);
-    }
-
-    .outline-segment li {
-      position: relative;
-      padding: var(--space-xs) 0;
-      font-size: 0.85rem;
-      color: var(--text-secondary);
-      line-height: 1.5;
-    }
-
-    .outline-segment li::before {
-      content: '›';
-      position: absolute;
-      left: -14px;
-      color: var(--gold-dim);
-      font-weight: bold;
-    }
-
-    /* Schedule Board */
-    .schedule-layout {
-      display: grid;
-      grid-template-columns: 280px 1fr;
-      gap: var(--space-lg);
-      align-items: start;
-    }
-
-    @media (max-width: 1024px) {
-      .schedule-layout { grid-template-columns: 1fr; }
-    }
-
-    .idea-bank {
-      position: sticky;
-      top: 80px;
-      max-height: calc(100vh - 120px);
-      overflow-y: auto;
-    }
-
+    .schedule-layout { display: grid; grid-template-columns: 280px 1fr; gap: var(--space-lg); align-items: start; }
+    @media (max-width: 1024px) { .schedule-layout { grid-template-columns: 1fr; } }
+    .idea-bank { position: sticky; top: 80px; max-height: calc(100vh - 120px); overflow-y: auto; }
     .idea-bank-header {
-      font-family: 'Cinzel', serif;
-      font-size: 0.85rem;
-      color: var(--text-gold);
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      padding-bottom: var(--space-sm);
-      border-bottom: 1px solid var(--border-subtle);
-      margin-bottom: var(--space-md);
+      font-family: 'Cinzel', serif; font-size: 0.85rem; color: var(--text-gold);
+      text-transform: uppercase; letter-spacing: 1px;
+      padding-bottom: var(--space-sm); border-bottom: 1px solid var(--border-subtle); margin-bottom: var(--space-md);
     }
+    .bank-ideas { display: flex; flex-direction: column; gap: var(--space-sm); }
+    .bank-empty { text-align: center; padding: var(--space-xl) var(--space-md); color: var(--text-muted); font-size: 0.85rem; font-style: italic; }
 
-    .bank-ideas {
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-sm);
-    }
-
-    .bank-empty {
-      text-align: center;
-      padding: var(--space-xl) var(--space-md);
-      color: var(--text-muted);
-      font-size: 0.85rem;
-      font-style: italic;
-    }
-
-    /* Calendar styles */
-    .calendar-container {
-      background: var(--bg-primary);
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-lg);
-      padding: var(--space-lg);
-    }
-
-    .calendar-grid {
-      display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      gap: 3px;
-    }
-
-    .calendar-day.tuesday {
-      min-height: 160px;
-      border-radius: var(--radius-md);
-      transition: border-color var(--transition-fast);
-    }
-
+    .calendar-container { background: var(--bg-primary); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-lg); }
+    .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+    .calendar-day.tuesday { min-height: 160px; border-radius: var(--radius-md); }
     .tuesday-drop {
-      min-height: 36px;
-      border: 1px dashed var(--border-default);
-      border-radius: var(--radius-sm);
-      display: flex;
-      align-items: center;
-      padding: 4px 6px;
-      transition: all var(--transition-fast);
-      font-size: 0.7rem;
-      color: var(--text-muted);
+      min-height: 36px; border: 1px dashed var(--border-default); border-radius: var(--radius-sm);
+      display: flex; align-items: center; padding: 4px 6px;
+      transition: all var(--transition-fast); font-size: 0.7rem; color: var(--text-muted);
     }
+    .tuesday-drop.drag-over { border-color: var(--gold); background: var(--gold-glow); border-style: solid; }
+    .tuesday-drop.has-show { border-style: solid; border-color: var(--border-subtle); background: var(--bg-surface); cursor: pointer; }
+    .tuesday-drop .show-info { display: flex; align-items: center; gap: 4px; width: 100%; }
+    .tuesday-drop .ep-num { font-family: 'JetBrains Mono', monospace; font-size: 0.6rem; color: var(--gold); font-weight: 600; }
+    .tuesday-drop .show-title { font-size: 0.65rem; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+    .tuesday-drop .unassign-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.7rem; padding: 0 2px; opacity: 0; transition: opacity var(--transition-fast); }
+    .tuesday-drop:hover .unassign-btn { opacity: 1; }
+    .tuesday-drop .unassign-btn:hover { color: var(--danger); }
+    .empty-placeholder { font-size: 0.6rem; color: var(--text-muted); opacity: 0.5; }
+    .launch-badge { font-size: 0.55rem; background: var(--gold); color: var(--bg-deep); padding: 1px 5px; border-radius: 3px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
 
-    .tuesday-drop.drag-over {
-      border-color: var(--gold);
-      background: var(--gold-glow);
-      border-style: solid;
-    }
-
-    .tuesday-drop.has-show {
-      border-style: solid;
-      border-color: var(--border-subtle);
-      background: var(--bg-surface);
-      cursor: pointer;
-    }
-
-    .tuesday-drop .show-info {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      width: 100%;
-    }
-
-    .tuesday-drop .ep-num {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.6rem;
-      color: var(--gold);
-      font-weight: 600;
-    }
-
-    .tuesday-drop .show-title {
-      font-size: 0.65rem;
-      color: var(--text-primary);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      flex: 1;
-    }
-
-    .tuesday-drop .unassign-btn {
-      background: none;
-      border: none;
-      color: var(--text-muted);
-      cursor: pointer;
-      font-size: 0.7rem;
-      padding: 0 2px;
-      opacity: 0;
-      transition: opacity var(--transition-fast);
-    }
-
-    .tuesday-drop:hover .unassign-btn {
-      opacity: 1;
-    }
-
-    .tuesday-drop .unassign-btn:hover {
-      color: var(--danger);
-    }
-
-    .empty-placeholder {
-      font-size: 0.6rem;
-      color: var(--text-muted);
-      opacity: 0.5;
-    }
-
-    /* Launch badge */
-    .launch-badge {
-      font-size: 0.55rem;
-      background: var(--gold);
-      color: var(--bg-deep);
-      padding: 1px 5px;
-      border-radius: 3px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    /* Processing overlay */
     .processing-overlay {
-      position: absolute;
-      inset: 0;
-      background: rgba(8,8,15,0.85);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: var(--space-md);
-      border-radius: var(--radius-lg);
-      z-index: 10;
+      position: absolute; inset: 0; background: rgba(8,8,15,0.85);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: var(--space-md); border-radius: var(--radius-lg); z-index: 10;
     }
-
-    .processing-overlay .spinner-lg {
-      width: 40px;
-      height: 40px;
-    }
-
-    .processing-text {
-      color: var(--text-gold);
-      font-family: 'Cinzel', serif;
-      font-size: 0.9rem;
-    }
+    .processing-overlay .spinner-lg { width: 40px; height: 40px; }
+    .processing-text { color: var(--text-gold); font-family: 'Cinzel', serif; font-size: 0.9rem; }
   </style>
 </head>
 <body>
-  <!-- Navigation -->
-  <nav class="site-nav">
-    <img src="images/256x256.jpeg" alt="SATT" class="nav-logo">
-    <span class="nav-title">Salt All The Things</span>
-    <div class="nav-spacer"></div>
-    <a href="index.html">Home</a>
-    <a href="show_management.html" class="active">Show Management</a>
-    <a href="config.html">Config</a>
-    <button class="btn btn-ghost btn-sm" onclick="Auth.logout()" title="Log out" style="color: var(--text-muted);">🔒 Logout</button>
-  </nav>
 
-  <!-- Auth gate — must load before page content is visible -->
+  <!-- ===== AUTH GATE (visible by default) ===== -->
+  <div id="authGate">
+    <div class="gate-box">
+      <img src="images/256x256.jpeg" alt="SATT" class="gate-logo">
+      <h2>Crew Only</h2>
+      <p class="gate-sub">Enter the password to continue</p>
+      <input type="password" id="gatePassword" placeholder="••••••••" autocomplete="off">
+      <button id="gateSubmit">Enter</button>
+      <div class="gate-error" id="gateError"></div>
+    </div>
+  </div>
+
+  <!-- ===== PROTECTED CONTENT (hidden by default) ===== -->
+  <div id="protectedContent" style="display: none;">
+
+    <!-- Navigation -->
+    <nav class="site-nav">
+      <img src="images/256x256.jpeg" alt="SATT" class="nav-logo">
+      <span class="nav-title">Salt All The Things</span>
+      <div class="nav-spacer"></div>
+      <a href="index.html">Home</a>
+      <a href="show_management.html" class="active">Show Management</a>
+      <a href="config.html">Config</a>
+      <button class="btn btn-ghost btn-sm" onclick="Auth.logout()" style="color: var(--text-muted);">🔒 Logout</button>
+    </nav>
+
+    <div class="page-container">
+      <div class="page-header">
+        <h1>Show Management</h1>
+        <p class="subtitle">Brainstorm ideas, let AI help shape them, then schedule your episodes</p>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab active" data-tab="ideas" onclick="switchTab('ideas')">Ideas Workshop</button>
+        <button class="tab" data-tab="schedule" onclick="switchTab('schedule')">Schedule Board</button>
+      </div>
+
+      <!-- ===== IDEAS WORKSHOP TAB ===== -->
+      <div class="tab-content active" id="tab-ideas">
+        <div class="ideas-grid">
+          <div class="idea-composer">
+            <div class="card card-elevated" style="position: relative;">
+              <h2 class="mb-md">New Show Idea</h2>
+              <p class="text-sm text-secondary mb-md">Dump your raw notes, thoughts, and topic ideas. Hit process and let AI turn it into a structured show outline.</p>
+              <div class="form-group">
+                <label>Rocket's Notes</label>
+                <textarea id="ideaNotes" rows="12" placeholder="What's on your mind for this episode? Drop your ideas, rants, topics, hot takes... anything goes."></textarea>
+              </div>
+              <div class="flex gap-sm">
+                <button class="btn btn-primary" onclick="processIdea()" id="processBtn">Save & Process with AI</button>
+                <button class="btn btn-secondary" onclick="saveDraft()">Save as Draft</button>
+              </div>
+              <div id="composerOverlay" class="processing-overlay hidden">
+                <div class="spinner-lg"></div>
+                <div class="processing-text">AI is cooking...</div>
+                <div class="text-sm text-secondary">Building your show outline</div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex justify-between items-center mb-md">
+              <h2>Show Ideas</h2>
+              <span class="text-sm text-muted" id="ideaCount"></span>
+            </div>
+            <div class="ideas-list" id="ideasList"></div>
+            <div id="noIdeas" class="hidden" style="text-align: center; padding: 3rem 1rem;">
+              <p class="text-secondary" style="font-size: 1.1rem;">No ideas yet</p>
+              <p class="text-muted text-sm mt-sm">Write your first show idea in the composer</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== SCHEDULE BOARD TAB ===== -->
+      <div class="tab-content" id="tab-schedule">
+        <div class="schedule-layout">
+          <div class="idea-bank">
+            <div class="idea-bank-header">Idea Bank</div>
+            <div class="bank-ideas" id="ideaBank"></div>
+          </div>
+          <div class="calendar-container">
+            <div class="calendar-nav">
+              <button class="btn btn-ghost btn-sm" onclick="changeMonth(-1)">← Prev</button>
+              <h3 id="calendarTitle"></h3>
+              <button class="btn btn-ghost btn-sm" onclick="changeMonth(1)">Next →</button>
+            </div>
+            <div class="calendar-grid" id="calendarGrid"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /protectedContent -->
+
   <script src="js/auth.js"></script>
-  <script>Auth.guard();</script>
-
-  <div class="page-container">
-    <div class="page-header">
-      <h1>Show Management</h1>
-      <p class="subtitle">Brainstorm ideas, let AI help shape them, then schedule your episodes</p>
-    </div>
-
-    <!-- Tabs -->
-    <div class="tabs">
-      <button class="tab active" data-tab="ideas" onclick="switchTab('ideas')">Ideas Workshop</button>
-      <button class="tab" data-tab="schedule" onclick="switchTab('schedule')">Schedule Board</button>
-    </div>
-
-    <!-- ===== IDEAS WORKSHOP TAB ===== -->
-    <div class="tab-content active" id="tab-ideas">
-      <div class="ideas-grid">
-        <!-- Left: Composer -->
-        <div class="idea-composer">
-          <div class="card card-elevated" style="position: relative;">
-            <h2 class="mb-md">New Show Idea</h2>
-            <p class="text-sm text-secondary mb-md">Dump your raw notes, thoughts, and topic ideas. Hit process and let AI turn it into a structured show outline.</p>
-
-            <div class="form-group">
-              <label>Rocket's Notes</label>
-              <textarea id="ideaNotes" rows="12" placeholder="What's on your mind for this episode? Drop your ideas, rants, topics, hot takes... anything goes."></textarea>
-            </div>
-
-            <div class="flex gap-sm">
-              <button class="btn btn-primary" onclick="processIdea()" id="processBtn">
-                Save & Process with AI
-              </button>
-              <button class="btn btn-secondary" onclick="saveDraft()">
-                Save as Draft
-              </button>
-            </div>
-
-            <div id="composerOverlay" class="processing-overlay hidden">
-              <div class="spinner-lg"></div>
-              <div class="processing-text">AI is cooking...</div>
-              <div class="text-sm text-secondary">Building your show outline</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Right: Ideas List -->
-        <div>
-          <div class="flex justify-between items-center mb-md">
-            <h2>Show Ideas</h2>
-            <span class="text-sm text-muted" id="ideaCount"></span>
-          </div>
-          <div class="ideas-list" id="ideasList">
-            <!-- Populated by JS -->
-          </div>
-          <div id="noIdeas" class="hidden" style="text-align: center; padding: 3rem 1rem;">
-            <p class="text-secondary" style="font-size: 1.1rem;">No ideas yet</p>
-            <p class="text-muted text-sm mt-sm">Write your first show idea in the composer</p>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ===== SCHEDULE BOARD TAB ===== -->
-    <div class="tab-content" id="tab-schedule">
-      <div class="schedule-layout">
-        <!-- Left: Idea Bank -->
-        <div class="idea-bank">
-          <div class="idea-bank-header">Idea Bank</div>
-          <div class="bank-ideas" id="ideaBank">
-            <!-- Populated by JS -->
-          </div>
-        </div>
-
-        <!-- Right: Calendar -->
-        <div class="calendar-container">
-          <div class="calendar-nav">
-            <button class="btn btn-ghost btn-sm" onclick="changeMonth(-1)">← Prev</button>
-            <h3 id="calendarTitle"></h3>
-            <button class="btn btn-ghost btn-sm" onclick="changeMonth(1)">Next →</button>
-          </div>
-          <div class="calendar-grid" id="calendarGrid">
-            <!-- Populated by JS -->
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Idea Detail Modal -->
-  <div id="ideaModal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal()">
-    <div class="modal" id="ideaModalContent">
-      <!-- Populated by JS -->
-    </div>
-  </div>
-
   <script src="js/storage.js"></script>
   <script src="js/ai-service.js"></script>
   <script src="js/show-engine.js"></script>
   <script src="js/toast.js"></script>
   <script>
+    // Init auth gate
+    Auth.init();
+
     // ============================================
     // State
     // ============================================
-    let currentMonth = new Date().getMonth();
-    let currentYear = new Date().getFullYear();
+    let currentMonth = 1; // February
+    let currentYear = 2026;
     let draggedIdeaId = null;
 
     // ============================================
@@ -427,10 +230,7 @@
       document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
       document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
       document.getElementById(`tab-${tab}`).classList.add('active');
-
-      if (tab === 'schedule') {
-        renderScheduleBoard();
-      }
+      if (tab === 'schedule') renderScheduleBoard();
     }
 
     // ============================================
@@ -441,20 +241,10 @@
       const list = document.getElementById('ideasList');
       const noIdeas = document.getElementById('noIdeas');
       const countEl = document.getElementById('ideaCount');
-
       countEl.textContent = `${ideas.length} idea${ideas.length !== 1 ? 's' : ''}`;
-
-      if (ideas.length === 0) {
-        list.innerHTML = '';
-        noIdeas.classList.remove('hidden');
-        return;
-      }
-
+      if (ideas.length === 0) { list.innerHTML = ''; noIdeas.classList.remove('hidden'); return; }
       noIdeas.classList.add('hidden');
-
-      // Sort: most recent first
       const sorted = [...ideas].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
       list.innerHTML = sorted.map(idea => `
         <div class="idea-list-card" id="idea-${idea.id}" onclick="toggleIdeaExpand('${idea.id}')">
           <div class="idea-header">
@@ -488,22 +278,16 @@
           <span style="font-size: 0.85rem;">${t}</span>
         </div>
       `).join('');
-
       const outlineHtml = (idea.outline || []).map(seg => `
         <div class="outline-segment">
           <h4>${seg.segmentName}</h4>
-          <ul>
-            ${(seg.talkingPoints || []).map(tp => `<li>${tp}</li>`).join('')}
-          </ul>
+          <ul>${(seg.talkingPoints || []).map(tp => `<li>${tp}</li>`).join('')}</ul>
         </div>
       `).join('');
-
       return `
         <div class="mb-md">
           <label class="text-xs text-muted" style="display:block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Title Options (click to select)</label>
-          <div class="flex flex-col gap-xs">
-            ${titlesHtml}
-          </div>
+          <div class="flex flex-col gap-xs">${titlesHtml}</div>
         </div>
         <div class="mb-md">
           <label class="text-xs text-muted" style="display:block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Summary</label>
@@ -518,102 +302,54 @@
             <summary class="text-xs text-muted" style="cursor: pointer;">Raw Notes</summary>
             <pre class="text-sm mt-sm" style="white-space: pre-wrap; color: var(--text-secondary); font-family: 'DM Sans', sans-serif; line-height: 1.6;">${idea.rawNotes}</pre>
           </details>
-        </div>
-      `;
+        </div>`;
     }
 
     function renderDraftContent(idea) {
-      return `
-        <div>
-          <label class="text-xs text-muted" style="display:block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Raw Notes</label>
-          <pre class="text-sm" style="white-space: pre-wrap; color: var(--text-secondary); font-family: 'DM Sans', sans-serif; line-height: 1.6;">${idea.rawNotes}</pre>
-        </div>
-      `;
+      return `<div>
+        <label class="text-xs text-muted" style="display:block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Raw Notes</label>
+        <pre class="text-sm" style="white-space: pre-wrap; color: var(--text-secondary); font-family: 'DM Sans', sans-serif; line-height: 1.6;">${idea.rawNotes}</pre>
+      </div>`;
     }
 
-    function toggleIdeaExpand(ideaId) {
-      const card = document.getElementById(`idea-${ideaId}`);
-      card.classList.toggle('expanded');
-    }
+    function toggleIdeaExpand(ideaId) { document.getElementById(`idea-${ideaId}`).classList.toggle('expanded'); }
 
     function selectTitle(ideaId, titleIndex) {
       const ideas = Storage.getIdeas();
       const idea = ideas.find(i => i.id === ideaId);
-      if (idea && idea.titles) {
-        Storage.updateIdea(ideaId, { selectedTitle: idea.titles[titleIndex] });
-        renderIdeasList();
-      }
+      if (idea && idea.titles) { Storage.updateIdea(ideaId, { selectedTitle: idea.titles[titleIndex] }); renderIdeasList(); }
     }
 
     async function processIdea() {
       const notes = document.getElementById('ideaNotes').value.trim();
-      if (!notes) {
-        Toast.error('Write some notes first!');
-        return;
-      }
-
+      if (!notes) { Toast.error('Write some notes first!'); return; }
       const config = Storage.getConfig();
-      if (config.aiModel === 'claude' && !config.claudeApiKey) {
-        Toast.error('Claude API key not set. Configure it in Config page.');
-        return;
-      }
-      if (config.aiModel === 'openai' && !config.openaiApiKey) {
-        Toast.error('OpenAI API key not set. Configure it in Config page.');
-        return;
-      }
-
-      // Show loading
+      if (config.aiModel === 'claude' && !config.claudeApiKey) { Toast.error('Claude API key not set. Go to Config.'); return; }
+      if (config.aiModel === 'openai' && !config.openaiApiKey) { Toast.error('OpenAI API key not set. Go to Config.'); return; }
       document.getElementById('composerOverlay').classList.remove('hidden');
       document.getElementById('processBtn').disabled = true;
-
       try {
         const result = await AIService.processIdea(notes);
-
         const idea = {
-          id: Storage.generateId(),
-          rawNotes: notes,
-          titles: result.titles,
-          selectedTitle: result.titles[0],
-          summary: result.summary,
-          outline: result.outline,
-          status: 'processed',
-          aiModel: config.aiModel,
-          createdAt: new Date().toISOString()
+          id: Storage.generateId(), rawNotes: notes, titles: result.titles,
+          selectedTitle: result.titles[0], summary: result.summary, outline: result.outline,
+          status: 'processed', aiModel: config.aiModel, createdAt: new Date().toISOString()
         };
-
         Storage.addIdea(idea);
         document.getElementById('ideaNotes').value = '';
         renderIdeasList();
         Toast.success('Idea processed! Check the outline below.');
-      } catch (err) {
-        console.error('Process error:', err);
-        Toast.error('AI processing failed: ' + err.message);
-      } finally {
-        document.getElementById('composerOverlay').classList.add('hidden');
-        document.getElementById('processBtn').disabled = false;
-      }
+      } catch (err) { console.error('Process error:', err); Toast.error('AI processing failed: ' + err.message); }
+      finally { document.getElementById('composerOverlay').classList.add('hidden'); document.getElementById('processBtn').disabled = false; }
     }
 
     function saveDraft() {
       const notes = document.getElementById('ideaNotes').value.trim();
-      if (!notes) {
-        Toast.error('Write some notes first!');
-        return;
-      }
-
-      const idea = {
-        id: Storage.generateId(),
-        rawNotes: notes,
-        titles: [],
-        selectedTitle: null,
-        summary: null,
-        outline: [],
-        status: 'draft',
-        aiModel: null,
-        createdAt: new Date().toISOString()
-      };
-
-      Storage.addIdea(idea);
+      if (!notes) { Toast.error('Write some notes first!'); return; }
+      Storage.addIdea({
+        id: Storage.generateId(), rawNotes: notes, titles: [], selectedTitle: null,
+        summary: null, outline: [], status: 'draft', aiModel: null, createdAt: new Date().toISOString()
+      });
       document.getElementById('ideaNotes').value = '';
       renderIdeasList();
       Toast.success('Draft saved!');
@@ -622,43 +358,22 @@
     async function reprocessIdea(ideaId) {
       const idea = Storage.getIdeas().find(i => i.id === ideaId);
       if (!idea) return;
-
       const config = Storage.getConfig();
-      if (config.aiModel === 'claude' && !config.claudeApiKey) {
-        Toast.error('Claude API key not set.');
-        return;
-      }
-      if (config.aiModel === 'openai' && !config.openaiApiKey) {
-        Toast.error('OpenAI API key not set.');
-        return;
-      }
-
+      if (config.aiModel === 'claude' && !config.claudeApiKey) { Toast.error('Claude API key not set.'); return; }
+      if (config.aiModel === 'openai' && !config.openaiApiKey) { Toast.error('OpenAI API key not set.'); return; }
       Toast.info('Processing idea with AI...');
-
       try {
         const result = await AIService.processIdea(idea.rawNotes);
-        Storage.updateIdea(ideaId, {
-          titles: result.titles,
-          selectedTitle: result.titles[0],
-          summary: result.summary,
-          outline: result.outline,
-          status: 'processed',
-          aiModel: config.aiModel
-        });
+        Storage.updateIdea(ideaId, { titles: result.titles, selectedTitle: result.titles[0], summary: result.summary, outline: result.outline, status: 'processed', aiModel: config.aiModel });
         renderIdeasList();
         Toast.success('Idea processed!');
-      } catch (err) {
-        Toast.error('Processing failed: ' + err.message);
-      }
+      } catch (err) { Toast.error('Processing failed: ' + err.message); }
     }
 
     function deleteIdea(ideaId) {
       if (!confirm('Delete this idea?')) return;
-
-      // Unassign if scheduled
       const slotId = Storage.getSlotForIdea(ideaId);
       if (slotId) Storage.unassignSlot(slotId);
-
       Storage.deleteIdea(ideaId);
       renderIdeasList();
       Toast.info('Idea deleted.');
@@ -667,36 +382,18 @@
     // ============================================
     // Schedule Board
     // ============================================
-    function renderScheduleBoard() {
-      ShowEngine.ensureSlots();
-      renderIdeaBank();
-      renderCalendar();
-    }
+    function renderScheduleBoard() { ShowEngine.ensureSlots(); renderIdeaBank(); renderCalendar(); }
 
     function renderIdeaBank() {
       const ideas = Storage.getIdeas();
       const assignments = Storage.getAssignments();
       const assignedIdeaIds = new Set(Object.values(assignments));
-
-      // Show only processed, unscheduled ideas
-      const available = ideas.filter(i =>
-        (i.status === 'processed' || i.status === 'scheduled') &&
-        !assignedIdeaIds.has(i.id)
-      );
-
+      const available = ideas.filter(i => (i.status === 'processed' || i.status === 'scheduled') && !assignedIdeaIds.has(i.id));
       const container = document.getElementById('ideaBank');
-
-      if (available.length === 0) {
-        container.innerHTML = '<div class="bank-empty">No unscheduled ideas.<br>Process ideas in the Workshop first.</div>';
-        return;
-      }
-
+      if (available.length === 0) { container.innerHTML = '<div class="bank-empty">No unscheduled ideas.<br>Process ideas in the Workshop first.</div>'; return; }
       container.innerHTML = available.map(idea => `
-        <div class="idea-card"
-             draggable="true"
-             data-idea-id="${idea.id}"
-             ondragstart="onDragStart(event, '${idea.id}')"
-             ondragend="onDragEnd(event)">
+        <div class="idea-card" draggable="true" data-idea-id="${idea.id}"
+             ondragstart="onDragStart(event, '${idea.id}')" ondragend="onDragEnd(event)">
           <div class="idea-title">${idea.selectedTitle || idea.titles?.[0] || 'Untitled'}</div>
           <div class="idea-summary">${idea.summary || truncate(idea.rawNotes, 80)}</div>
         </div>
@@ -706,25 +403,14 @@
     function renderCalendar() {
       const grid = document.getElementById('calendarGrid');
       const titleEl = document.getElementById('calendarTitle');
-
-      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
-                          'July', 'August', 'September', 'October', 'November', 'December'];
+      const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
       titleEl.textContent = `${monthNames[currentMonth]} ${currentYear}`;
-
-      // Day headers
-      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      let html = days.map(d =>
-        `<div class="calendar-header-cell ${d === 'Tue' ? 'tuesday' : ''}">${d}</div>`
-      ).join('');
-
-      // Calculate first day of month
+      const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      let html = days.map(d => `<div class="calendar-header-cell ${d === 'Tue' ? 'tuesday' : ''}">${d}</div>`).join('');
       const firstDay = new Date(currentYear, currentMonth, 1);
       const lastDay = new Date(currentYear, currentMonth + 1, 0);
-      const startPad = firstDay.getDay(); // 0=Sun
-
+      const startPad = firstDay.getDay();
       const today = new Date().toISOString().split('T')[0];
-
-      // Previous month padding
       const prevMonthLast = new Date(currentYear, currentMonth, 0);
       for (let i = startPad - 1; i >= 0; i--) {
         const d = prevMonthLast.getDate() - i;
@@ -732,15 +418,11 @@
         const dow = new Date(currentYear, currentMonth - 1, d).getDay();
         html += renderCalendarDay(d, dateStr, true, dow === 2, today);
       }
-
-      // Current month days
       for (let d = 1; d <= lastDay.getDate(); d++) {
         const dateStr = formatDateStr(currentYear, currentMonth, d);
         const dow = new Date(currentYear, currentMonth, d).getDay();
         html += renderCalendarDay(d, dateStr, false, dow === 2, today);
       }
-
-      // Next month padding
       const totalCells = startPad + lastDay.getDate();
       const remaining = (7 - (totalCells % 7)) % 7;
       for (let d = 1; d <= remaining; d++) {
@@ -748,7 +430,6 @@
         const dow = new Date(currentYear, currentMonth + 1, d).getDay();
         html += renderCalendarDay(d, dateStr, true, dow === 2, today);
       }
-
       grid.innerHTML = html;
     }
 
@@ -757,92 +438,44 @@
       let classes = 'calendar-day';
       if (isOtherMonth) classes += ' other-month';
       if (isToday) classes += ' today';
-
-      if (!isTuesday) {
-        return `<div class="${classes}"><span class="day-number">${dayNum}</span></div>`;
-      }
-
+      if (!isTuesday) return `<div class="${classes}"><span class="day-number">${dayNum}</span></div>`;
       classes += ' tuesday';
-
-      // Find record and publish slots for this Tuesday
       const slots = Storage.getShowSlots();
       const assignments = Storage.getAssignments();
       const ideas = Storage.getIdeas();
-
       const recordSlot = slots.find(s => s.recordDate === dateStr);
       const publishSlots = slots.filter(s => s.releaseDate === dateStr);
-
-      // Build record section
       let recordHtml = '';
       if (recordSlot) {
         const assignedIdeaId = assignments[recordSlot.id];
         if (assignedIdeaId) {
           const idea = ideas.find(i => i.id === assignedIdeaId);
-          recordHtml = `
-            <div class="tuesday-drop has-show" data-slot-id="${recordSlot.id}" data-type="record" data-date="${dateStr}"
-                 ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event, '${recordSlot.id}')">
-              <div class="show-info">
-                <span class="ep-num">${recordSlot.episodeNumber}</span>
-                <span class="show-title">${idea?.selectedTitle || idea?.titles?.[0] || 'Untitled'}</span>
-                <button class="unassign-btn" onclick="event.stopPropagation(); unassignShow('${recordSlot.id}')" title="Remove">✕</button>
-              </div>
-            </div>`;
+          recordHtml = `<div class="tuesday-drop has-show" data-slot-id="${recordSlot.id}" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event, '${recordSlot.id}')">
+            <div class="show-info"><span class="ep-num">${recordSlot.episodeNumber}</span><span class="show-title">${idea?.selectedTitle || idea?.titles?.[0] || 'Untitled'}</span>
+            <button class="unassign-btn" onclick="event.stopPropagation(); unassignShow('${recordSlot.id}')" title="Remove">✕</button></div></div>`;
         } else {
-          recordHtml = `
-            <div class="tuesday-drop" data-slot-id="${recordSlot.id}" data-type="record" data-date="${dateStr}"
-                 ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event, '${recordSlot.id}')">
-              <span class="empty-placeholder">${recordSlot.episodeNumber} — drop idea</span>
-            </div>`;
+          recordHtml = `<div class="tuesday-drop" data-slot-id="${recordSlot.id}" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event, '${recordSlot.id}')">
+            <span class="empty-placeholder">${recordSlot.episodeNumber} — drop idea</span></div>`;
         }
       }
-
-      // Build publish section
       let publishHtml = '';
       if (publishSlots.length > 0) {
         const isLaunch = publishSlots.some(s => s.isLaunchBatch);
-
         publishHtml = publishSlots.map(ps => {
-          const assignedIdeaId = assignments[ps.id];
-          if (assignedIdeaId) {
-            const idea = ideas.find(i => i.id === assignedIdeaId);
-            return `
-              <div class="tuesday-drop has-show" style="border-left: 2px solid var(--status-scheduled);">
-                <div class="show-info">
-                  <span class="ep-num">${ps.episodeNumber}</span>
-                  <span class="show-title">${idea?.selectedTitle || idea?.titles?.[0] || 'Untitled'}</span>
-                </div>
-              </div>`;
-          } else {
-            return `
-              <div class="tuesday-drop" style="border-left: 2px solid var(--status-scheduled); opacity: 0.5;">
-                <span class="empty-placeholder">${ps.episodeNumber}</span>
-              </div>`;
+          const aid = assignments[ps.id];
+          if (aid) {
+            const idea = ideas.find(i => i.id === aid);
+            return `<div class="tuesday-drop has-show" style="border-left: 2px solid var(--status-scheduled);">
+              <div class="show-info"><span class="ep-num">${ps.episodeNumber}</span><span class="show-title">${idea?.selectedTitle || idea?.titles?.[0] || 'Untitled'}</span></div></div>`;
           }
+          return `<div class="tuesday-drop" style="border-left: 2px solid var(--status-scheduled); opacity: 0.5;"><span class="empty-placeholder">${ps.episodeNumber}</span></div>`;
         }).join('');
-
-        if (isLaunch) {
-          publishHtml = `<span class="launch-badge">Launch Day</span>` + publishHtml;
-        }
+        if (isLaunch) publishHtml = `<span class="launch-badge">Launch Day</span>` + publishHtml;
       }
-
-      return `
-        <div class="${classes}">
-          <span class="day-number">${dayNum}</span>
-          <div class="tuesday-sections">
-            ${recordSlot ? `
-              <div>
-                <div class="tuesday-section-label record">Record</div>
-                ${recordHtml}
-              </div>
-            ` : ''}
-            ${publishSlots.length > 0 ? `
-              <div>
-                <div class="tuesday-section-label publish">Publish</div>
-                ${publishHtml}
-              </div>
-            ` : ''}
-          </div>
-        </div>`;
+      return `<div class="${classes}"><span class="day-number">${dayNum}</span><div class="tuesday-sections">
+        ${recordSlot ? `<div><div class="tuesday-section-label record">Record</div>${recordHtml}</div>` : ''}
+        ${publishSlots.length > 0 ? `<div><div class="tuesday-section-label publish">Publish</div>${publishHtml}</div>` : ''}
+      </div></div>`;
     }
 
     function changeMonth(delta) {
@@ -855,94 +488,35 @@
     // ============================================
     // Drag & Drop
     // ============================================
-    function onDragStart(e, ideaId) {
-      draggedIdeaId = ideaId;
-      e.target.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', ideaId);
-    }
-
-    function onDragEnd(e) {
-      draggedIdeaId = null;
-      e.target.classList.remove('dragging');
-    }
-
-    function onDragOver(e) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      e.currentTarget.classList.add('drag-over');
-    }
-
-    function onDragLeave(e) {
-      e.currentTarget.classList.remove('drag-over');
-    }
-
+    function onDragStart(e, ideaId) { draggedIdeaId = ideaId; e.target.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', ideaId); }
+    function onDragEnd(e) { draggedIdeaId = null; e.target.classList.remove('dragging'); }
+    function onDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; e.currentTarget.classList.add('drag-over'); }
+    function onDragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
     function onDrop(e, slotId) {
-      e.preventDefault();
-      e.currentTarget.classList.remove('drag-over');
-
+      e.preventDefault(); e.currentTarget.classList.remove('drag-over');
       const ideaId = e.dataTransfer.getData('text/plain') || draggedIdeaId;
       if (!ideaId || !slotId) return;
-
-      // Check if slot already has an assignment
       const currentAssignment = Storage.getIdeaForSlot(slotId);
-      if (currentAssignment) {
-        if (!confirm('This slot already has an idea assigned. Replace it?')) return;
-        Storage.unassignSlot(slotId);
-      }
-
+      if (currentAssignment) { if (!confirm('This slot already has an idea. Replace it?')) return; Storage.unassignSlot(slotId); }
       Storage.assignIdeaToSlot(ideaId, slotId);
-      renderScheduleBoard();
-      renderIdeasList();
-
+      renderScheduleBoard(); renderIdeasList();
       const slot = ShowEngine.getSlotById(slotId);
       Toast.success(`Assigned to ${slot.episodeNumber} (record ${ShowEngine.formatDateShort(slot.recordDate)})`);
     }
-
-    function unassignShow(slotId) {
-      Storage.unassignSlot(slotId);
-      renderScheduleBoard();
-      renderIdeasList();
-      Toast.info('Show unassigned.');
-    }
+    function unassignShow(slotId) { Storage.unassignSlot(slotId); renderScheduleBoard(); renderIdeasList(); Toast.info('Show unassigned.'); }
 
     // ============================================
     // Utilities
     // ============================================
-    function truncate(str, len) {
-      if (!str) return '';
-      return str.length > len ? str.substring(0, len) + '...' : str;
-    }
-
-    function formatTimestamp(iso) {
-      if (!iso) return '';
-      const d = new Date(iso);
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
-        ' at ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    }
-
-    function formatDateStr(year, month, day) {
-      // Handle month overflow/underflow
-      const d = new Date(year, month, day);
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      return `${y}-${m}-${dd}`;
-    }
-
-    function closeModal() {
-      document.getElementById('ideaModal').classList.add('hidden');
-    }
+    function truncate(str, len) { if (!str) return ''; return str.length > len ? str.substring(0, len) + '...' : str; }
+    function formatTimestamp(iso) { if (!iso) return ''; const d = new Date(iso); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' at ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); }
+    function formatDateStr(year, month, day) { const d = new Date(year, month, day); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 
     // ============================================
     // Init
     // ============================================
     ShowEngine.ensureSlots();
     renderIdeasList();
-
-    // Set calendar to launch month initially
-    currentMonth = 1; // February
-    currentYear = 2026;
   </script>
 </body>
 </html>

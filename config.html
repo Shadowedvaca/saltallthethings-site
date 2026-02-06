@@ -6,135 +6,171 @@
   <title>Config — Salt All The Things</title>
   <link rel="icon" type="image/jpeg" href="images/256x256.jpeg">
   <link rel="stylesheet" href="css/style.css">
+  <style>
+    #authGate {
+      position: fixed; inset: 0; z-index: 99999;
+      background: #08080f;
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'DM Sans', sans-serif;
+    }
+    #authGate .gate-box {
+      background: #13132a; border: 1px solid #2a2a4a; border-radius: 16px;
+      padding: 48px 40px; max-width: 380px; width: 90%; text-align: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    }
+    #authGate .gate-logo { width: 80px; border-radius: 8px; margin-bottom: 24px; filter: drop-shadow(0 0 20px rgba(200,168,78,0.2)); }
+    #authGate h2 { font-family: 'Cinzel', serif; color: #d4b85a; font-size: 1.2rem; margin-bottom: 8px; }
+    #authGate .gate-sub { color: #5a5750; font-size: 0.85rem; margin-bottom: 24px; }
+    #authGate input {
+      width: 100%; padding: 10px 16px; background: #0f0f20; border: 1px solid #2a2a4a;
+      border-radius: 8px; color: #e0ddd4; font-family: 'DM Sans', sans-serif;
+      font-size: 0.95rem; text-align: center; letter-spacing: 2px; margin-bottom: 16px;
+    }
+    #authGate input:focus { outline: none; border-color: #c8a84e; box-shadow: 0 0 0 3px rgba(200,168,78,0.2); }
+    #authGate input.error { border-color: #cc4444; animation: gateShake 300ms ease; }
+    #authGate button {
+      width: 100%; padding: 10px 16px;
+      background: linear-gradient(135deg, #c8a84e 0%, #8a7434 100%);
+      color: #0a0a0f; border: 1px solid #c8a84e; border-radius: 8px;
+      font-family: 'DM Sans', sans-serif; font-size: 0.9rem; font-weight: 600; cursor: pointer;
+    }
+    #authGate button:hover { background: linear-gradient(135deg, #e0c868 0%, #c8a84e 100%); }
+    #authGate .gate-error { color: #cc4444; font-size: 0.8rem; margin-top: 12px; min-height: 1.2em; }
+    @keyframes gateShake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
+  </style>
 </head>
 <body>
-  <!-- Navigation -->
-  <nav class="site-nav">
-    <img src="images/256x256.jpeg" alt="SATT" class="nav-logo">
-    <span class="nav-title">Salt All The Things</span>
-    <div class="nav-spacer"></div>
-    <a href="index.html">Home</a>
-    <a href="show_management.html">Show Management</a>
-    <a href="config.html" class="active">Config</a>
-    <button class="btn btn-ghost btn-sm" onclick="Auth.logout()" title="Log out" style="color: var(--text-muted);">🔒 Logout</button>
-  </nav>
 
-  <!-- Auth gate — must load before page content is visible -->
-  <script src="js/auth.js"></script>
-  <script>Auth.guard();</script>
-
-  <div class="page-container" style="max-width: 900px;">
-    <div class="page-header">
-      <h1>Configuration</h1>
-      <p class="subtitle">AI provider settings, prompts, segments, and magic numbers</p>
-    </div>
-
-    <!-- AI Provider -->
-    <div class="card card-elevated mb-lg">
-      <h2 class="mb-md">AI Provider</h2>
-
-      <div class="form-group">
-        <label>Active AI Model</label>
-        <select id="aiModel">
-          <option value="claude">Anthropic Claude</option>
-          <option value="openai">OpenAI ChatGPT</option>
-        </select>
-      </div>
-
-      <!-- Claude Settings -->
-      <div id="claudeSettings">
-        <div class="form-group">
-          <label>Claude API Key</label>
-          <div class="flex gap-sm items-center">
-            <input type="password" id="claudeApiKey" placeholder="sk-ant-...">
-            <button class="btn btn-ghost btn-sm" onclick="toggleVisibility('claudeApiKey')">👁</button>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Claude Model ID <span class="label-hint">— e.g. claude-sonnet-4-5-20250929</span></label>
-          <input type="text" id="claudeModelId" placeholder="claude-sonnet-4-5-20250929">
-        </div>
-      </div>
-
-      <!-- OpenAI Settings -->
-      <div id="openaiSettings">
-        <div class="form-group">
-          <label>OpenAI API Key</label>
-          <div class="flex gap-sm items-center">
-            <input type="password" id="openaiApiKey" placeholder="sk-...">
-            <button class="btn btn-ghost btn-sm" onclick="toggleVisibility('openaiApiKey')">👁</button>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>OpenAI Model ID <span class="label-hint">— e.g. gpt-4o, gpt-4o-mini</span></label>
-          <input type="text" id="openaiModelId" placeholder="gpt-4o">
-        </div>
-      </div>
-    </div>
-
-    <!-- Magic Numbers -->
-    <div class="card card-elevated mb-lg">
-      <h2 class="mb-md">Magic Numbers</h2>
-
-      <div class="form-group">
-        <label>Number of AI Title Suggestions <span class="label-hint">— per idea</span></label>
-        <input type="number" id="titleCount" min="1" max="10" value="3">
-      </div>
-    </div>
-
-    <!-- Show Context Prompt -->
-    <div class="card card-elevated mb-lg">
-      <h2 class="mb-md">Show Context Prompt</h2>
-      <p class="text-sm text-secondary mb-md">This is sent to the AI with every idea processing request. It defines who you are, the tone, and what the show is about.</p>
-
-      <div class="form-group">
-        <label>System Context</label>
-        <textarea id="showContext" rows="18" style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; line-height: 1.5;"></textarea>
-      </div>
-
-      <button class="btn btn-ghost btn-sm" onclick="resetShowContext()">Reset to Default</button>
-    </div>
-
-    <!-- Show Segments -->
-    <div class="card card-elevated mb-lg">
-      <h2 class="mb-md">Show Segments</h2>
-      <p class="text-sm text-secondary mb-md">The segments of each episode. The AI uses these to structure the show outline. Drag to reorder.</p>
-
-      <div id="segmentsList"></div>
-
-      <div class="mt-md flex gap-sm">
-        <button class="btn btn-secondary btn-sm" onclick="addSegment()">+ Add Segment</button>
-        <button class="btn btn-ghost btn-sm" onclick="resetSegments()">Reset to Default</button>
-      </div>
-    </div>
-
-    <!-- Data Management -->
-    <div class="card card-elevated mb-lg">
-      <h2 class="mb-md">Data Management</h2>
-      <p class="text-sm text-secondary mb-md">Export or import all your data (config, ideas, schedule). Data is stored in your browser's localStorage.</p>
-
-      <div class="flex gap-sm flex-wrap">
-        <button class="btn btn-secondary" onclick="exportData()">Export All Data</button>
-        <button class="btn btn-secondary" onclick="document.getElementById('importFile').click()">Import Data</button>
-        <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
-        <button class="btn btn-danger" onclick="clearAllData()">Clear All Data</button>
-      </div>
-    </div>
-
-    <!-- Save Button -->
-    <div class="flex justify-between items-center" style="padding: 1rem 0;">
-      <span id="saveStatus" class="text-sm text-muted"></span>
-      <button class="btn btn-primary btn-lg" onclick="saveConfig()">Save Configuration</button>
+  <!-- ===== AUTH GATE ===== -->
+  <div id="authGate">
+    <div class="gate-box">
+      <img src="images/256x256.jpeg" alt="SATT" class="gate-logo">
+      <h2>Crew Only</h2>
+      <p class="gate-sub">Enter the password to continue</p>
+      <input type="password" id="gatePassword" placeholder="••••••••" autocomplete="off">
+      <button id="gateSubmit">Enter</button>
+      <div class="gate-error" id="gateError"></div>
     </div>
   </div>
 
+  <!-- ===== PROTECTED CONTENT ===== -->
+  <div id="protectedContent" style="display: none;">
+
+    <nav class="site-nav">
+      <img src="images/256x256.jpeg" alt="SATT" class="nav-logo">
+      <span class="nav-title">Salt All The Things</span>
+      <div class="nav-spacer"></div>
+      <a href="index.html">Home</a>
+      <a href="show_management.html">Show Management</a>
+      <a href="config.html" class="active">Config</a>
+      <button class="btn btn-ghost btn-sm" onclick="Auth.logout()" style="color: var(--text-muted);">🔒 Logout</button>
+    </nav>
+
+    <div class="page-container" style="max-width: 900px;">
+      <div class="page-header">
+        <h1>Configuration</h1>
+        <p class="subtitle">AI provider settings, prompts, segments, and magic numbers</p>
+      </div>
+
+      <!-- AI Provider -->
+      <div class="card card-elevated mb-lg">
+        <h2 class="mb-md">AI Provider</h2>
+        <div class="form-group">
+          <label>Active AI Model</label>
+          <select id="aiModel">
+            <option value="claude">Anthropic Claude</option>
+            <option value="openai">OpenAI ChatGPT</option>
+          </select>
+        </div>
+        <div id="claudeSettings">
+          <div class="form-group">
+            <label>Claude API Key</label>
+            <div class="flex gap-sm items-center">
+              <input type="password" id="claudeApiKey" placeholder="sk-ant-...">
+              <button class="btn btn-ghost btn-sm" onclick="toggleVisibility('claudeApiKey')">👁</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Claude Model ID <span class="label-hint">— e.g. claude-sonnet-4-5-20250929</span></label>
+            <input type="text" id="claudeModelId" placeholder="claude-sonnet-4-5-20250929">
+          </div>
+        </div>
+        <div id="openaiSettings">
+          <div class="form-group">
+            <label>OpenAI API Key</label>
+            <div class="flex gap-sm items-center">
+              <input type="password" id="openaiApiKey" placeholder="sk-...">
+              <button class="btn btn-ghost btn-sm" onclick="toggleVisibility('openaiApiKey')">👁</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>OpenAI Model ID <span class="label-hint">— e.g. gpt-4o, gpt-4o-mini</span></label>
+            <input type="text" id="openaiModelId" placeholder="gpt-4o">
+          </div>
+        </div>
+      </div>
+
+      <!-- Magic Numbers -->
+      <div class="card card-elevated mb-lg">
+        <h2 class="mb-md">Magic Numbers</h2>
+        <div class="form-group">
+          <label>Number of AI Title Suggestions <span class="label-hint">— per idea</span></label>
+          <input type="number" id="titleCount" min="1" max="10" value="3">
+        </div>
+      </div>
+
+      <!-- Show Context Prompt -->
+      <div class="card card-elevated mb-lg">
+        <h2 class="mb-md">Show Context Prompt</h2>
+        <p class="text-sm text-secondary mb-md">This is sent to the AI with every idea processing request. It defines who you are, the tone, and what the show is about.</p>
+        <div class="form-group">
+          <label>System Context</label>
+          <textarea id="showContext" rows="18" style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; line-height: 1.5;"></textarea>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="resetShowContext()">Reset to Default</button>
+      </div>
+
+      <!-- Show Segments -->
+      <div class="card card-elevated mb-lg">
+        <h2 class="mb-md">Show Segments</h2>
+        <p class="text-sm text-secondary mb-md">The segments of each episode. The AI uses these to structure the show outline. Drag to reorder.</p>
+        <div id="segmentsList"></div>
+        <div class="mt-md flex gap-sm">
+          <button class="btn btn-secondary btn-sm" onclick="addSegment()">+ Add Segment</button>
+          <button class="btn btn-ghost btn-sm" onclick="resetSegments()">Reset to Default</button>
+        </div>
+      </div>
+
+      <!-- Data Management -->
+      <div class="card card-elevated mb-lg">
+        <h2 class="mb-md">Data Management</h2>
+        <p class="text-sm text-secondary mb-md">Export or import all your data (config, ideas, schedule). Data is stored in your browser's localStorage.</p>
+        <div class="flex gap-sm flex-wrap">
+          <button class="btn btn-secondary" onclick="exportData()">Export All Data</button>
+          <button class="btn btn-secondary" onclick="document.getElementById('importFile').click()">Import Data</button>
+          <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
+          <button class="btn btn-danger" onclick="clearAllData()">Clear All Data</button>
+        </div>
+      </div>
+
+      <!-- Save -->
+      <div class="flex justify-between items-center" style="padding: 1rem 0;">
+        <span id="saveStatus" class="text-sm text-muted"></span>
+        <button class="btn btn-primary btn-lg" onclick="saveConfig()">Save Configuration</button>
+      </div>
+    </div>
+
+  </div><!-- /protectedContent -->
+
+  <script src="js/auth.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/toast.js"></script>
   <script>
-    // ---- Load Config ----
+    // Init auth
+    Auth.init();
+
     function loadConfig() {
       const config = Storage.getConfig();
-
       document.getElementById('aiModel').value = config.aiModel || 'claude';
       document.getElementById('claudeApiKey').value = config.claudeApiKey || '';
       document.getElementById('claudeModelId').value = config.claudeModelId || 'claude-sonnet-4-5-20250929';
@@ -142,12 +178,10 @@
       document.getElementById('openaiModelId').value = config.openaiModelId || 'gpt-4o';
       document.getElementById('titleCount').value = config.titleCount || 3;
       document.getElementById('showContext').value = config.showContext || '';
-
       renderSegments(config.segments || []);
       toggleProviderSettings();
     }
 
-    // ---- Save Config ----
     function saveConfig() {
       const config = {
         aiModel: document.getElementById('aiModel').value,
@@ -159,84 +193,57 @@
         showContext: document.getElementById('showContext').value,
         segments: getSegmentsFromDOM()
       };
-
       Storage.saveConfig(config);
       Toast.success('Configuration saved!');
       document.getElementById('saveStatus').textContent = 'Saved ' + new Date().toLocaleTimeString();
     }
 
-    // ---- Toggle provider visibility ----
     function toggleProviderSettings() {
       const model = document.getElementById('aiModel').value;
       document.getElementById('claudeSettings').style.display = model === 'claude' ? 'block' : 'none';
       document.getElementById('openaiSettings').style.display = model === 'openai' ? 'block' : 'none';
     }
-
     document.getElementById('aiModel').addEventListener('change', toggleProviderSettings);
 
-    // ---- Toggle password visibility ----
     function toggleVisibility(inputId) {
       const input = document.getElementById(inputId);
       input.type = input.type === 'password' ? 'text' : 'password';
     }
 
-    // ---- Segments ----
     let currentSegments = [];
-
     function renderSegments(segments) {
       currentSegments = segments;
       const container = document.getElementById('segmentsList');
       container.innerHTML = '';
-
       segments.forEach((seg, idx) => {
         const row = document.createElement('div');
         row.className = 'flex gap-sm items-center mb-sm';
         row.draggable = true;
         row.dataset.index = idx;
         row.style.cssText = 'padding: 8px 12px; background: var(--bg-surface); border-radius: var(--radius-md); border: 1px solid var(--border-subtle); cursor: grab;';
-
         row.innerHTML = `
           <span class="text-muted" style="min-width: 24px; font-size: 0.75rem;">${idx + 1}.</span>
           <input type="text" value="${seg.name}" data-field="name" style="flex: 1; min-width: 200px;" placeholder="Segment Name">
           <input type="text" value="${seg.description || ''}" data-field="description" style="flex: 2; min-width: 200px;" placeholder="Description (optional)">
           <button class="btn btn-ghost btn-sm" onclick="removeSegment(${idx})" title="Remove">✕</button>
         `;
-
-        // Drag handlers
-        row.addEventListener('dragstart', (e) => {
-          e.dataTransfer.setData('text/plain', idx.toString());
-          row.style.opacity = '0.5';
-        });
+        row.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', idx.toString()); row.style.opacity = '0.5'; });
         row.addEventListener('dragend', () => { row.style.opacity = '1'; });
-        row.addEventListener('dragover', (e) => {
-          e.preventDefault();
-          row.style.borderColor = 'var(--gold)';
-        });
-        row.addEventListener('dragleave', () => {
-          row.style.borderColor = 'var(--border-subtle)';
-        });
+        row.addEventListener('dragover', (e) => { e.preventDefault(); row.style.borderColor = 'var(--gold)'; });
+        row.addEventListener('dragleave', () => { row.style.borderColor = 'var(--border-subtle)'; });
         row.addEventListener('drop', (e) => {
-          e.preventDefault();
-          row.style.borderColor = 'var(--border-subtle)';
+          e.preventDefault(); row.style.borderColor = 'var(--border-subtle)';
           const fromIdx = parseInt(e.dataTransfer.getData('text/plain'));
-          const toIdx = idx;
-          if (fromIdx !== toIdx) {
-            const segs = getSegmentsFromDOM();
-            const [moved] = segs.splice(fromIdx, 1);
-            segs.splice(toIdx, 0, moved);
-            renderSegments(segs);
-          }
+          if (fromIdx !== idx) { const segs = getSegmentsFromDOM(); const [moved] = segs.splice(fromIdx, 1); segs.splice(idx, 0, moved); renderSegments(segs); }
         });
-
         container.appendChild(row);
       });
     }
 
     function getSegmentsFromDOM() {
-      const container = document.getElementById('segmentsList');
-      const rows = container.querySelectorAll('.flex.items-center');
+      const rows = document.querySelectorAll('#segmentsList .flex.items-center');
       const segments = [];
-      rows.forEach((row, idx) => {
+      rows.forEach((row) => {
         const name = row.querySelector('[data-field="name"]').value;
         const description = row.querySelector('[data-field="description"]').value;
         const id = name.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').substring(0, 20);
@@ -245,79 +252,41 @@
       return segments;
     }
 
-    function addSegment() {
-      const segs = getSegmentsFromDOM();
-      segs.push({ id: 'new_' + Date.now(), name: '', description: '' });
-      renderSegments(segs);
-    }
+    function addSegment() { const segs = getSegmentsFromDOM(); segs.push({ id: 'new_' + Date.now(), name: '', description: '' }); renderSegments(segs); }
+    function removeSegment(idx) { const segs = getSegmentsFromDOM(); segs.splice(idx, 1); renderSegments(segs); }
+    function resetSegments() { if (confirm('Reset segments to defaults?')) { renderSegments(Storage._defaultSegments()); Toast.info('Segments reset (save to apply)'); } }
+    function resetShowContext() { if (confirm('Reset show context prompt to defaults?')) { document.getElementById('showContext').value = Storage._defaultShowContext(); Toast.info('Context reset (save to apply)'); } }
 
-    function removeSegment(idx) {
-      const segs = getSegmentsFromDOM();
-      segs.splice(idx, 1);
-      renderSegments(segs);
-    }
-
-    function resetSegments() {
-      if (confirm('Reset segments to defaults? This will discard your current segment list.')) {
-        renderSegments(Storage._defaultSegments());
-        Toast.info('Segments reset to defaults (save to apply)');
-      }
-    }
-
-    function resetShowContext() {
-      if (confirm('Reset the show context prompt to defaults?')) {
-        document.getElementById('showContext').value = Storage._defaultShowContext();
-        Toast.info('Show context reset to default (save to apply)');
-      }
-    }
-
-    // ---- Data Management ----
     function exportData() {
       const data = Storage.exportAll();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `satt-backup-${new Date().toISOString().split('T')[0]}.json`;
-      a.click();
+      const a = document.createElement('a'); a.href = url; a.download = `satt-backup-${new Date().toISOString().split('T')[0]}.json`; a.click();
       URL.revokeObjectURL(url);
       Toast.success('Data exported!');
     }
 
     function importData(event) {
-      const file = event.target.files[0];
-      if (!file) return;
-
+      const file = event.target.files[0]; if (!file) return;
       const reader = new FileReader();
       reader.onload = (e) => {
         try {
           const data = JSON.parse(e.target.result);
-          if (confirm(`Import data from ${data.exportDate || 'unknown date'}? This will overwrite current data.`)) {
-            Storage.importAll(data);
-            loadConfig();
-            Toast.success('Data imported successfully!');
-          }
-        } catch (err) {
-          Toast.error('Failed to parse import file: ' + err.message);
-        }
+          if (confirm(`Import data from ${data.exportDate || 'unknown date'}? This will overwrite current data.`)) { Storage.importAll(data); loadConfig(); Toast.success('Data imported!'); }
+        } catch (err) { Toast.error('Failed to parse import file: ' + err.message); }
       };
-      reader.readAsText(file);
-      event.target.value = '';
+      reader.readAsText(file); event.target.value = '';
     }
 
     function clearAllData() {
-      if (confirm('⚠️ This will delete ALL data including ideas, schedule, and config. Are you sure?')) {
+      if (confirm('This will delete ALL data including ideas, schedule, and config. Are you sure?')) {
         if (confirm('Really? This cannot be undone.')) {
-          Object.keys(localStorage).forEach(key => {
-            if (key.startsWith('satt_')) localStorage.removeItem(key);
-          });
-          loadConfig();
-          Toast.info('All data cleared.');
+          Object.keys(localStorage).forEach(key => { if (key.startsWith('satt_')) localStorage.removeItem(key); });
+          loadConfig(); Toast.info('All data cleared.');
         }
       }
     }
 
-    // ---- Init ----
     loadConfig();
   </script>
 </body>
