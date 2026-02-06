@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Salt All The Things — A WoW Podcast</title>
+  <link rel="icon" type="image/jpeg" href="images/256x256.jpeg">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #08080f;
+      color: #e0ddd4;
+      font-family: 'DM Sans', sans-serif;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Subtle animated background */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 600px 400px at 30% 50%, rgba(74,158,255,0.04) 0%, transparent 70%),
+        radial-gradient(ellipse 500px 500px at 70% 60%, rgba(107,76,154,0.05) 0%, transparent 70%),
+        radial-gradient(ellipse 800px 300px at 50% 100%, rgba(200,168,78,0.03) 0%, transparent 60%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .hero {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 2rem;
+      max-width: 800px;
+      animation: heroIn 1s ease;
+    }
+
+    @keyframes heroIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .logo {
+      width: 340px;
+      max-width: 80vw;
+      border-radius: 16px;
+      margin-bottom: 2rem;
+      filter: drop-shadow(0 0 40px rgba(200,168,78,0.15));
+    }
+
+    .tagline {
+      font-family: 'DM Sans', sans-serif;
+      font-size: 1.1rem;
+      color: #9a9788;
+      font-weight: 400;
+      font-style: italic;
+      max-width: 500px;
+      line-height: 1.6;
+      margin-bottom: 2.5rem;
+    }
+
+    .launch-label {
+      font-family: 'Cinzel', serif;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      color: #5a5750;
+      margin-bottom: 0.5rem;
+    }
+
+    .launch-date {
+      font-family: 'Cinzel', serif;
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #c8a84e;
+      letter-spacing: 1px;
+      text-shadow: 0 0 30px rgba(200,168,78,0.3);
+    }
+
+    .divider {
+      width: 60px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, #c8a84e44, transparent);
+      margin: 1.5rem 0;
+    }
+
+    .sub-tagline {
+      font-size: 0.85rem;
+      color: #5a5750;
+      margin-top: 2rem;
+    }
+
+    /* Salt particle animation */
+    .particles {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      overflow: hidden;
+    }
+
+    .particle {
+      position: absolute;
+      width: 2px;
+      height: 2px;
+      background: rgba(200, 168, 78, 0.3);
+      border-radius: 50%;
+      animation: float linear infinite;
+    }
+
+    @keyframes float {
+      0% { transform: translateY(100vh) rotate(0deg); opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { transform: translateY(-20px) rotate(720deg); opacity: 0; }
+    }
+
+    @media (max-width: 600px) {
+      .logo { width: 260px; }
+      .launch-date { font-size: 1.4rem; }
+      .tagline { font-size: 1rem; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Floating salt particles -->
+  <div class="particles" id="particles"></div>
+
+  <div class="hero">
+    <img src="images/512x512.jpeg" alt="Salt All The Things" class="logo">
+
+    <p class="tagline">Two friends, two decades of WoW, and zero filter — the good, the bad, and the salty.</p>
+
+    <div class="divider"></div>
+
+    <p class="launch-label">Launching</p>
+    <p class="launch-date">February 17, 2026</p>
+
+    <p class="sub-tagline">A little salt for your day</p>
+  </div>
+
+  <script>
+    // Generate floating salt particles
+    const container = document.getElementById('particles');
+    for (let i = 0; i < 30; i++) {
+      const p = document.createElement('div');
+      p.className = 'particle';
+      p.style.left = Math.random() * 100 + '%';
+      p.style.animationDuration = (8 + Math.random() * 12) + 's';
+      p.style.animationDelay = Math.random() * 10 + 's';
+      p.style.width = p.style.height = (1 + Math.random() * 2) + 'px';
+      container.appendChild(p);
+    }
+  </script>
+</body>
+</html>
