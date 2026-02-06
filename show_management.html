@@ -307,7 +307,12 @@
     <a href="index.html">Home</a>
     <a href="show_management.html" class="active">Show Management</a>
     <a href="config.html">Config</a>
+    <button class="btn btn-ghost btn-sm" onclick="Auth.logout()" title="Log out" style="color: var(--text-muted);">🔒 Logout</button>
   </nav>
+
+  <!-- Auth gate — must load before page content is visible -->
+  <script src="js/auth.js"></script>
+  <script>Auth.guard();</script>
 
   <div class="page-container">
     <div class="page-header">

@@ -1,0 +1,62 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # Allow manual trigger
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Hash password and inject into auth.js
+        env:
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+        run: |
+          if [ -z "$ADMIN_PASSWORD" ]; then
+            echo "⚠️  ADMIN_PASSWORD secret not set — auth gate will be skipped (dev mode)"
+            exit 0
+          fi
+
+          # Generate SHA-256 hash of the password
+          HASH=$(echo -n "$ADMIN_PASSWORD" | sha256sum | cut -d' ' -f1)
+          echo "✅ Password hashed successfully"
+
+          # Replace placeholder in auth.js
+          sed -i "s/__PASSWORD_HASH__/${HASH}/g" js/auth.js
+
+          # Verify replacement happened
+          if grep -q "__PASSWORD_HASH__" js/auth.js; then
+            echo "❌ ERROR: Placeholder was not replaced!"
+            exit 1
+          else
+            echo "✅ Hash injected into js/auth.js"
+          fi
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
