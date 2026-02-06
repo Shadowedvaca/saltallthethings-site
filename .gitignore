@@ -9,3 +9,6 @@ Thumbs.db
 # Backup files
 *.bak
 *.tmp
+
+# Sensitive data
+settings-backup/
