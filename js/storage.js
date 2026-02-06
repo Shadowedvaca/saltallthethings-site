@@ -39,7 +39,9 @@ const Storage = {
       openaiApiKey: '',
       openaiModelId: 'gpt-4o',
       titleCount: 3,
+      jokeCount: 5,
       showContext: this._defaultShowContext(),
+      jokeContext: this._defaultJokeContext(),
       segments: this._defaultSegments()
     };
   },
@@ -58,6 +60,18 @@ const Storage = {
       { id: 'salt', name: 'A Little Sprinkle of Salt for your week', description: 'Salty takes, hot takes, complaints, rants' },
       { id: 'closing', name: 'Wrap-Up / What\'s Next / Closing', description: 'Preview next episode, calls to action, sign off' }
     ];
+  },
+
+  _defaultJokeContext() {
+    return `You are a comedy writer for "Salt All The Things," a World of Warcraft podcast.
+
+The show opens with a short, punchy salt-themed joke or one-liner. These are quick openers — not long bits. Think dad jokes, puns, and one-liners that play on the word "salt," saltiness (frustration/complaining), NaCl, seasoning, the Dead Sea, etc. They can also riff on WoW culture, gaming, or nerd life — as long as they tie back to salt somehow.
+
+TONE: Groan-worthy, fun, occasionally clever. The kind of joke that makes you smile even as you shake your head. Not crude or offensive — just cheesy, playful, salty humor.
+
+FORMAT: Each joke should be 1-2 sentences max. Setup + punchline or just a one-liner.
+
+When given a theme/topic hint, try to work that into some of the jokes while keeping others as general salt jokes for variety.`;
   },
 
   _defaultShowContext() {
@@ -79,6 +93,67 @@ STYLE NOTES:
 - Lean into the "salty" brand — don't shy away from controversial takes
 - Include moments for humor, banter, and tangents
 - Mix serious analysis with casual, fun discussion`;
+  },
+
+  // ---- Jokes ----
+  getJokes() {
+    return this.get('jokes') || [];
+  },
+
+  saveJokes(jokes) {
+    return this.set('jokes', jokes);
+  },
+
+  addJoke(joke) {
+    const jokes = this.getJokes();
+    jokes.push(joke);
+    return this.saveJokes(jokes);
+  },
+
+  updateJoke(jokeId, updates) {
+    const jokes = this.getJokes();
+    const idx = jokes.findIndex(j => j.id === jokeId);
+    if (idx !== -1) {
+      jokes[idx] = { ...jokes[idx], ...updates };
+      return this.saveJokes(jokes);
+    }
+    return false;
+  },
+
+  deleteJoke(jokeId) {
+    const jokes = this.getJokes().filter(j => j.id !== jokeId);
+    return this.saveJokes(jokes);
+  },
+
+  getUnusedJokes() {
+    return this.getJokes().filter(j => j.status === 'unused');
+  },
+
+  getUsedJokes() {
+    return this.getJokes().filter(j => j.status === 'used');
+  },
+
+  markJokeUsed(jokeId, ideaId) {
+    return this.updateJoke(jokeId, { status: 'used', usedByIdeaId: ideaId });
+  },
+
+  markJokeUnused(jokeId) {
+    return this.updateJoke(jokeId, { status: 'unused', usedByIdeaId: null });
+  },
+
+  freeJokesForIdea(ideaId) {
+    const jokes = this.getJokes();
+    jokes.forEach(j => {
+      if (j.usedByIdeaId === ideaId) {
+        j.status = 'unused';
+        j.usedByIdeaId = null;
+      }
+    });
+    return this.saveJokes(jokes);
+  },
+
+  getJokeForIdea(ideaId) {
+    return this.getJokes().find(j => j.usedByIdeaId === ideaId) || null;
   },
 
   // ---- Show Ideas ----
@@ -179,6 +254,7 @@ STYLE NOTES:
     return {
       config: this.getConfig(),
       ideas: this.getIdeas(),
+      jokes: this.getJokes(),
       showSlots: this.getShowSlots(),
       assignments: this.getAssignments(),
       exportDate: new Date().toISOString()
@@ -188,6 +264,7 @@ STYLE NOTES:
   importAll(data) {
     if (data.config) this.saveConfig(data.config);
     if (data.ideas) this.saveIdeas(data.ideas);
+    if (data.jokes) this.saveJokes(data.jokes);
     if (data.showSlots) this.saveShowSlots(data.showSlots);
     if (data.assignments) this.saveAssignments(data.assignments);
   }

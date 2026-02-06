@@ -4,6 +4,88 @@
    ============================================ */
 
 const AIService = {
+  async generateJokes(themeHint) {
+    const config = Storage.getConfig();
+    if (!config.aiModel) throw new Error('No AI model configured.');
+
+    const usedJokes = Storage.getUsedJokes();
+    const usedList = usedJokes.map(j => `- ${j.text}`).join('\n');
+
+    const systemPrompt = `${config.jokeContext}
+
+${usedList ? `ALREADY USED JOKES (do NOT repeat these or anything too similar):\n${usedList}\n` : ''}
+Return ONLY a JSON array of strings, each being one joke. No markdown, no backticks, no explanation. Example: ["joke one", "joke two"]
+Generate exactly ${config.jokeCount || 5} jokes.`;
+
+    const userPrompt = themeHint
+      ? `Generate salt jokes. Theme/topic hint for this batch: ${themeHint}`
+      : `Generate a batch of general salt jokes for the show.`;
+
+    if (config.aiModel === 'claude') {
+      return this._callClaudeJokes(systemPrompt, userPrompt, config);
+    } else if (config.aiModel === 'openai') {
+      return this._callOpenAIJokes(systemPrompt, userPrompt, config);
+    }
+    throw new Error(`Unknown AI model: ${config.aiModel}`);
+  },
+
+  async _callClaudeJokes(systemPrompt, userPrompt, config) {
+    if (!config.claudeApiKey) throw new Error('Claude API key not configured.');
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': config.claudeApiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: config.claudeModelId || 'claude-sonnet-4-5-20250929',
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }]
+      })
+    });
+    if (!response.ok) { const err = await response.text(); throw new Error(`Claude API error (${response.status}): ${err}`); }
+    const data = await response.json();
+    const text = data.content.filter(b => b.type === 'text').map(b => b.text).join('');
+    return this._parseJokeResponse(text);
+  },
+
+  async _callOpenAIJokes(systemPrompt, userPrompt, config) {
+    if (!config.openaiApiKey) throw new Error('OpenAI API key not configured.');
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config.openaiApiKey}` },
+      body: JSON.stringify({
+        model: config.openaiModelId || 'gpt-4o',
+        max_tokens: 1024,
+        messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
+        temperature: 0.9
+      })
+    });
+    if (!response.ok) { const err = await response.text(); throw new Error(`OpenAI API error (${response.status}): ${err}`); }
+    const data = await response.json();
+    const text = data.choices[0]?.message?.content || '';
+    return this._parseJokeResponse(text);
+  },
+
+  _parseJokeResponse(text) {
+    let cleaned = text.trim();
+    if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
+    else if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
+    if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
+    cleaned = cleaned.trim();
+    try {
+      const parsed = JSON.parse(cleaned);
+      if (!Array.isArray(parsed)) throw new Error('Expected array of jokes');
+      return parsed.filter(j => typeof j === 'string');
+    } catch (e) {
+      console.error('Failed to parse joke response:', text);
+      throw new Error(`Failed to parse joke response: ${e.message}`);
+    }
+  },
+
   async processIdea(rawNotes) {
     const config = Storage.getConfig();
 

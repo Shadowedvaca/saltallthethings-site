@@ -62,6 +62,7 @@
       <div class="nav-spacer"></div>
       <a href="index.html">Home</a>
       <a href="show_management.html">Show Management</a>
+      <a href="jokes.html">Joke Bank</a>
       <a href="config.html" class="active">Config</a>
       <button class="btn btn-ghost btn-sm" onclick="Auth.logout()" style="color: var(--text-muted);">🔒 Logout</button>
     </nav>
@@ -117,6 +118,10 @@
           <label>Number of AI Title Suggestions <span class="label-hint">— per idea</span></label>
           <input type="number" id="titleCount" min="1" max="10" value="3">
         </div>
+        <div class="form-group">
+          <label>Number of AI Joke Suggestions <span class="label-hint">— per generation</span></label>
+          <input type="number" id="jokeCount" min="1" max="15" value="5">
+        </div>
       </div>
 
       <!-- Show Context Prompt -->
@@ -128,6 +133,17 @@
           <textarea id="showContext" rows="18" style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; line-height: 1.5;"></textarea>
         </div>
         <button class="btn btn-ghost btn-sm" onclick="resetShowContext()">Reset to Default</button>
+      </div>
+
+      <!-- Joke Context Prompt -->
+      <div class="card card-elevated mb-lg">
+        <h2 class="mb-md">Joke Context Prompt</h2>
+        <p class="text-sm text-secondary mb-md">This is sent to the AI when generating opening salt jokes. Paste in any brainstorm context, style notes, or examples from Rocket's ChatGPT session.</p>
+        <div class="form-group">
+          <label>Joke System Context</label>
+          <textarea id="jokeContext" rows="14" style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; line-height: 1.5;"></textarea>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="resetJokeContext()">Reset to Default</button>
       </div>
 
       <!-- Show Segments -->
@@ -177,7 +193,9 @@
       document.getElementById('openaiApiKey').value = config.openaiApiKey || '';
       document.getElementById('openaiModelId').value = config.openaiModelId || 'gpt-4o';
       document.getElementById('titleCount').value = config.titleCount || 3;
+      document.getElementById('jokeCount').value = config.jokeCount || 5;
       document.getElementById('showContext').value = config.showContext || '';
+      document.getElementById('jokeContext').value = config.jokeContext || '';
       renderSegments(config.segments || []);
       toggleProviderSettings();
     }
@@ -190,7 +208,9 @@
         openaiApiKey: document.getElementById('openaiApiKey').value,
         openaiModelId: document.getElementById('openaiModelId').value,
         titleCount: parseInt(document.getElementById('titleCount').value) || 3,
+        jokeCount: parseInt(document.getElementById('jokeCount').value) || 5,
         showContext: document.getElementById('showContext').value,
+        jokeContext: document.getElementById('jokeContext').value,
         segments: getSegmentsFromDOM()
       };
       Storage.saveConfig(config);
@@ -256,6 +276,7 @@
     function removeSegment(idx) { const segs = getSegmentsFromDOM(); segs.splice(idx, 1); renderSegments(segs); }
     function resetSegments() { if (confirm('Reset segments to defaults?')) { renderSegments(Storage._defaultSegments()); Toast.info('Segments reset (save to apply)'); } }
     function resetShowContext() { if (confirm('Reset show context prompt to defaults?')) { document.getElementById('showContext').value = Storage._defaultShowContext(); Toast.info('Context reset (save to apply)'); } }
+    function resetJokeContext() { if (confirm('Reset joke context prompt to defaults?')) { document.getElementById('jokeContext').value = Storage._defaultJokeContext(); Toast.info('Joke context reset (save to apply)'); } }
 
     function exportData() {
       const data = Storage.exportAll();

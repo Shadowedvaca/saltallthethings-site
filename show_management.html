@@ -132,6 +132,7 @@
       <div class="nav-spacer"></div>
       <a href="index.html">Home</a>
       <a href="show_management.html" class="active">Show Management</a>
+      <a href="jokes.html">Joke Bank</a>
       <a href="config.html">Config</a>
       <button class="btn btn-ghost btn-sm" onclick="Auth.logout()" style="color: var(--text-muted);">🔒 Logout</button>
     </nav>
@@ -284,10 +285,39 @@
           <ul>${(seg.talkingPoints || []).map(tp => `<li>${tp}</li>`).join('')}</ul>
         </div>
       `).join('');
+
+      // Joke picker
+      const assignedJoke = Storage.getJokeForIdea(idea.id);
+      const unusedJokes = Storage.getUnusedJokes();
+      let jokeHtml = '';
+      if (assignedJoke) {
+        jokeHtml = `
+          <div style="padding: 10px 14px; background: var(--gold-glow); border: 1px solid var(--gold-dim); border-radius: var(--radius-md); display: flex; align-items: flex-start; gap: var(--space-sm);">
+            <span style="font-size: 0.85rem; flex: 1; line-height: 1.5;">${assignedJoke.text}</span>
+            <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); clearJokeFromIdea('${idea.id}', '${assignedJoke.id}')" title="Remove joke" style="flex-shrink:0;">✕</button>
+          </div>`;
+      } else if (unusedJokes.length > 0) {
+        jokeHtml = `
+          <div class="flex flex-col gap-xs" style="max-height: 200px; overflow-y: auto;">
+            ${unusedJokes.map(j => `
+              <div class="title-option" onclick="event.stopPropagation(); selectJokeForIdea('${idea.id}', '${j.id}')" style="cursor:pointer;">
+                <span style="font-size: 0.8rem; line-height: 1.4;">${j.text}</span>
+              </div>
+            `).join('')}
+          </div>
+          <p class="text-xs text-muted mt-sm">Or <a href="jokes.html" style="color: var(--ice);">add more jokes</a> in the Joke Bank</p>`;
+      } else {
+        jokeHtml = `<p class="text-sm text-muted">No unused jokes available. <a href="jokes.html" style="color: var(--ice);">Build your joke bank</a> first.</p>`;
+      }
+
       return `
         <div class="mb-md">
           <label class="text-xs text-muted" style="display:block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Title Options (click to select)</label>
           <div class="flex flex-col gap-xs">${titlesHtml}</div>
+        </div>
+        <div class="mb-md">
+          <label class="text-xs text-muted" style="display:block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Opening Salt Joke ${assignedJoke ? '✓' : '(click to assign)'}</label>
+          ${jokeHtml}
         </div>
         <div class="mb-md">
           <label class="text-xs text-muted" style="display:block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Summary</label>
@@ -318,6 +348,21 @@
       const ideas = Storage.getIdeas();
       const idea = ideas.find(i => i.id === ideaId);
       if (idea && idea.titles) { Storage.updateIdea(ideaId, { selectedTitle: idea.titles[titleIndex] }); renderIdeasList(); }
+    }
+
+    function selectJokeForIdea(ideaId, jokeId) {
+      // Free any previously assigned joke for this idea
+      Storage.freeJokesForIdea(ideaId);
+      // Mark new joke as used
+      Storage.markJokeUsed(jokeId, ideaId);
+      renderIdeasList();
+      Toast.success('Joke assigned to show!');
+    }
+
+    function clearJokeFromIdea(ideaId, jokeId) {
+      Storage.markJokeUnused(jokeId);
+      renderIdeasList();
+      Toast.info('Joke freed up.');
     }
 
     async function processIdea() {
@@ -374,6 +419,7 @@
       if (!confirm('Delete this idea?')) return;
       const slotId = Storage.getSlotForIdea(ideaId);
       if (slotId) Storage.unassignSlot(slotId);
+      Storage.freeJokesForIdea(ideaId);
       Storage.deleteIdea(ideaId);
       renderIdeasList();
       Toast.info('Idea deleted.');

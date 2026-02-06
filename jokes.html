@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Joke Bank — Salt All The Things</title>
+  <link rel="icon" type="image/jpeg" href="images/256x256.jpeg">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    #authGate {
+      position: fixed; inset: 0; z-index: 99999;
+      background: #08080f;
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'DM Sans', sans-serif;
+    }
+    #authGate .gate-box {
+      background: #13132a; border: 1px solid #2a2a4a; border-radius: 16px;
+      padding: 48px 40px; max-width: 380px; width: 90%; text-align: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    }
+    #authGate .gate-logo { width: 80px; border-radius: 8px; margin-bottom: 24px; filter: drop-shadow(0 0 20px rgba(200,168,78,0.2)); }
+    #authGate h2 { font-family: 'Cinzel', serif; color: #d4b85a; font-size: 1.2rem; margin-bottom: 8px; }
+    #authGate .gate-sub { color: #5a5750; font-size: 0.85rem; margin-bottom: 24px; }
+    #authGate input {
+      width: 100%; padding: 10px 16px; background: #0f0f20; border: 1px solid #2a2a4a;
+      border-radius: 8px; color: #e0ddd4; font-family: 'DM Sans', sans-serif;
+      font-size: 0.95rem; text-align: center; letter-spacing: 2px; margin-bottom: 16px;
+    }
+    #authGate input:focus { outline: none; border-color: #c8a84e; box-shadow: 0 0 0 3px rgba(200,168,78,0.2); }
+    #authGate input.error { border-color: #cc4444; animation: gateShake 300ms ease; }
+    #authGate button {
+      width: 100%; padding: 10px 16px;
+      background: linear-gradient(135deg, #c8a84e 0%, #8a7434 100%);
+      color: #0a0a0f; border: 1px solid #c8a84e; border-radius: 8px;
+      font-family: 'DM Sans', sans-serif; font-size: 0.9rem; font-weight: 600; cursor: pointer;
+    }
+    #authGate button:hover { background: linear-gradient(135deg, #e0c868 0%, #c8a84e 100%); }
+    #authGate .gate-error { color: #cc4444; font-size: 0.8rem; margin-top: 12px; min-height: 1.2em; }
+    @keyframes gateShake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
+
+    /* Jokes page styles */
+    .jokes-layout { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-lg); }
+    @media (max-width: 1024px) { .jokes-layout { grid-template-columns: 1fr; } }
+
+    .joke-item {
+      display: flex; align-items: flex-start; gap: var(--space-md);
+      padding: var(--space-md); background: var(--bg-card);
+      border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+      transition: border-color var(--transition-fast);
+    }
+    .joke-item:hover { border-color: var(--border-default); }
+    .joke-item.used { opacity: 0.6; }
+    .joke-item.retired { opacity: 0.4; }
+    .joke-text { flex: 1; font-size: 0.9rem; line-height: 1.5; }
+    .joke-meta { font-size: 0.7rem; color: var(--text-muted); margin-top: 4px; }
+    .joke-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+    .ai-suggestion {
+      padding: var(--space-sm) var(--space-md);
+      background: var(--bg-surface); border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md); cursor: pointer;
+      transition: all var(--transition-fast);
+      font-size: 0.9rem; line-height: 1.5;
+    }
+    .ai-suggestion:hover { border-color: var(--gold-dim); background: var(--gold-glow); }
+
+    .filter-tabs { display: flex; gap: var(--space-sm); margin-bottom: var(--space-lg); }
+    .filter-tab {
+      padding: var(--space-xs) var(--space-md); border-radius: 100px;
+      background: var(--bg-surface); border: 1px solid var(--border-subtle);
+      color: var(--text-secondary); font-size: 0.8rem; font-weight: 600;
+      cursor: pointer; transition: all var(--transition-fast);
+    }
+    .filter-tab:hover { border-color: var(--border-default); }
+    .filter-tab.active { background: var(--gold-glow); border-color: var(--gold-dim); color: var(--text-gold); }
+  </style>
+</head>
+<body>
+
+  <!-- Auth Gate -->
+  <div id="authGate">
+    <div class="gate-box">
+      <img src="images/256x256.jpeg" alt="SATT" class="gate-logo">
+      <h2>Crew Only</h2>
+      <p class="gate-sub">Enter the password to continue</p>
+      <input type="password" id="gatePassword" placeholder="••••••••" autocomplete="off">
+      <button id="gateSubmit">Enter</button>
+      <div class="gate-error" id="gateError"></div>
+    </div>
+  </div>
+
+  <!-- Protected Content -->
+  <div id="protectedContent" style="display: none;">
+    <nav class="site-nav">
+      <img src="images/256x256.jpeg" alt="SATT" class="nav-logo">
+      <span class="nav-title">Salt All The Things</span>
+      <div class="nav-spacer"></div>
+      <a href="index.html">Home</a>
+      <a href="show_management.html">Show Management</a>
+      <a href="jokes.html" class="active">Joke Bank</a>
+      <a href="config.html">Config</a>
+      <button class="btn btn-ghost btn-sm" onclick="Auth.logout()" style="color: var(--text-muted);">🔒 Logout</button>
+    </nav>
+
+    <div class="page-container">
+      <div class="page-header">
+        <h1>Joke Bank</h1>
+        <p class="subtitle">Salt jokes for show openers — build your stockpile, let AI help brainstorm, track what you've used</p>
+      </div>
+
+      <div class="jokes-layout">
+        <!-- Left: Generator -->
+        <div>
+          <div class="card card-elevated" style="position: relative;">
+            <h2 class="mb-md">Generate Jokes</h2>
+            <p class="text-sm text-secondary mb-md">Give AI a theme or leave blank for a general batch. It knows which jokes you've already used.</p>
+
+            <div class="form-group">
+              <label>Theme Hint <span class="label-hint">— optional</span></label>
+              <input type="text" id="jokeTheme" placeholder="e.g. housing, guild drama, patch day, tanking...">
+            </div>
+
+            <button class="btn btn-primary mb-lg" onclick="generateJokes()" id="genBtn">Generate Jokes</button>
+
+            <div id="jokeSuggestions" class="hidden">
+              <label class="text-xs text-muted" style="display:block; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">
+                AI Suggestions <span style="font-weight: 400; text-transform: none;">(click to add to bank)</span>
+              </label>
+              <div id="suggestionsList" class="flex flex-col gap-sm"></div>
+            </div>
+
+            <div id="genOverlay" class="processing-overlay hidden" style="position:absolute; inset:0; background:rgba(8,8,15,0.85); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; border-radius:12px; z-index:10;">
+              <div class="spinner-lg" style="width:40px;height:40px;border:3px solid var(--border-default);border-top-color:var(--gold);border-radius:50%;animation:spin 600ms linear infinite;"></div>
+              <div style="color:var(--text-gold);font-family:'Cinzel',serif;font-size:0.9rem;">Brainstorming salt...</div>
+            </div>
+          </div>
+
+          <!-- Manual Add -->
+          <div class="card card-elevated mt-lg">
+            <h2 class="mb-md">Add Manually</h2>
+            <div class="form-group">
+              <label>Joke Text</label>
+              <textarea id="manualJoke" rows="3" placeholder="Why did the WoW player bring a salt shaker to the raid?..."></textarea>
+            </div>
+            <button class="btn btn-secondary" onclick="addManualJoke()">Add to Bank</button>
+          </div>
+        </div>
+
+        <!-- Right: Joke Bank -->
+        <div>
+          <div class="flex justify-between items-center mb-md">
+            <h2>Your Jokes</h2>
+            <span class="text-sm text-muted" id="jokeCount"></span>
+          </div>
+
+          <div class="filter-tabs">
+            <button class="filter-tab active" data-filter="all" onclick="setFilter('all')">All</button>
+            <button class="filter-tab" data-filter="unused" onclick="setFilter('unused')">Unused</button>
+            <button class="filter-tab" data-filter="used" onclick="setFilter('used')">Used</button>
+            <button class="filter-tab" data-filter="retired" onclick="setFilter('retired')">Retired</button>
+          </div>
+
+          <div id="jokesList" class="flex flex-col gap-sm"></div>
+          <div id="noJokes" class="hidden" style="text-align: center; padding: 3rem 1rem;">
+            <p class="text-secondary">No jokes yet</p>
+            <p class="text-muted text-sm mt-sm">Generate some or add manually</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/auth.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/ai-service.js"></script>
+  <script src="js/toast.js"></script>
+  <script>
+    Auth.init();
+
+    let currentFilter = 'all';
+
+    function renderJokes() {
+      const jokes = Storage.getJokes();
+      const list = document.getElementById('jokesList');
+      const noJokes = document.getElementById('noJokes');
+      const countEl = document.getElementById('jokeCount');
+
+      const filtered = currentFilter === 'all' ? jokes : jokes.filter(j => j.status === currentFilter);
+      const unused = jokes.filter(j => j.status === 'unused').length;
+      const used = jokes.filter(j => j.status === 'used').length;
+      countEl.textContent = `${jokes.length} total · ${unused} unused · ${used} used`;
+
+      if (filtered.length === 0) {
+        list.innerHTML = '';
+        noJokes.classList.remove('hidden');
+        noJokes.querySelector('p').textContent = currentFilter === 'all' ? 'No jokes yet' : `No ${currentFilter} jokes`;
+        return;
+      }
+      noJokes.classList.add('hidden');
+
+      // Sort: unused first, then used, then retired. Within each, newest first
+      const sorted = [...filtered].sort((a, b) => {
+        const order = { unused: 0, used: 1, retired: 2 };
+        if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
+        return new Date(b.createdAt) - new Date(a.createdAt);
+      });
+
+      list.innerHTML = sorted.map(joke => {
+        const ideaTitle = joke.usedByIdeaId ? getIdeaTitle(joke.usedByIdeaId) : null;
+        return `
+          <div class="joke-item ${joke.status}">
+            <div style="flex:1;">
+              <span class="badge badge-${joke.status === 'unused' ? 'processed' : joke.status === 'used' ? 'scheduled' : 'draft'}" style="margin-bottom:4px;">${joke.status}</span>
+              <div class="joke-text">${joke.text}</div>
+              <div class="joke-meta">
+                Added ${formatDate(joke.createdAt)}${joke.source ? ` · ${joke.source}` : ''}${ideaTitle ? ` · Used in: ${ideaTitle}` : ''}
+              </div>
+            </div>
+            <div class="joke-actions">
+              ${joke.status === 'unused' ? `<button class="btn btn-ghost btn-sm" onclick="retireJoke('${joke.id}')" title="Retire">💤</button>` : ''}
+              ${joke.status === 'retired' ? `<button class="btn btn-ghost btn-sm" onclick="unretireJoke('${joke.id}')" title="Bring back">♻️</button>` : ''}
+              ${joke.status === 'used' ? `<button class="btn btn-ghost btn-sm" onclick="freeJoke('${joke.id}')" title="Mark unused">↩</button>` : ''}
+              <button class="btn btn-ghost btn-sm" onclick="deleteJokeItem('${joke.id}')" title="Delete">✕</button>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function getIdeaTitle(ideaId) {
+      const idea = Storage.getIdeas().find(i => i.id === ideaId);
+      return idea ? (idea.selectedTitle || idea.titles?.[0] || 'Untitled') : null;
+    }
+
+    function setFilter(f) {
+      currentFilter = f;
+      document.querySelectorAll('.filter-tab').forEach(t => t.classList.toggle('active', t.dataset.filter === f));
+      renderJokes();
+    }
+
+    async function generateJokes() {
+      const theme = document.getElementById('jokeTheme').value.trim();
+      document.getElementById('genOverlay').classList.remove('hidden');
+      document.getElementById('genBtn').disabled = true;
+
+      try {
+        const jokes = await AIService.generateJokes(theme || null);
+        const container = document.getElementById('suggestionsList');
+        container.innerHTML = jokes.map((j, i) => `
+          <div class="ai-suggestion" onclick="acceptSuggestion(this, ${i})" data-text="${j.replace(/"/g, '&quot;')}">
+            ${j}
+          </div>
+        `).join('');
+        document.getElementById('jokeSuggestions').classList.remove('hidden');
+        Toast.success(`${jokes.length} jokes generated!`);
+      } catch (err) {
+        Toast.error('Joke generation failed: ' + err.message);
+      } finally {
+        document.getElementById('genOverlay').classList.add('hidden');
+        document.getElementById('genBtn').disabled = false;
+      }
+    }
+
+    function acceptSuggestion(el, idx) {
+      const text = el.dataset.text;
+      Storage.addJoke({
+        id: Storage.generateId(),
+        text: text,
+        status: 'unused',
+        source: 'ai-generated',
+        usedByIdeaId: null,
+        createdAt: new Date().toISOString()
+      });
+      el.style.opacity = '0.3';
+      el.style.pointerEvents = 'none';
+      el.innerHTML += ' <span style="color: var(--status-scheduled); font-weight: 600;">✓ Added</span>';
+      renderJokes();
+      Toast.success('Joke added to bank!');
+    }
+
+    function addManualJoke() {
+      const text = document.getElementById('manualJoke').value.trim();
+      if (!text) { Toast.error('Write a joke first!'); return; }
+      Storage.addJoke({
+        id: Storage.generateId(),
+        text: text,
+        status: 'unused',
+        source: 'manual',
+        usedByIdeaId: null,
+        createdAt: new Date().toISOString()
+      });
+      document.getElementById('manualJoke').value = '';
+      renderJokes();
+      Toast.success('Joke added!');
+    }
+
+    function retireJoke(id) { Storage.updateJoke(id, { status: 'retired' }); renderJokes(); }
+    function unretireJoke(id) { Storage.updateJoke(id, { status: 'unused' }); renderJokes(); }
+    function freeJoke(id) { Storage.markJokeUnused(id); renderJokes(); }
+    function deleteJokeItem(id) { if (confirm('Delete this joke?')) { Storage.deleteJoke(id); renderJokes(); Toast.info('Joke deleted.'); } }
+
+    function formatDate(iso) {
+      if (!iso) return '';
+      return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+
+    renderJokes();
+  </script>
+</body>
+</html>
