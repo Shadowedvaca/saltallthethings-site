@@ -12,3 +12,5 @@ Thumbs.db
 
 # Sensitive data
 settings-backup/
+cloudflare/backup_push.bat
+cloudflare/backup_pull.bat
