@@ -14,3 +14,4 @@ Thumbs.db
 settings-backup/
 cloudflare/backup_push.bat
 cloudflare/backup_pull.bat
+cloudflare/SITE_DATA_BACKUP_*
