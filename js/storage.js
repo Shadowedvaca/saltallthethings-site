@@ -1,33 +1,123 @@
 /* ============================================
-   Storage Module
-   localStorage wrapper for all persistent data
+   Storage Module (v2 — API-backed)
+   
+   In-memory cache + Cloudflare Worker API.
+   All reads are synchronous from cache.
+   All writes update cache immediately, then
+   push to API in the background.
    ============================================ */
 
 const Storage = {
-  _prefix: 'satt_',
+  _apiUrl: '__API_URL__',   // replaced at deploy time, or set manually
+  _cache: {},               // in-memory data store
+  _ready: false,
+  _syncing: {},             // track in-flight saves per key
 
-  get(key) {
-    try {
-      const raw = localStorage.getItem(this._prefix + key);
-      return raw ? JSON.parse(raw) : null;
-    } catch (e) {
-      console.error('Storage.get error:', key, e);
-      return null;
+  // ---- Initialization ----
+  async init() {
+    const password = this._getPassword();
+    if (!password) throw new Error('Not authenticated');
+
+    // If API URL not configured, fall back to localStorage
+    if (this._apiUrl === '__' + 'API_URL' + '__' || !this._apiUrl) {
+      console.warn('Storage: No API URL configured, using localStorage fallback.');
+      this._useLocalFallback = true;
+      this._loadFromLocalStorage();
+      this._ready = true;
+      return;
     }
+
+    try {
+      const resp = await fetch(this._apiUrl + '/export', {
+        headers: { 'X-Auth': password }
+      });
+      if (resp.status === 401) throw new Error('Invalid password');
+      if (!resp.ok) throw new Error('API error: ' + resp.status);
+      const data = await resp.json();
+
+      // Populate cache
+      this._cache.config = data.config || null;
+      this._cache.ideas = data.ideas || [];
+      this._cache.jokes = data.jokes || [];
+      this._cache.showSlots = data.showSlots || [];
+      this._cache.assignments = data.assignments || {};
+      this._ready = true;
+
+    } catch (err) {
+      console.error('Storage.init failed:', err);
+      throw err;
+    }
+  },
+
+  _getPassword() {
+    try {
+      const raw = sessionStorage.getItem('satt_auth_token');
+      if (!raw) return null;
+      const session = JSON.parse(raw);
+      return session.password || null;
+    } catch { return null; }
+  },
+
+  // ---- Core get/set (synchronous from cache) ----
+  get(key) {
+    if (this._useLocalFallback) {
+      try {
+        const raw = localStorage.getItem('satt_' + key);
+        return raw ? JSON.parse(raw) : null;
+      } catch { return null; }
+    }
+    return this._cache[key] !== undefined ? this._cache[key] : null;
   },
 
   set(key, value) {
-    try {
-      localStorage.setItem(this._prefix + key, JSON.stringify(value));
+    if (this._useLocalFallback) {
+      try { localStorage.setItem('satt_' + key, JSON.stringify(value)); } catch(e) { console.error(e); }
       return true;
-    } catch (e) {
-      console.error('Storage.set error:', key, e);
-      return false;
     }
+    this._cache[key] = value;
+    this._pushToApi(key, value);
+    return true;
   },
 
-  remove(key) {
-    localStorage.removeItem(this._prefix + key);
+  _pushToApi(key, value) {
+    const password = this._getPassword();
+    if (!password || !this._apiUrl) return;
+
+    // Debounce: if already saving this key, mark as dirty
+    if (this._syncing[key]) {
+      this._syncing[key].dirty = true;
+      this._syncing[key].value = value;
+      return;
+    }
+
+    this._syncing[key] = { dirty: false, value: value };
+
+    fetch(this._apiUrl + '/data/' + key, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Auth': password },
+      body: JSON.stringify(value)
+    })
+    .then(resp => {
+      if (!resp.ok) console.error('API save failed for', key, resp.status);
+    })
+    .catch(err => console.error('API save error for', key, err))
+    .finally(() => {
+      const pending = this._syncing[key];
+      delete this._syncing[key];
+      // If more writes came in while we were saving, save again
+      if (pending && pending.dirty) {
+        this._pushToApi(key, pending.value);
+      }
+    });
+  },
+
+  _loadFromLocalStorage() {
+    ['config', 'ideas', 'jokes', 'showSlots', 'assignments'].forEach(key => {
+      try {
+        const raw = localStorage.getItem('satt_' + key);
+        this._cache[key] = raw ? JSON.parse(raw) : null;
+      } catch { this._cache[key] = null; }
+    });
   },
 
   // ---- Config ----
@@ -63,36 +153,11 @@ const Storage = {
   },
 
   _defaultJokeContext() {
-    return `You are a comedy writer for "Salt All The Things," a World of Warcraft podcast.
-
-The show opens with a short, punchy salt-themed joke or one-liner. These are quick openers — not long bits. Think dad jokes, puns, and one-liners that play on the word "salt," saltiness (frustration/complaining), NaCl, seasoning, the Dead Sea, etc. They can also riff on WoW culture, gaming, or nerd life — as long as they tie back to salt somehow.
-
-TONE: Groan-worthy, fun, occasionally clever. The kind of joke that makes you smile even as you shake your head. Not crude or offensive — just cheesy, playful, salty humor.
-
-FORMAT: Each joke should be 1-2 sentences max. Setup + punchline or just a one-liner.
-
-When given a theme/topic hint, try to work that into some of the jokes while keeping others as general salt jokes for variety.`;
+    return 'You are a comedy writer for "Salt All The Things," a World of Warcraft podcast.\n\nThe show opens with a short, punchy salt-themed joke or one-liner. These are quick openers — not long bits. Think dad jokes, puns, and one-liners that play on the word "salt," saltiness (frustration/complaining), NaCl, seasoning, the Dead Sea, etc. They can also riff on WoW culture, gaming, or nerd life — as long as they tie back to salt somehow.\n\nTONE: Groan-worthy, fun, occasionally clever. The kind of joke that makes you smile even as you shake your head. Not crude or offensive — just cheesy, playful, salty humor.\n\nFORMAT: Each joke should be 1-2 sentences max. Setup + punchline or just a one-liner.\n\nWhen given a theme/topic hint, try to work that into some of the jokes while keeping others as general salt jokes for variety.';
   },
 
   _defaultShowContext() {
-    return `You are helping plan episodes for "Salt All The Things," a weekly World of Warcraft podcast.
-
-ABOUT THE SHOW:
-- Two hosts: Rocket (primary host, content writer) and Trog (co-host, technical/backend)
-- Tagline: "Two friends, two decades of WoW, and zero filter — the good, the bad, and the salty."
-- Tone: Conversational, authentic, unfiltered. Two friends talking WoW — not a corporate production.
-- Format: ~60 minute weekly episodes
-- The show leans into honest opinions, humor, and the "salt" — frustrations, hot takes, and real talk about the game.
-
-AUDIENCE:
-- WoW players (current and returning), MMO enthusiasts, gaming community members who appreciate unfiltered discussion.
-
-STYLE NOTES:
-- Keep conversation points natural — these are talking prompts, not scripts
-- Each conversation point should spark discussion between two friends, not be a lecture topic
-- Lean into the "salty" brand — don't shy away from controversial takes
-- Include moments for humor, banter, and tangents
-- Mix serious analysis with casual, fun discussion`;
+    return 'You are helping plan episodes for "Salt All The Things," a weekly World of Warcraft podcast.\n\nABOUT THE SHOW:\n- Two hosts: Rocket (primary host, content writer) and Trog (co-host, technical/backend)\n- Tagline: "Two friends, two decades of WoW, and zero filter — the good, the bad, and the salty."\n- Tone: Conversational, authentic, unfiltered. Two friends talking WoW — not a corporate production.\n- Format: ~60 minute weekly episodes\n- The show leans into honest opinions, humor, and the "salt" — frustrations, hot takes, and real talk about the game.\n\nAUDIENCE:\n- WoW players (current and returning), MMO enthusiasts, gaming community members who appreciate unfiltered discussion.\n\nSTYLE NOTES:\n- Keep conversation points natural — these are talking prompts, not scripts\n- Each conversation point should spark discussion between two friends, not be a lecture topic\n- Lean into the "salty" brand — don\'t shy away from controversial takes\n- Include moments for humor, banter, and tangents\n- Mix serious analysis with casual, fun discussion';
   },
 
   // ---- Jokes ----
@@ -105,32 +170,32 @@ STYLE NOTES:
   },
 
   addJoke(joke) {
-    const jokes = this.getJokes();
+    var jokes = this.getJokes();
     jokes.push(joke);
     return this.saveJokes(jokes);
   },
 
   updateJoke(jokeId, updates) {
-    const jokes = this.getJokes();
-    const idx = jokes.findIndex(j => j.id === jokeId);
+    var jokes = this.getJokes();
+    var idx = jokes.findIndex(function(j) { return j.id === jokeId; });
     if (idx !== -1) {
-      jokes[idx] = { ...jokes[idx], ...updates };
+      Object.assign(jokes[idx], updates);
       return this.saveJokes(jokes);
     }
     return false;
   },
 
   deleteJoke(jokeId) {
-    const jokes = this.getJokes().filter(j => j.id !== jokeId);
+    var jokes = this.getJokes().filter(function(j) { return j.id !== jokeId; });
     return this.saveJokes(jokes);
   },
 
   getUnusedJokes() {
-    return this.getJokes().filter(j => j.status === 'unused');
+    return this.getJokes().filter(function(j) { return j.status === 'unused'; });
   },
 
   getUsedJokes() {
-    return this.getJokes().filter(j => j.status === 'used');
+    return this.getJokes().filter(function(j) { return j.status === 'used'; });
   },
 
   markJokeUsed(jokeId, ideaId) {
@@ -142,8 +207,8 @@ STYLE NOTES:
   },
 
   freeJokesForIdea(ideaId) {
-    const jokes = this.getJokes();
-    jokes.forEach(j => {
+    var jokes = this.getJokes();
+    jokes.forEach(function(j) {
       if (j.usedByIdeaId === ideaId) {
         j.status = 'unused';
         j.usedByIdeaId = null;
@@ -153,7 +218,7 @@ STYLE NOTES:
   },
 
   getJokeForIdea(ideaId) {
-    return this.getJokes().find(j => j.usedByIdeaId === ideaId) || null;
+    return this.getJokes().find(function(j) { return j.usedByIdeaId === ideaId; }) || null;
   },
 
   // ---- Show Ideas ----
@@ -166,23 +231,23 @@ STYLE NOTES:
   },
 
   addIdea(idea) {
-    const ideas = this.getIdeas();
+    var ideas = this.getIdeas();
     ideas.push(idea);
     return this.saveIdeas(ideas);
   },
 
   updateIdea(ideaId, updates) {
-    const ideas = this.getIdeas();
-    const idx = ideas.findIndex(i => i.id === ideaId);
+    var ideas = this.getIdeas();
+    var idx = ideas.findIndex(function(i) { return i.id === ideaId; });
     if (idx !== -1) {
-      ideas[idx] = { ...ideas[idx], ...updates };
+      Object.assign(ideas[idx], updates);
       return this.saveIdeas(ideas);
     }
     return false;
   },
 
   deleteIdea(ideaId) {
-    const ideas = this.getIdeas().filter(i => i.id !== ideaId);
+    var ideas = this.getIdeas().filter(function(i) { return i.id !== ideaId; });
     return this.saveIdeas(ideas);
   },
 
@@ -195,7 +260,7 @@ STYLE NOTES:
     return this.set('showSlots', slots);
   },
 
-  // ---- Assignments (ideaId -> slotId mapping) ----
+  // ---- Assignments ----
   getAssignments() {
     return this.get('assignments') || {};
   },
@@ -205,42 +270,33 @@ STYLE NOTES:
   },
 
   assignIdeaToSlot(ideaId, slotId) {
-    const assignments = this.getAssignments();
-    // Remove any existing assignment for this idea
-    for (const [sid, iid] of Object.entries(assignments)) {
-      if (iid === ideaId) delete assignments[sid];
-    }
-    // Remove any existing assignment for this slot
-    if (assignments[slotId]) {
-      // Unassign the old idea
+    var assignments = this.getAssignments();
+    for (var sid in assignments) {
+      if (assignments[sid] === ideaId) delete assignments[sid];
     }
     assignments[slotId] = ideaId;
     this.saveAssignments(assignments);
-
-    // Update idea status
     this.updateIdea(ideaId, { status: 'scheduled' });
   },
 
   unassignSlot(slotId) {
-    const assignments = this.getAssignments();
-    const ideaId = assignments[slotId];
+    var assignments = this.getAssignments();
+    var ideaId = assignments[slotId];
     if (ideaId) {
       delete assignments[slotId];
       this.saveAssignments(assignments);
-      // Revert idea status to processed
       this.updateIdea(ideaId, { status: 'processed' });
     }
   },
 
   getIdeaForSlot(slotId) {
-    const assignments = this.getAssignments();
-    return assignments[slotId] || null;
+    return this.getAssignments()[slotId] || null;
   },
 
   getSlotForIdea(ideaId) {
-    const assignments = this.getAssignments();
-    for (const [slotId, iid] of Object.entries(assignments)) {
-      if (iid === ideaId) return slotId;
+    var assignments = this.getAssignments();
+    for (var slotId in assignments) {
+      if (assignments[slotId] === ideaId) return slotId;
     }
     return null;
   },
@@ -267,5 +323,30 @@ STYLE NOTES:
     if (data.jokes) this.saveJokes(data.jokes);
     if (data.showSlots) this.saveShowSlots(data.showSlots);
     if (data.assignments) this.saveAssignments(data.assignments);
+  },
+
+  // Migrate localStorage data to API (one-time)
+  async migrateFromLocalStorage() {
+    var data = {};
+    ['config', 'ideas', 'jokes', 'showSlots', 'assignments'].forEach(function(key) {
+      try {
+        var raw = localStorage.getItem('satt_' + key);
+        if (raw) data[key] = JSON.parse(raw);
+      } catch(e) {}
+    });
+
+    if (Object.keys(data).length === 0) return false;
+
+    var password = this._getPassword();
+    var resp = await fetch(this._apiUrl + '/import', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Auth': password },
+      body: JSON.stringify(data)
+    });
+    if (!resp.ok) throw new Error('Migration failed: ' + resp.status);
+
+    // Reload cache from API
+    await this.init();
+    return true;
   }
 };

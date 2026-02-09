@@ -140,6 +140,12 @@
     </div>
   </div>
 
+  <!-- ===== LOADING OVERLAY ===== -->
+  <div id="loadingOverlay" style="display: none; position: fixed; inset: 0; z-index: 99998; background: #08080f; align-items: center; justify-content: center; flex-direction: column; gap: 16px;">
+    <svg class="spinner-lg" viewBox="0 0 50 50" style="width:48px;height:48px;"><circle cx="25" cy="25" r="20" fill="none" stroke="#c8a84e" stroke-width="3" stroke-dasharray="80 40" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" values="0 25 25;360 25 25" dur="0.8s" repeatCount="indefinite"/></circle></svg>
+    <span style="color: #c8a84e; font-family: 'Cinzel', serif; font-size: 0.9rem;">Loading show data...</span>
+  </div>
+
   <!-- ===== PROTECTED CONTENT (hidden by default) ===== -->
   <div id="protectedContent" style="display: none;">
 
@@ -787,10 +793,12 @@
     function formatDateStr(year, month, day) { var d = new Date(year, month, day); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
 
     // ============================================
-    // Init
+    // Init — called by Auth after Storage.init()
     // ============================================
-    ShowEngine.ensureSlots();
-    renderIdeasList();
+    function onStorageReady() {
+      ShowEngine.ensureSlots();
+      renderIdeasList();
+    }
   </script>
 </body>
 </html>

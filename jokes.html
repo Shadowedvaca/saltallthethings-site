@@ -89,6 +89,12 @@
     </div>
   </div>
 
+  <!-- Loading Overlay -->
+  <div id="loadingOverlay" style="display: none; position: fixed; inset: 0; z-index: 99998; background: #08080f; align-items: center; justify-content: center; flex-direction: column; gap: 16px;">
+    <svg class="spinner-lg" viewBox="0 0 50 50" style="width:48px;height:48px;"><circle cx="25" cy="25" r="20" fill="none" stroke="#c8a84e" stroke-width="3" stroke-dasharray="80 40" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" values="0 25 25;360 25 25" dur="0.8s" repeatCount="indefinite"/></circle></svg>
+    <span style="color: #c8a84e; font-family: 'Cinzel', serif; font-size: 0.9rem;">Loading jokes...</span>
+  </div>
+
   <!-- Protected Content -->
   <div id="protectedContent" style="display: none;">
     <nav class="site-nav">
@@ -179,50 +185,53 @@
 
     let currentFilter = 'all';
 
-    function renderJokes() {
-      const jokes = Storage.getJokes();
-      const list = document.getElementById('jokesList');
-      const noJokes = document.getElementById('noJokes');
-      const countEl = document.getElementById('jokeCount');
+    function esc(str) {
+      if (str == null) return '';
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+    }
 
-      const filtered = currentFilter === 'all' ? jokes : jokes.filter(j => j.status === currentFilter);
-      const unused = jokes.filter(j => j.status === 'unused').length;
-      const used = jokes.filter(j => j.status === 'used').length;
-      countEl.textContent = `${jokes.length} total · ${unused} unused · ${used} used`;
+    function renderJokes() {
+      var jokes = Storage.getJokes();
+      var list = document.getElementById('jokesList');
+      var noJokes = document.getElementById('noJokes');
+      var countEl = document.getElementById('jokeCount');
+
+      var filtered = currentFilter === 'all' ? jokes : jokes.filter(function(j) { return j.status === currentFilter; });
+      var unused = jokes.filter(function(j) { return j.status === 'unused'; }).length;
+      var used = jokes.filter(function(j) { return j.status === 'used'; }).length;
+      countEl.textContent = jokes.length + ' total · ' + unused + ' unused · ' + used + ' used';
 
       if (filtered.length === 0) {
         list.innerHTML = '';
         noJokes.classList.remove('hidden');
-        noJokes.querySelector('p').textContent = currentFilter === 'all' ? 'No jokes yet' : `No ${currentFilter} jokes`;
+        noJokes.querySelector('p').textContent = currentFilter === 'all' ? 'No jokes yet' : 'No ' + currentFilter + ' jokes';
         return;
       }
       noJokes.classList.add('hidden');
 
-      // Sort: unused first, then used, then retired. Within each, newest first
-      const sorted = [...filtered].sort((a, b) => {
-        const order = { unused: 0, used: 1, retired: 2 };
+      var sorted = [...filtered].sort(function(a, b) {
+        var order = { unused: 0, used: 1, retired: 2 };
         if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
         return new Date(b.createdAt) - new Date(a.createdAt);
       });
 
-      list.innerHTML = sorted.map(joke => {
-        const ideaTitle = joke.usedByIdeaId ? getIdeaTitle(joke.usedByIdeaId) : null;
-        return `
-          <div class="joke-item ${joke.status}">
-            <div style="flex:1;">
-              <span class="badge badge-${joke.status === 'unused' ? 'processed' : joke.status === 'used' ? 'scheduled' : 'draft'}" style="margin-bottom:4px;">${joke.status}</span>
-              <div class="joke-text">${joke.text}</div>
-              <div class="joke-meta">
-                Added ${formatDate(joke.createdAt)}${joke.source ? ` · ${joke.source}` : ''}${ideaTitle ? ` · Used in: ${ideaTitle}` : ''}
-              </div>
-            </div>
-            <div class="joke-actions">
-              ${joke.status === 'unused' ? `<button class="btn btn-ghost btn-sm" onclick="retireJoke('${joke.id}')" title="Retire">💤</button>` : ''}
-              ${joke.status === 'retired' ? `<button class="btn btn-ghost btn-sm" onclick="unretireJoke('${joke.id}')" title="Bring back">♻️</button>` : ''}
-              ${joke.status === 'used' ? `<button class="btn btn-ghost btn-sm" onclick="freeJoke('${joke.id}')" title="Mark unused">↩</button>` : ''}
-              <button class="btn btn-ghost btn-sm" onclick="deleteJokeItem('${joke.id}')" title="Delete">✕</button>
-            </div>
-          </div>`;
+      list.innerHTML = sorted.map(function(joke) {
+        var ideaTitle = joke.usedByIdeaId ? getIdeaTitle(joke.usedByIdeaId) : null;
+        var statusBadge = joke.status === 'unused' ? 'processed' : joke.status === 'used' ? 'scheduled' : 'draft';
+        var html = '<div class="joke-item ' + joke.status + '">'
+          + '<div style="flex:1;">'
+          + '<span class="badge badge-' + statusBadge + '" style="margin-bottom:4px;">' + joke.status + '</span>'
+          + '<div class="joke-text">' + esc(joke.text) + '</div>'
+          + '<div class="joke-meta">Added ' + formatDate(joke.createdAt)
+          + (joke.source ? ' · ' + esc(joke.source) : '')
+          + (ideaTitle ? ' · Used in: ' + esc(ideaTitle) : '')
+          + '</div></div><div class="joke-actions">';
+        if (joke.status === 'unused') html += '<button class="btn btn-ghost btn-sm" onclick="retireJoke(\'' + joke.id + '\')" title="Retire">💤</button>';
+        if (joke.status === 'retired') html += '<button class="btn btn-ghost btn-sm" onclick="unretireJoke(\'' + joke.id + '\')" title="Bring back">♻️</button>';
+        if (joke.status === 'used') html += '<button class="btn btn-ghost btn-sm" onclick="freeJoke(\'' + joke.id + '\')" title="Mark unused">↩</button>';
+        html += '<button class="btn btn-ghost btn-sm" onclick="deleteJokeItem(\'' + joke.id + '\')" title="Delete">✕</button>'
+          + '</div></div>';
+        return html;
       }).join('');
     }
 
@@ -238,20 +247,18 @@
     }
 
     async function generateJokes() {
-      const theme = document.getElementById('jokeTheme').value.trim();
+      var theme = document.getElementById('jokeTheme').value.trim();
       document.getElementById('genOverlay').classList.remove('hidden');
       document.getElementById('genBtn').disabled = true;
 
       try {
-        const jokes = await AIService.generateJokes(theme || null);
-        const container = document.getElementById('suggestionsList');
-        container.innerHTML = jokes.map((j, i) => `
-          <div class="ai-suggestion" onclick="acceptSuggestion(this, ${i})" data-text="${j.replace(/"/g, '&quot;')}">
-            ${j}
-          </div>
-        `).join('');
+        var jokes = await AIService.generateJokes(theme || null);
+        var container = document.getElementById('suggestionsList');
+        container.innerHTML = jokes.map(function(j, i) {
+          return '<div class="ai-suggestion" onclick="acceptSuggestion(this, ' + i + ')" data-text="' + esc(j) + '">' + esc(j) + '</div>';
+        }).join('');
         document.getElementById('jokeSuggestions').classList.remove('hidden');
-        Toast.success(`${jokes.length} jokes generated!`);
+        Toast.success(jokes.length + ' jokes generated!');
       } catch (err) {
         Toast.error('Joke generation failed: ' + err.message);
       } finally {
@@ -303,7 +310,8 @@
       return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     }
 
-    renderJokes();
+    // Called by Auth after Storage.init() completes
+    function onStorageReady() { renderJokes(); }
   </script>
 </body>
 </html>

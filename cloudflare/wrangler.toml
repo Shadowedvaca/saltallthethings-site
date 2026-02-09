@@ -1,0 +1,9 @@
+name = "satt-api"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# KV namespace binding — after creating the namespace, paste your IDs here
+[[kv_namespaces]]
+binding = "SATT_DATA"
+id = "4e1c6ff61fc54387bb697f197058e7c4"
+preview_id = "ac0f19cab31f4c9287d16ef6424c18da"
