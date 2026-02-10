@@ -377,6 +377,51 @@
     }
 
     /* ============================================
+       SECTION HEADER WITH MASCOT
+       ============================================ */
+    .section-header-with-mascot {
+      display: flex;
+      align-items: flex-start;
+      gap: 2rem;
+    }
+
+    .section-header-text {
+      flex: 1;
+    }
+
+    .section-mascot {
+      flex-shrink: 0;
+      width: 120px;
+      height: 120px;
+      border-radius: 12px;
+      filter: drop-shadow(0 0 20px rgba(74,158,255,0.15));
+      opacity: 0.9;
+      transition: all 0.4s ease;
+    }
+
+    .section-mascot:hover {
+      opacity: 1;
+      filter: drop-shadow(0 0 30px rgba(74,158,255,0.25));
+      transform: scale(1.05) rotate(-2deg);
+    }
+
+    @media (max-width: 768px) {
+      .section-header-with-mascot {
+        flex-direction: column-reverse;
+        align-items: center;
+        text-align: center;
+      }
+      .section-mascot {
+        width: 100px;
+        height: 100px;
+      }
+      .section-header-text .section-desc {
+        margin-left: auto;
+        margin-right: auto;
+      }
+    }
+
+    /* ============================================
        EPISODES
        ============================================ */
     .episodes-section {
@@ -662,9 +707,16 @@
     }
 
     .support-card .support-icon {
-      font-size: 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       margin-bottom: 1rem;
-      display: block;
+      height: 48px;
+    }
+
+    .support-card .support-icon svg {
+      width: 40px;
+      height: 40px;
     }
 
     .support-card h3 {
@@ -916,9 +968,14 @@
   <!-- ===== EPISODES ===== -->
   <section class="section episodes-section" id="episodes">
     <div class="section-inner reveal">
-      <p class="section-label">Show Archive</p>
-      <h2 class="section-title">Episodes</h2>
-      <p class="section-desc">Every episode of Salt All The Things, from the very first sprinkle.</p>
+      <div class="section-header-with-mascot">
+        <div class="section-header-text">
+          <p class="section-label">Show Archive</p>
+          <h2 class="section-title">Episodes</h2>
+          <p class="section-desc">Every episode of Salt All The Things, from the very first sprinkle.</p>
+        </div>
+        <img src="images/episodes.png" alt="Salt Listener" class="section-mascot">
+      </div>
       <div class="episodes-grid" id="episodesGrid">
         <div class="episodes-empty">
           <p>No episodes yet — we're cooking something salty.</p>
@@ -933,9 +990,14 @@
   <!-- ===== YOUTUBE ===== -->
   <section class="section youtube-section" id="youtube">
     <div class="section-inner reveal">
-      <p class="section-label">Watch</p>
-      <h2 class="section-title">On YouTube</h2>
-      <p class="section-desc">Full episodes, clips, and bonus content — subscribe so you never miss a grain of salt.</p>
+      <div class="section-header-with-mascot">
+        <div class="section-header-text">
+          <p class="section-label">Watch</p>
+          <h2 class="section-title">On YouTube</h2>
+          <p class="section-desc">Full episodes, clips, and bonus content — subscribe so you never miss a grain of salt.</p>
+        </div>
+        <img src="images/YouTube.png" alt="Salt Director" class="section-mascot">
+      </div>
       <div id="youtubeContent">
         <div class="youtube-grid" id="youtubeGrid">
           <!-- Populated by JS when videos exist, or shows placeholder -->
@@ -950,11 +1012,17 @@
   <!-- ===== COMMUNITY ===== -->
   <section class="section community-section" id="community">
     <div class="section-inner reveal">
+      <div class="section-header-with-mascot">
+        <div class="section-header-text">
+          <p class="section-label">Community</p>
+          <h2 class="section-title">Join the Salt Mines</h2>
+          <p class="section-desc">Our Discord is where the real talk happens between episodes.</p>
+        </div>
+        <img src="images/community.png" alt="Salty Gossip" class="section-mascot">
+      </div>
       <div class="community-card">
         <div class="community-text">
-          <p class="section-label">Community</p>
-          <h3>Join the Salt Mines</h3>
-          <p>Our Discord is where the real talk happens between episodes. Jump in, share your saltiest WoW takes, and hang with fellow listeners.</p>
+          <p>Jump in, share your saltiest WoW takes, and hang with fellow listeners.</p>
           <ul class="community-features">
             <li>Episode discussion and show feedback</li>
             <li>WoW chat, M+ groups, and guild talk</li>
@@ -978,9 +1046,14 @@
   <!-- ===== SUPPORT ===== -->
   <section class="section support-section" id="support">
     <div class="section-inner reveal">
-      <p class="section-label">Support</p>
-      <h2 class="section-title">Keep the Salt Flowing</h2>
-      <p class="section-desc">Love the show? Here's how you can support us — every bit helps keep the episodes coming.</p>
+      <div class="section-header-with-mascot">
+        <div class="section-header-text">
+          <p class="section-label">Support</p>
+          <h2 class="section-title">Keep the Salt Flowing</h2>
+          <p class="section-desc">Love the show? Here's how you can support us — every bit helps keep the episodes coming.</p>
+        </div>
+        <img src="images/support.png" alt="Salt Supporter" class="section-mascot">
+      </div>
       <div class="support-cards" id="supportCards">
         <!-- Populated by JS based on config -->
       </div>
@@ -1142,16 +1215,37 @@
     })();
 
     // ============================================
-    // Support section
+    // Support section (platform logos)
     // ============================================
     (function() {
       var container = document.getElementById('supportCards');
       var cards = [];
 
+      // --- Platform logo SVGs (brand colors) ---
+
+      // Patreon logo mark (official coral #FF424D)
+      var patreonLogo = '<svg viewBox="0 0 436 476" fill="none" xmlns="http://www.w3.org/2000/svg">'
+        + '<circle cx="279" cy="157" r="157" fill="#FF424D"/>'
+        + '<rect y="0" width="60" height="476" fill="#FF424D"/>'
+        + '</svg>';
+
+      // Buy Me a Coffee logo mark (official yellow #FFDD00)
+      var bmacLogo = '<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">'
+        + '<path d="M38 10H36V8C36 6.9 35.1 6 34 6H8C6.9 6 6 6.9 6 8V30C6 35.5 10.5 40 16 40H24C29.5 40 34 35.5 34 30V28H38C40.2 28 42 26.2 42 24V14C42 11.8 40.2 10 38 10ZM30 30C30 33.3 27.3 36 24 36H16C12.7 36 10 33.3 10 30V10H30V30ZM38 24H34V14H38V24Z" fill="#FFDD00"/>'
+        + '</svg>';
+
+      // YouTube play button (official red #FF0000)
+      var youtubeLogo = '<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">'
+        + '<path d="M43.2 13.6C42.7 11.8 41.3 10.4 39.5 9.9C36.2 9 24 9 24 9C24 9 11.8 9 8.5 9.9C6.7 10.4 5.3 11.8 4.8 13.6C3.9 16.9 3.9 24 3.9 24C3.9 24 3.9 31.1 4.8 34.4C5.3 36.2 6.7 37.6 8.5 38.1C11.8 39 24 39 24 39C24 39 36.2 39 39.5 38.1C41.3 37.6 42.7 36.2 43.2 34.4C44.1 31.1 44.1 24 44.1 24C44.1 24 44.1 16.9 43.2 13.6Z" fill="#FF0000"/>'
+        + '<path d="M19.5 30.7L31.5 24L19.5 17.3V30.7Z" fill="white"/>'
+        + '</svg>';
+
+      // --- Build cards ---
+
       // Patreon
       var hasPatreon = SiteConfig.patreon && SiteConfig.patreon.length > 0;
       cards.push({
-        icon: '🏰',
+        icon: patreonLogo,
         title: 'Patreon',
         desc: 'Get bonus content, early access, and exclusive salt — join the inner circle.',
         link: hasPatreon ? SiteConfig.patreon : '#',
@@ -1162,7 +1256,7 @@
       // Buy Me a Coffee
       var hasBmac = SiteConfig.buyMeACoffee && SiteConfig.buyMeACoffee.length > 0;
       cards.push({
-        icon: '☕',
+        icon: bmacLogo,
         title: 'Buy Us a Coffee',
         desc: 'A one-time tip to fuel the next recording session. Every cup counts.',
         link: hasBmac ? SiteConfig.buyMeACoffee : '#',
@@ -1170,10 +1264,10 @@
         disabled: !hasBmac
       });
 
-      // YouTube (always available if configured)
+      // YouTube
       var hasYt = SiteConfig.platforms.youtube && SiteConfig.platforms.youtube.length > 0;
       cards.push({
-        icon: '▶',
+        icon: youtubeLogo,
         title: 'Subscribe & Share',
         desc: 'Free — subscribe on your favorite platform, leave a review, tell a friend.',
         link: hasYt ? SiteConfig.platforms.youtube : '#',
