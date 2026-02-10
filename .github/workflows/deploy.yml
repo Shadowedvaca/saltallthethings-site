@@ -49,7 +49,7 @@ jobs:
             echo "✅ Hash injected into js/auth.js"
           fi
 
-      - name: Inject API URL into storage.js
+      - name: Inject API URL into storage.js and site-config.js
         env:
           SATT_API_URL: ${{ secrets.SATT_API_URL }}
         run: |
@@ -62,10 +62,20 @@ jobs:
           sed -i "s|__API_URL__|${SATT_API_URL}|g" js/storage.js
 
           if grep -q "__API_URL__" js/storage.js; then
-            echo "❌ ERROR: API URL placeholder was not replaced!"
+            echo "❌ ERROR: API URL placeholder was not replaced in storage.js!"
             exit 1
           else
             echo "✅ API URL injected into js/storage.js"
+          fi
+
+          # Replace placeholder in site-config.js
+          sed -i "s|__API_URL__|${SATT_API_URL}|g" js/site-config.js
+
+          if grep -q "__API_URL__" js/site-config.js; then
+            echo "❌ ERROR: API URL placeholder was not replaced in site-config.js!"
+            exit 1
+          else
+            echo "✅ API URL injected into js/site-config.js"
           fi
 
       - name: Setup Pages

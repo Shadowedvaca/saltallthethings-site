@@ -3,12 +3,14 @@
  * Cloudflare Worker + KV
  *
  * Routes:
- *   GET  /data/:key      — read a data key (ideas, jokes, config, etc.)
- *   PUT  /data/:key      — write a data key
- *   GET  /export         — dump all data as one JSON blob (for svtools)
- *   GET  /health         — public health check
+ *   GET  /data/:key         — read a data key (ideas, jokes, config, etc.)
+ *   PUT  /data/:key         — write a data key
+ *   GET  /export            — dump all data as one JSON blob (for svtools)
+ *   PUT  /import            — bulk import
+ *   GET  /public/episodes   — public: released episodes (no auth)
+ *   GET  /health            — public health check
  *
- * Auth: All routes except /health require X-Auth header matching ADMIN_PASSWORD secret.
+ * Auth: All routes except /health and /public/* require X-Auth header.
  */
 
 const DATA_KEYS = ['config', 'ideas', 'jokes', 'showSlots', 'assignments'];
@@ -26,12 +28,20 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // Public health check
+    // ---- Public routes (no auth) ----
+
+    // Health check
     if (path === '/health') {
       return json({ status: 'ok', timestamp: new Date().toISOString() }, 200, request);
     }
 
-    // Auth check — compare raw password from header to stored secret
+    // Public episodes — returns only released episodes with titles/summaries
+    if (request.method === 'GET' && path === '/public/episodes') {
+      return handlePublicEpisodes(env, request);
+    }
+
+    // ---- Authenticated routes ----
+
     const authPassword = request.headers.get('X-Auth');
     if (!authPassword || authPassword !== env.ADMIN_PASSWORD) {
       return json({ error: 'Unauthorized' }, 401, request);
@@ -83,6 +93,70 @@ export default {
     return json({ error: 'Not found' }, 404, request);
   }
 };
+
+/**
+ * Public episodes endpoint.
+ * Joins showSlots + assignments + ideas to return only:
+ * - Episodes with a release date in the past
+ * - That have an assigned idea with a title and summary
+ * Returns: [{ episodeNumber, title, summary, releaseDate }]
+ */
+async function handlePublicEpisodes(env, request) {
+  try {
+    const [slotsRaw, assignmentsRaw, ideasRaw] = await Promise.all([
+      env.SATT_DATA.get('showSlots'),
+      env.SATT_DATA.get('assignments'),
+      env.SATT_DATA.get('ideas')
+    ]);
+
+    const slots = slotsRaw ? JSON.parse(slotsRaw) : [];
+    const assignments = assignmentsRaw ? JSON.parse(assignmentsRaw) : {};
+    const ideas = ideasRaw ? JSON.parse(ideasRaw) : [];
+
+    const today = new Date().toISOString().split('T')[0];
+    const ideasMap = {};
+    ideas.forEach(function(idea) { ideasMap[idea.id] = idea; });
+
+    const episodes = [];
+    for (const slot of slots) {
+      // Only include released episodes (release date <= today)
+      if (slot.releaseDate > today) continue;
+
+      const ideaId = assignments[slot.id];
+      if (!ideaId) continue;
+
+      const idea = ideasMap[ideaId];
+      if (!idea) continue;
+
+      const title = idea.selectedTitle || (idea.titles && idea.titles[0]) || null;
+      if (!title) continue;
+
+      episodes.push({
+        episodeNumber: slot.episodeNumber,
+        title: title,
+        summary: idea.summary || '',
+        releaseDate: slot.releaseDate
+      });
+    }
+
+    // Sort newest first
+    episodes.sort(function(a, b) {
+      return b.releaseDate.localeCompare(a.releaseDate);
+    });
+
+    // Cache for 5 minutes — episodes don't change that often
+    const headers = {
+      ...corsHeaders(request),
+      'Content-Type': 'application/json',
+      'Cache-Control': 'public, max-age=300'
+    };
+
+    return new Response(JSON.stringify(episodes), { status: 200, headers });
+
+  } catch (err) {
+    return json({ error: 'Failed to load episodes' }, 500, request);
+  }
+}
 
 function json(data, status, request) {
   return new Response(JSON.stringify(data), {
