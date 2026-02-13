@@ -5,42 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Show Management — Salt All The Things</title>
   <link rel="icon" type="image/jpeg" href="images/256x256.jpeg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
   <style>
-    /* Auth gate styles */
-    #authGate {
-      position: fixed; inset: 0; z-index: 99999;
-      background: #08080f;
-      display: flex; align-items: center; justify-content: center;
-      font-family: 'DM Sans', sans-serif;
-    }
-    #authGate .gate-box {
-      background: #13132a; border: 1px solid #2a2a4a; border-radius: 16px;
-      padding: 48px 40px; max-width: 380px; width: 90%; text-align: center;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
-    }
-    #authGate .gate-logo { width: 80px; border-radius: 8px; margin-bottom: 24px; filter: drop-shadow(0 0 20px rgba(200,168,78,0.2)); }
-    #authGate h2 { font-family: 'Cinzel', serif; color: #d4b85a; font-size: 1.2rem; margin-bottom: 8px; }
-    #authGate .gate-sub { color: #5a5750; font-size: 0.85rem; margin-bottom: 24px; }
-    #authGate input {
-      width: 100%; padding: 10px 16px; background: #0f0f20; border: 1px solid #2a2a4a;
-      border-radius: 8px; color: #e0ddd4; font-family: 'DM Sans', sans-serif;
-      font-size: 0.95rem; text-align: center; letter-spacing: 2px; margin-bottom: 16px;
-    }
-    #authGate input:focus { outline: none; border-color: #c8a84e; box-shadow: 0 0 0 3px rgba(200,168,78,0.2); }
-    #authGate input.error { border-color: #cc4444; animation: gateShake 300ms ease; }
-    #authGate button {
-      width: 100%; padding: 10px 16px;
-      background: linear-gradient(135deg, #c8a84e 0%, #8a7434 100%);
-      color: #0a0a0f; border: 1px solid #c8a84e; border-radius: 8px;
-      font-family: 'DM Sans', sans-serif; font-size: 0.9rem; font-weight: 600; cursor: pointer;
-    }
-    #authGate button:hover { background: linear-gradient(135deg, #e0c868 0%, #c8a84e 100%); }
-    #authGate .gate-error { color: #cc4444; font-size: 0.8rem; margin-top: 12px; min-height: 1.2em; }
-    @keyframes gateShake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
-
-    /* Page-specific styles */
-    .ideas-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-lg); }
+    /* ===== Page-specific styles ===== */
+    .ideas-grid { display: grid; grid-template-columns: 380px 1fr; gap: var(--space-lg); }
     @media (max-width: 1024px) { .ideas-grid { grid-template-columns: 1fr; } }
     .idea-composer { position: sticky; top: 80px; }
     .ideas-list { display: flex; flex-direction: column; gap: var(--space-md); }
@@ -98,37 +69,185 @@
     .tuesday-drop .unassign-btn:hover { color: var(--danger); }
     .empty-placeholder { font-size: 0.6rem; color: var(--text-muted); opacity: 0.5; }
     .launch-badge { font-size: 0.55rem; background: var(--gold); color: var(--bg-deep); padding: 1px 5px; border-radius: 3px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
-
-    /* Edit mode styles */
-    .edit-mode-banner {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: var(--space-sm) var(--space-md); margin-bottom: var(--space-md);
-      background: rgba(200,168,78,0.08); border: 1px solid var(--gold-dim);
-      border-radius: var(--radius-md); font-size: 0.8rem; color: var(--text-gold);
-    }
-    .edit-field { width: 100%; padding: 8px 12px; background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-md); color: var(--text-primary); font-family: 'DM Sans', sans-serif; font-size: 0.85rem; line-height: 1.5; }
-    .edit-field:focus { outline: none; border-color: var(--gold-dim); box-shadow: 0 0 0 2px rgba(200,168,78,0.15); }
-    .edit-field-sm { padding: 6px 10px; font-size: 0.8rem; }
-    .edit-title-row { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-xs); }
-    .edit-title-row input { flex: 1; }
-    .edit-tp-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
-    .edit-tp-row input { flex: 1; }
-    .edit-tp-row button { flex-shrink: 0; }
-    .add-tp-btn { font-size: 0.75rem; color: var(--ice); background: none; border: 1px dashed var(--border-default); border-radius: var(--radius-sm); padding: 4px 10px; cursor: pointer; margin-top: 4px; }
-    .add-tp-btn:hover { border-color: var(--ice); background: rgba(135,206,250,0.05); }
-
     .processing-overlay {
       position: absolute; inset: 0; background: rgba(8,8,15,0.85);
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      gap: var(--space-md); border-radius: var(--radius-lg); z-index: 10;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-md);
+      border-radius: var(--radius-lg); z-index: 10;
     }
     .processing-overlay .spinner-lg { width: 40px; height: 40px; }
     .processing-text { color: var(--text-gold); font-family: 'Cinzel', serif; font-size: 0.9rem; }
+
+    /* Edit mode */
+    .edit-mode-banner {
+      display: flex; justify-content: space-between; align-items: center; gap: var(--space-md);
+      padding: var(--space-sm) var(--space-md); margin-bottom: var(--space-md);
+      background: var(--gold-glow); border: 1px solid var(--gold-dim); border-radius: var(--radius-md);
+      font-size: 0.8rem; color: var(--text-gold);
+    }
+    .edit-field {
+      width: 100%; padding: 8px 10px; background: var(--bg-surface);
+      border: 1px solid var(--border-default); border-radius: var(--radius-sm);
+      color: var(--text-primary); font-family: 'DM Sans', sans-serif; font-size: 0.85rem;
+      resize: vertical;
+    }
+    .edit-field:focus { border-color: var(--gold-dim); outline: none; }
+    .edit-field-sm { padding: 5px 8px; font-size: 0.8rem; }
+    .edit-title-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+    .edit-tp-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+    .add-tp-btn {
+      display: inline-block; font-size: 0.75rem; color: var(--ice); cursor: pointer;
+      padding: 3px 8px; border: 1px dashed var(--border-default); border-radius: var(--radius-sm);
+      background: none; margin-top: 4px;
+    }
+    .add-tp-btn:hover { border-color: var(--ice); background: rgba(100,200,255,0.05); }
+
+    /* Schedule date badges on idea cards */
+    .schedule-info {
+      display: flex; gap: var(--space-sm); align-items: center; flex-wrap: wrap;
+      font-size: 0.75rem; margin-top: 4px;
+    }
+    .schedule-info .date-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 2px 8px; border-radius: 3px; font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem; font-weight: 600;
+    }
+    .date-badge.record { background: rgba(100,200,255,0.1); color: var(--ice); border: 1px solid rgba(100,200,255,0.2); }
+    .date-badge.release { background: rgba(100,255,150,0.1); color: var(--status-scheduled); border: 1px solid rgba(100,255,150,0.2); }
+    .date-badge.ep { background: rgba(200,168,78,0.1); color: var(--gold); border: 1px solid rgba(200,168,78,0.2); }
+
+    /* Past episodes collapsible section */
+    .past-section { margin-top: var(--space-lg); }
+    .past-section-header {
+      display: flex; align-items: center; gap: var(--space-sm);
+      cursor: pointer; padding: var(--space-sm) var(--space-md);
+      background: var(--bg-surface); border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md); margin-bottom: var(--space-md);
+      user-select: none;
+    }
+    .past-section-header:hover { border-color: var(--border-default); }
+    .past-section-header .chevron { transition: transform 0.2s; font-size: 0.8rem; color: var(--text-muted); }
+    .past-section-header.open .chevron { transform: rotate(90deg); }
+    .past-section-header h3 { font-size: 0.9rem; color: var(--text-muted); }
+    .past-section-header .count { font-size: 0.75rem; color: var(--text-muted); }
+    .past-section-content { display: none; }
+    .past-section-content.open { display: flex; flex-direction: column; gap: var(--space-md); }
+
+    /* Show display link */
+    .show-display-link {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 0.7rem; color: var(--ice); text-decoration: none;
+      padding: 2px 6px; border-radius: 3px;
+      border: 1px solid transparent;
+    }
+    .show-display-link:hover { border-color: var(--ice); background: rgba(100,200,255,0.05); }
+
+    /* Calendar show display link */
+    .cal-display-link {
+      font-size: 0.55rem; color: var(--ice); text-decoration: none; opacity: 0.7;
+    }
+    .cal-display-link:hover { opacity: 1; text-decoration: underline; }
+
+    /* ===== Full-Screen Show Display ===== */
+    .show-display-overlay {
+      position: fixed; inset: 0; z-index: 99999;
+      background: var(--bg-deep);
+      overflow-y: auto;
+      display: none;
+    }
+    .show-display-overlay.active { display: block; }
+    .show-display-container {
+      max-width: 100%; min-height: 100vh;
+      padding: var(--space-xl) var(--space-lg);
+    }
+    .show-display-header {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      margin-bottom: var(--space-xl);
+      padding-bottom: var(--space-lg);
+      border-bottom: 2px solid var(--gold-dim);
+    }
+    .show-display-header .ep-badge {
+      font-family: 'JetBrains Mono', monospace; font-size: 1rem;
+      color: var(--gold); font-weight: 700;
+    }
+    .show-display-header .dates {
+      font-size: 0.85rem; color: var(--text-muted); margin-top: var(--space-xs);
+    }
+    .show-display-header h1 {
+      font-family: 'Cinzel', serif; font-size: 2rem; color: var(--text-gold);
+      margin: var(--space-sm) 0;
+    }
+    .show-display-close {
+      background: var(--bg-surface); border: 1px solid var(--border-default);
+      color: var(--text-primary); padding: var(--space-sm) var(--space-md);
+      border-radius: var(--radius-md); cursor: pointer; font-size: 0.85rem;
+      white-space: nowrap;
+    }
+    .show-display-close:hover { border-color: var(--gold-dim); }
+    .show-display-section { margin-bottom: var(--space-xl); }
+    .show-display-section h2 {
+      font-family: 'Cinzel', serif; font-size: 1.1rem; color: var(--ice-bright);
+      margin-bottom: var(--space-md); text-transform: uppercase; letter-spacing: 1px;
+    }
+    .show-display-section p, .show-display-section li {
+      font-size: 1rem; line-height: 1.7; color: var(--text-secondary);
+    }
+    .show-display-section ul { list-style: none; padding-left: var(--space-lg); }
+    .show-display-section li { position: relative; padding: var(--space-xs) 0; }
+    .show-display-section li::before { content: '›'; position: absolute; left: -18px; color: var(--gold); font-weight: bold; font-size: 1.1rem; }
+    .show-display-joke {
+      padding: var(--space-md) var(--space-lg);
+      background: var(--gold-glow); border: 1px solid var(--gold-dim);
+      border-radius: var(--radius-md); font-size: 1rem; line-height: 1.6;
+      color: var(--text-gold); font-style: italic;
+    }
+    .show-display-image {
+      margin-top: var(--space-xl); text-align: center;
+      padding-top: var(--space-lg); border-top: 1px solid var(--border-subtle);
+    }
+    .show-display-image img {
+      max-width: 100%; border-radius: var(--radius-lg);
+      border: 2px solid var(--border-subtle);
+    }
+    .show-display-next {
+      margin-top: var(--space-xl); padding: var(--space-lg);
+      background: var(--bg-surface); border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+    }
+    .show-display-next h3 {
+      font-family: 'Cinzel', serif; font-size: 0.9rem; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 1px; margin-bottom: var(--space-sm);
+    }
+    .show-display-next .next-title {
+      font-size: 1.2rem; color: var(--text-gold); font-weight: 600;
+    }
+    .show-display-next .next-summary {
+      font-size: 0.9rem; color: var(--text-secondary); margin-top: var(--space-xs); line-height: 1.5;
+    }
+
+    /* Image field in edit/view mode */
+    .image-preview { margin-top: var(--space-sm); }
+    .image-preview img {
+      max-width: 300px; max-height: 200px; border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+    }
+
+    /* Next show preview in idea card */
+    .next-show-preview {
+      margin-top: var(--space-md); padding: var(--space-md);
+      background: var(--bg-surface); border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+    }
+    .next-show-preview h4 {
+      font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;
+      letter-spacing: 0.5px; margin-bottom: var(--space-xs);
+    }
+    .next-show-preview .next-title { font-size: 0.85rem; color: var(--text-gold); }
+    .next-show-preview .next-summary { font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px; }
   </style>
 </head>
 <body>
 
-  <!-- ===== AUTH GATE (visible by default) ===== -->
+  <!-- ===== AUTH GATE ===== -->
   <div id="authGate">
     <div class="gate-box">
       <img src="images/256x256.jpeg" alt="SATT" class="gate-logo">
@@ -146,7 +265,12 @@
     <span style="color: #c8a84e; font-family: 'Cinzel', serif; font-size: 0.9rem;">Loading show data...</span>
   </div>
 
-  <!-- ===== PROTECTED CONTENT (hidden by default) ===== -->
+  <!-- ===== FULL-SCREEN SHOW DISPLAY ===== -->
+  <div class="show-display-overlay" id="showDisplayOverlay">
+    <div class="show-display-container" id="showDisplayContent"></div>
+  </div>
+
+  <!-- ===== PROTECTED CONTENT ===== -->
   <div id="protectedContent" style="display: none;">
 
     <!-- Navigation -->
@@ -202,6 +326,7 @@
               <span class="text-sm text-muted" id="ideaCount"></span>
             </div>
             <div class="ideas-list" id="ideasList"></div>
+            <div id="pastEpisodesSection"></div>
             <div id="noIdeas" class="hidden" style="text-align: center; padding: 3rem 1rem;">
               <p class="text-secondary" style="font-size: 1.1rem;">No ideas yet</p>
               <p class="text-muted text-sm mt-sm">Write your first show idea in the composer</p>
@@ -246,11 +371,12 @@
     let currentMonth = 1; // February
     let currentYear = 2026;
     let draggedIdeaId = null;
-    const editingIdeas = new Set();    // ideas currently in edit mode
-    let lastProcessedId = null;        // auto-expand + edit after processing
+    const editingIdeas = new Set();
+    let lastProcessedId = null;
+    let pastSectionOpen = false;
 
     // ============================================
-    // HTML Escaping (prevents template literal breakage)
+    // HTML Escaping
     // ============================================
     function esc(str) {
       if (str == null) return '';
@@ -274,48 +400,186 @@
     }
 
     // ============================================
-    // Ideas Workshop
+    // Helper: Get schedule info for an idea
+    // ============================================
+    function getScheduleInfoForIdea(ideaId) {
+      var assignments = Storage.getAssignments();
+      var slots = Storage.getShowSlots();
+      for (var slotId in assignments) {
+        if (assignments[slotId] === ideaId) {
+          var slot = slots.find(function(s) { return s.id === slotId; });
+          if (slot) return slot;
+        }
+      }
+      return null;
+    }
+
+    // ============================================
+    // Helper: Get the "next show" (recorded 7 days after given date)
+    // ============================================
+    function getNextShowInfo(recordDate) {
+      if (!recordDate) return null;
+      var rd = new Date(recordDate + 'T00:00:00');
+      rd.setDate(rd.getDate() + 7);
+      var nextRecordDate = rd.getFullYear() + '-' + String(rd.getMonth()+1).padStart(2,'0') + '-' + String(rd.getDate()).padStart(2,'0');
+
+      var slots = Storage.getShowSlots();
+      var assignments = Storage.getAssignments();
+      var ideas = Storage.getIdeas();
+
+      var nextSlot = slots.find(function(s) { return s.recordDate === nextRecordDate; });
+      if (!nextSlot) return null;
+
+      var nextIdeaId = assignments[nextSlot.id];
+      if (!nextIdeaId) return { slot: nextSlot, idea: null };
+
+      var nextIdea = ideas.find(function(i) { return i.id === nextIdeaId; });
+      return { slot: nextSlot, idea: nextIdea || null };
+    }
+
+    // ============================================
+    // Helper: Google Drive image URL from file ID
+    // ============================================
+    function gdriveImageUrl(fileId) {
+      if (!fileId) return '';
+      return 'https://lh3.googleusercontent.com/d/' + fileId;
+    }
+
+    // ============================================
+    // Ideas Workshop — SORTED & SECTIONED
     // ============================================
     function renderIdeasList() {
       const ideas = Storage.getIdeas();
       const list = document.getElementById('ideasList');
+      const pastSection = document.getElementById('pastEpisodesSection');
       const noIdeas = document.getElementById('noIdeas');
       const countEl = document.getElementById('ideaCount');
       countEl.textContent = ideas.length + ' idea' + (ideas.length !== 1 ? 's' : '');
-      if (ideas.length === 0) { list.innerHTML = ''; noIdeas.classList.remove('hidden'); return; }
+
+      if (ideas.length === 0) {
+        list.innerHTML = '';
+        pastSection.innerHTML = '';
+        noIdeas.classList.remove('hidden');
+        return;
+      }
       noIdeas.classList.add('hidden');
-      const sorted = [...ideas].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-      list.innerHTML = sorted.map(idea => {
-        const title = esc(idea.selectedTitle || (idea.titles && idea.titles[0]) || 'Untitled Idea');
-        const summary = esc(idea.summary || truncate(idea.rawNotes, 120));
-        const isEditing = editingIdeas.has(idea.id);
-        const autoExpand = (idea.id === lastProcessedId) || isEditing;
+      var today = new Date().toISOString().split('T')[0];
 
-        return '<div class="idea-list-card' + (autoExpand ? ' expanded' : '') + '" id="idea-' + idea.id + '" onclick="toggleIdeaExpand(\'' + idea.id + '\')">'
-          + '<div class="idea-header">'
-          + '<div style="flex:1;">'
-          + '<div class="flex items-center gap-sm mb-sm">'
-          + '<span class="badge badge-' + idea.status + '">' + idea.status + '</span>'
-          + (idea.selectedTitle ? '' : '<span class="text-xs text-muted">(no title selected)</span>')
-          + '</div>'
-          + '<h3 style="font-size: 1rem; color: var(--text-gold);">' + title + '</h3>'
-          + '<p class="text-sm text-secondary mt-sm" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">' + summary + '</p>'
-          + '<p class="text-xs text-muted mt-sm">' + formatTimestamp(idea.createdAt) + '</p>'
-          + '</div>'
-          + '<div class="flex gap-xs" onclick="event.stopPropagation()">'
-          + (idea.status === 'draft' ? '<button class="btn btn-secondary btn-sm" onclick="reprocessIdea(\'' + idea.id + '\')">Process</button>' : '')
-          + '<button class="btn btn-ghost btn-sm" onclick="deleteIdea(\'' + idea.id + '\')">✕</button>'
-          + '</div>'
-          + '</div>'
-          + '<div class="idea-expanded-content" id="expanded-' + idea.id + '">'
-          + ((idea.status === 'processed' || idea.status === 'scheduled') ? renderProcessedContent(idea, isEditing) : renderDraftContent(idea))
-          + '</div>'
-          + '</div>';
+      // Enrich ideas with schedule info
+      var enriched = ideas.map(function(idea) {
+        var slot = getScheduleInfoForIdea(idea.id);
+        return { idea: idea, slot: slot };
+      });
+
+      // Split into three groups:
+      // 1) Scheduled for today or future (by recording date ascending)
+      // 2) Unscheduled (by lastModified/createdAt descending)
+      // 3) Past episodes (recording date before today, by recording date descending)
+      var futureScheduled = [];
+      var unscheduled = [];
+      var past = [];
+
+      enriched.forEach(function(item) {
+        if (item.slot) {
+          if (item.slot.recordDate < today) {
+            past.push(item);
+          } else {
+            futureScheduled.push(item);
+          }
+        } else {
+          unscheduled.push(item);
+        }
+      });
+
+      // Sort future: ascending by recording date
+      futureScheduled.sort(function(a, b) {
+        return a.slot.recordDate.localeCompare(b.slot.recordDate);
+      });
+
+      // Sort unscheduled: by lastModified or createdAt descending
+      unscheduled.sort(function(a, b) {
+        var aDate = a.idea.lastModified || a.idea.createdAt || '';
+        var bDate = b.idea.lastModified || b.idea.createdAt || '';
+        return bDate.localeCompare(aDate);
+      });
+
+      // Sort past: descending by recording date (most recent past first)
+      past.sort(function(a, b) {
+        return b.slot.recordDate.localeCompare(a.slot.recordDate);
+      });
+
+      // Render main list (future + unscheduled)
+      var mainItems = futureScheduled.concat(unscheduled);
+      list.innerHTML = mainItems.map(function(item) {
+        return renderIdeaCard(item.idea, item.slot);
       }).join('');
 
-      // Clear the auto-expand flag after render
+      // Render past episodes section
+      if (past.length > 0) {
+        pastSection.innerHTML = '<div class="past-section">'
+          + '<div class="past-section-header' + (pastSectionOpen ? ' open' : '') + '" onclick="togglePastSection()">'
+          + '<span class="chevron">▶</span>'
+          + '<h3>Past Episodes</h3>'
+          + '<span class="count">(' + past.length + ')</span>'
+          + '</div>'
+          + '<div class="past-section-content' + (pastSectionOpen ? ' open' : '') + '">'
+          + past.map(function(item) { return renderIdeaCard(item.idea, item.slot); }).join('')
+          + '</div></div>';
+      } else {
+        pastSection.innerHTML = '';
+      }
+
+      // Clear auto-expand flag
       if (lastProcessedId) lastProcessedId = null;
+    }
+
+    function togglePastSection() {
+      pastSectionOpen = !pastSectionOpen;
+      var header = document.querySelector('.past-section-header');
+      var content = document.querySelector('.past-section-content');
+      if (header) header.classList.toggle('open', pastSectionOpen);
+      if (content) content.classList.toggle('open', pastSectionOpen);
+    }
+
+    function renderIdeaCard(idea, slot) {
+      const title = esc(idea.selectedTitle || (idea.titles && idea.titles[0]) || 'Untitled Idea');
+      const summary = esc(idea.summary || truncate(idea.rawNotes, 120));
+      const isEditing = editingIdeas.has(idea.id);
+      const autoExpand = (idea.id === lastProcessedId) || isEditing;
+
+      // Schedule info line
+      var scheduleHtml = '';
+      if (slot) {
+        scheduleHtml = '<div class="schedule-info">'
+          + '<span class="date-badge ep">' + slot.episodeNumber + '</span>'
+          + '<span class="date-badge record">Record: ' + ShowEngine.formatDateShort(slot.recordDate) + '</span>'
+          + '<span class="date-badge release">Release: ' + ShowEngine.formatDateShort(slot.releaseDate) + '</span>'
+          + '<a href="#show/' + slot.id + '" class="show-display-link" onclick="event.stopPropagation(); openShowDisplay(\'' + slot.id + '\'); return false;" title="Full show display">⛶ View</a>'
+          + '</div>';
+      }
+
+      return '<div class="idea-list-card' + (autoExpand ? ' expanded' : '') + '" id="idea-' + idea.id + '" onclick="toggleIdeaExpand(\'' + idea.id + '\')">'
+        + '<div class="idea-header">'
+        + '<div style="flex:1;">'
+        + '<div class="flex items-center gap-sm mb-sm">'
+        + '<span class="badge badge-' + idea.status + '">' + idea.status + '</span>'
+        + (idea.selectedTitle ? '' : '<span class="text-xs text-muted">(no title selected)</span>')
+        + '</div>'
+        + '<h3 style="font-size: 1rem; color: var(--text-gold);">' + title + '</h3>'
+        + scheduleHtml
+        + '<p class="text-sm text-secondary mt-sm" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">' + summary + '</p>'
+        + '<p class="text-xs text-muted mt-sm">' + formatTimestamp(idea.createdAt) + '</p>'
+        + '</div>'
+        + '<div class="flex gap-xs" onclick="event.stopPropagation()">'
+        + (idea.status === 'draft' ? '<button class="btn btn-secondary btn-sm" onclick="reprocessIdea(\'' + idea.id + '\')">Process</button>' : '')
+        + '<button class="btn btn-ghost btn-sm" onclick="deleteIdea(\'' + idea.id + '\')">✕</button>'
+        + '</div>'
+        + '</div>'
+        + '<div class="idea-expanded-content" id="expanded-' + idea.id + '">'
+        + ((idea.status === 'processed' || idea.status === 'scheduled') ? renderProcessedContent(idea, isEditing) : renderDraftContent(idea))
+        + '</div>'
+        + '</div>';
     }
 
     function renderProcessedContent(idea, isEditing) {
@@ -388,11 +652,25 @@
       });
       html += '</div>';
 
+      // Show Image
+      if (idea.imageFileId) {
+        html += '<div class="image-preview mt-md" style="padding-top: var(--space-md); border-top: 1px solid var(--border-subtle);">'
+          + '<label class="text-xs text-muted" style="display:block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Show Image</label>'
+          + '<img src="' + gdriveImageUrl(idea.imageFileId) + '" alt="Show image" onerror="this.style.display=\'none\'">'
+          + '</div>';
+      }
+
       // Raw notes
       html += '<div class="mt-md" style="padding-top: var(--space-md); border-top: 1px solid var(--border-subtle);">'
         + '<details><summary class="text-xs text-muted" style="cursor: pointer;">Raw Notes</summary>'
         + '<pre class="text-sm mt-sm" style="white-space: pre-wrap; color: var(--text-secondary); font-family: \'DM Sans\', sans-serif; line-height: 1.6;">' + esc(idea.rawNotes) + '</pre>'
         + '</details></div>';
+
+      // Next show preview
+      var slot = getScheduleInfoForIdea(idea.id);
+      if (slot) {
+        html += renderNextShowPreview(slot.recordDate);
+      }
 
       return html;
     }
@@ -452,11 +730,27 @@
       });
       html += '</div>';
 
+      // Image File ID (editable)
+      html += '<div class="mt-md" onclick="event.stopPropagation()" style="padding-top: var(--space-md); border-top: 1px solid var(--border-subtle);">'
+        + '<label class="text-xs text-muted" style="display:block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Show Image (Google Drive File ID)</label>'
+        + '<input type="text" class="edit-field edit-field-sm" data-edit-image-id value="' + esc(idea.imageFileId || '') + '" placeholder="Paste Google Drive file ID here...">'
+        + '<p class="text-xs text-muted mt-sm">Share the image as "Anyone with the link" then paste just the file ID from the URL.</p>';
+      if (idea.imageFileId) {
+        html += '<div class="image-preview mt-sm"><img src="' + gdriveImageUrl(idea.imageFileId) + '" alt="Preview" onerror="this.style.display=\'none\'"></div>';
+      }
+      html += '</div>';
+
       // Raw notes (editable)
       html += '<div class="mt-md" style="padding-top: var(--space-md); border-top: 1px solid var(--border-subtle);" onclick="event.stopPropagation()">'
         + '<label class="text-xs text-muted" style="display:block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Raw Notes</label>'
         + '<textarea class="edit-field" data-edit-rawnotes rows="8" style="font-size:0.8rem;">' + esc(idea.rawNotes || '') + '</textarea>'
         + '</div>';
+
+      // Next show preview
+      var slot = getScheduleInfoForIdea(idea.id);
+      if (slot) {
+        html += renderNextShowPreview(slot.recordDate);
+      }
 
       return html;
     }
@@ -469,12 +763,35 @@
     }
 
     // ============================================
+    // Next Show Preview
+    // ============================================
+    function renderNextShowPreview(recordDate) {
+      var next = getNextShowInfo(recordDate);
+      if (!next) return '';
+
+      var html = '<div class="next-show-preview">'
+        + '<h4>Next Recording (' + ShowEngine.formatDateShort(next.slot.recordDate) + ')</h4>';
+
+      if (next.idea) {
+        var nextTitle = next.idea.selectedTitle || (next.idea.titles && next.idea.titles[0]) || 'Untitled';
+        html += '<div class="next-title">' + esc(nextTitle) + '</div>';
+        if (next.idea.summary) {
+          html += '<div class="next-summary">' + esc(next.idea.summary) + '</div>';
+        }
+      } else {
+        html += '<div class="next-title" style="color: var(--text-muted); font-style: italic;">No show scheduled</div>';
+      }
+
+      html += '</div>';
+      return html;
+    }
+
+    // ============================================
     // Edit Mode Functions
     // ============================================
     function enterEditMode(ideaId) {
       editingIdeas.add(ideaId);
       renderIdeasList();
-      // Re-expand
       var card = document.getElementById('idea-' + ideaId);
       if (card && !card.classList.contains('expanded')) card.classList.add('expanded');
     }
@@ -482,7 +799,6 @@
     function cancelEdit(ideaId) {
       editingIdeas.delete(ideaId);
       renderIdeasList();
-      // Re-expand to show view mode
       var card = document.getElementById('idea-' + ideaId);
       if (card && !card.classList.contains('expanded')) card.classList.add('expanded');
     }
@@ -522,17 +838,22 @@
       var rawEl = container.querySelector('[data-edit-rawnotes]');
       var rawNotes = rawEl ? rawEl.value : '';
 
+      // Image file ID
+      var imageEl = container.querySelector('[data-edit-image-id]');
+      var imageFileId = imageEl ? imageEl.value.trim() : '';
+
       Storage.updateIdea(ideaId, {
         titles: titles,
         selectedTitle: selectedTitle,
         summary: summary,
         outline: outline,
-        rawNotes: rawNotes
+        rawNotes: rawNotes,
+        imageFileId: imageFileId || null,
+        lastModified: new Date().toISOString()
       });
 
       editingIdeas.delete(ideaId);
       renderIdeasList();
-      // Re-expand
       var card = document.getElementById('idea-' + ideaId);
       if (card && !card.classList.contains('expanded')) card.classList.add('expanded');
       Toast.success('Changes saved!');
@@ -541,7 +862,6 @@
     function addEditTitle(ideaId) {
       var container = document.getElementById('expanded-' + ideaId);
       var addBtn = container.querySelector('.add-tp-btn');
-      // Find the parent that has the title rows
       var titlesParent = addBtn.parentElement;
       var count = titlesParent.querySelectorAll('.edit-title-row').length;
       var row = document.createElement('div');
@@ -606,11 +926,11 @@
         var idea = {
           id: newId, rawNotes: notes, titles: result.titles,
           selectedTitle: result.titles[0], summary: result.summary, outline: result.outline,
-          status: 'processed', aiModel: config.aiModel, createdAt: new Date().toISOString()
+          status: 'processed', aiModel: config.aiModel, createdAt: new Date().toISOString(),
+          imageFileId: null
         };
         Storage.addIdea(idea);
         document.getElementById('ideaNotes').value = '';
-        // Auto-expand and enter edit mode for the new idea
         lastProcessedId = newId;
         editingIdeas.add(newId);
         renderIdeasList();
@@ -624,7 +944,8 @@
       if (!notes) { Toast.error('Write some notes first!'); return; }
       Storage.addIdea({
         id: Storage.generateId(), rawNotes: notes, titles: [], selectedTitle: null,
-        summary: null, outline: [], status: 'draft', aiModel: null, createdAt: new Date().toISOString()
+        summary: null, outline: [], status: 'draft', aiModel: null, createdAt: new Date().toISOString(),
+        imageFileId: null
       });
       document.getElementById('ideaNotes').value = '';
       renderIdeasList();
@@ -658,6 +979,125 @@
       renderIdeasList();
       Toast.info('Idea deleted.');
     }
+
+    // ============================================
+    // Full-Screen Show Display
+    // ============================================
+    function openShowDisplay(slotId) {
+      var slots = Storage.getShowSlots();
+      var assignments = Storage.getAssignments();
+      var ideas = Storage.getIdeas();
+
+      var slot = slots.find(function(s) { return s.id === slotId; });
+      if (!slot) { Toast.error('Show slot not found.'); return; }
+
+      var ideaId = assignments[slotId];
+      var idea = ideaId ? ideas.find(function(i) { return i.id === ideaId; }) : null;
+
+      if (!idea) { Toast.error('No idea assigned to this slot.'); return; }
+
+      // Update URL hash
+      history.pushState(null, '', '#show/' + slotId);
+
+      var title = idea.selectedTitle || (idea.titles && idea.titles[0]) || 'Untitled';
+      var assignedJoke = Storage.getJokeForIdea(idea.id);
+
+      var html = '<div class="show-display-header">'
+        + '<div>'
+        + '<span class="ep-badge">' + slot.episodeNumber + '</span>'
+        + '<h1>' + esc(title) + '</h1>'
+        + '<div class="dates">Record: ' + ShowEngine.formatDateShort(slot.recordDate) + ' &nbsp;|&nbsp; Release: ' + ShowEngine.formatDateShort(slot.releaseDate) + '</div>'
+        + '</div>'
+        + '<button class="show-display-close" onclick="closeShowDisplay()">✕ Close</button>'
+        + '</div>';
+
+      // Opening joke
+      if (assignedJoke) {
+        html += '<div class="show-display-section">'
+          + '<h2>Opening Salt Joke</h2>'
+          + '<div class="show-display-joke">' + esc(assignedJoke.text) + '</div>'
+          + '</div>';
+      }
+
+      // Summary
+      if (idea.summary) {
+        html += '<div class="show-display-section">'
+          + '<h2>Summary</h2>'
+          + '<p>' + esc(idea.summary) + '</p>'
+          + '</div>';
+      }
+
+      // Outline
+      if (idea.outline && idea.outline.length > 0) {
+        html += '<div class="show-display-section">'
+          + '<h2>Show Outline</h2>';
+        idea.outline.forEach(function(seg) {
+          html += '<div style="margin-bottom: 1.5rem;">'
+            + '<h3 style="font-size: 1rem; color: var(--ice-bright); margin-bottom: 0.5rem;">' + esc(seg.segmentName) + '</h3>'
+            + '<ul>';
+          (seg.talkingPoints || []).forEach(function(tp) {
+            html += '<li>' + esc(tp) + '</li>';
+          });
+          html += '</ul></div>';
+        });
+        html += '</div>';
+      }
+
+      // Raw notes
+      if (idea.rawNotes) {
+        html += '<div class="show-display-section">'
+          + '<h2>Raw Notes</h2>'
+          + '<p style="white-space: pre-wrap;">' + esc(idea.rawNotes) + '</p>'
+          + '</div>';
+      }
+
+      // Next show preview
+      var next = getNextShowInfo(slot.recordDate);
+      if (next) {
+        html += '<div class="show-display-next">'
+          + '<h3>Next Recording (' + ShowEngine.formatDateShort(next.slot.recordDate) + ')</h3>';
+        if (next.idea) {
+          var nextTitle = next.idea.selectedTitle || (next.idea.titles && next.idea.titles[0]) || 'Untitled';
+          html += '<div class="next-title">' + esc(nextTitle) + '</div>';
+          if (next.idea.summary) {
+            html += '<div class="next-summary">' + esc(next.idea.summary) + '</div>';
+          }
+        } else {
+          html += '<div class="next-title" style="color: var(--text-muted); font-style: italic;">No show scheduled</div>';
+        }
+        html += '</div>';
+      }
+
+      // Show image (at the very bottom)
+      if (idea.imageFileId) {
+        html += '<div class="show-display-image">'
+          + '<img src="' + gdriveImageUrl(idea.imageFileId) + '" alt="Show image for ' + esc(title) + '" onerror="this.parentElement.style.display=\'none\'">'
+          + '</div>';
+      }
+
+      document.getElementById('showDisplayContent').innerHTML = html;
+      document.getElementById('showDisplayOverlay').classList.add('active');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeShowDisplay() {
+      document.getElementById('showDisplayOverlay').classList.remove('active');
+      document.body.style.overflow = '';
+      // Clean URL hash
+      if (location.hash.startsWith('#show/')) {
+        history.pushState(null, '', location.pathname + location.search);
+      }
+    }
+
+    // Handle back button and hash navigation
+    window.addEventListener('hashchange', function() {
+      if (location.hash.startsWith('#show/')) {
+        var slotId = location.hash.replace('#show/', '');
+        openShowDisplay(slotId);
+      } else {
+        closeShowDisplay();
+      }
+    });
 
     // ============================================
     // Schedule Board
@@ -732,6 +1172,7 @@
           var idea = ideas.find(function(i) { return i.id === assignedIdeaId; });
           recordHtml = '<div class="tuesday-drop has-show" data-slot-id="' + recordSlot.id + '" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event, \'' + recordSlot.id + '\')">'
             + '<div class="show-info"><span class="ep-num">' + recordSlot.episodeNumber + '</span><span class="show-title">' + esc(idea ? (idea.selectedTitle || (idea.titles && idea.titles[0]) || 'Untitled') : 'Untitled') + '</span>'
+            + '<a href="#show/' + recordSlot.id + '" class="cal-display-link" onclick="event.stopPropagation(); openShowDisplay(\'' + recordSlot.id + '\'); return false;" title="View show">⛶</a>'
             + '<button class="unassign-btn" onclick="event.stopPropagation(); unassignShow(\'' + recordSlot.id + '\')" title="Remove">✕</button></div></div>';
         } else {
           recordHtml = '<div class="tuesday-drop" data-slot-id="' + recordSlot.id + '" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event, \'' + recordSlot.id + '\')">'
@@ -798,7 +1239,21 @@
     function onStorageReady() {
       ShowEngine.ensureSlots();
       renderIdeasList();
+
+      // Check for hash-based show display on load
+      if (location.hash.startsWith('#show/')) {
+        var slotId = location.hash.replace('#show/', '');
+        // Small delay to ensure data is ready
+        setTimeout(function() { openShowDisplay(slotId); }, 100);
+      }
     }
+
+    // Close show display on Escape key
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && document.getElementById('showDisplayOverlay').classList.contains('active')) {
+        closeShowDisplay();
+      }
+    });
   </script>
 </body>
 </html>

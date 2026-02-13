@@ -8,13 +8,13 @@
 const SiteConfig = {
   // ---- Podcast Platforms ----
   platforms: {
-    spotify: '',        // e.g. 'https://open.spotify.com/show/...'
-    apple: '',          // e.g. 'https://podcasts.apple.com/us/podcast/...'
+    spotify: 'https://open.spotify.com/show/1zR6Ro5ZEKNVxi6Vmffdi3',
+    apple: 'https://podcasts.apple.com/us/podcast/salt-all-the-things/id1876978999',
     youtube: 'https://www.youtube.com/channel/UCg_DAljSae62HqGj0ta_e8g',
-    amazonMusic: '',    // e.g. 'https://music.amazon.com/podcasts/...'
+    amazonMusic: 'https://music.amazon.com/podcasts/6b191782-b370-44d0-b0e3-ebd2e3e0ac23/salt-all-the-things',
     pocketCasts: '',    // e.g. 'https://pca.st/...'
     overcast: '',       // e.g. 'https://overcast.fm/...'
-    rss: ''             // e.g. 'https://anchor.fm/s/.../podcast/rss'
+    rss: 'https://anchor.fm/s/10f035ec0/podcast/rss'
   },
 
   // ---- Community ----
