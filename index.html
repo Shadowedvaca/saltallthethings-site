@@ -1089,6 +1089,7 @@
 
   <!-- Scripts -->
   <script src="js/site-config.js"></script>
+  <script src="js/storage.js"></script>
   <script>
     // ============================================
     // Particles
@@ -1186,79 +1187,44 @@
       var grid = document.getElementById('youtubeGrid');
       var cta = document.getElementById('youtubeCta');
 
-      if (!ytUrl) {
+      // Load video IDs from config
+      var config = Storage.getConfig();
+      var latestVideoIds = [
+        config.youtubeVideo1 || '',
+        config.youtubeVideo2 || '',
+        config.youtubeVideo3 || ''
+      ];
+
+      // Filter out empty IDs
+      var videoIds = latestVideoIds.filter(function(id) { return id && id.length > 0; });
+
+      if (videoIds.length === 0) {
+        // No videos configured - show placeholder
         grid.innerHTML = '<div class="youtube-card"><div class="youtube-placeholder">'
-          + '<span class="play-icon">▶</span><span>YouTube channel not configured</span>'
+          + '<span class="play-icon">▶</span><span>Videos coming soon</span>'
           + '</div></div>';
+        if (ytUrl) {
+          cta.innerHTML = '<a href="' + ytUrl + '" target="_blank" rel="noopener">Subscribe on YouTube →</a>';
+        }
         return;
       }
 
-      // Extract channel ID from URL
-      var channelId = ytUrl.match(/channel\/([^\/\?]+)/);
-      if (!channelId || !channelId[1]) {
-        grid.innerHTML = '<div class="youtube-card"><div class="youtube-placeholder">'
-          + '<span class="play-icon">▶</span><span>Invalid YouTube channel URL</span>'
-          + '</div></div>';
-        return;
+      // Display video embeds
+      grid.innerHTML = videoIds.map(function(videoId) {
+        return '<div class="youtube-card">'
+          + '<iframe src="https://www.youtube.com/embed/' + videoId + '" '
+          + 'allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" '
+          + 'referrerpolicy="strict-origin-when-cross-origin" '
+          + 'allowfullscreen></iframe>'
+          + '</div>';
+      }).join('');
+
+      // Update CTA
+      if (ytUrl) {
+        cta.innerHTML = '<a href="' + ytUrl + '" target="_blank" rel="noopener">View Channel →</a>';
       }
-
-      channelId = channelId[1];
-
-      // Fetch latest videos from YouTube RSS feed (no API key required!)
-      var rssUrl = 'https://www.youtube.com/feeds/videos.xml?channel_id=' + channelId;
-      
-      // Use a CORS proxy to fetch the RSS feed
-      fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(rssUrl))
-        .then(function(response) { return response.json(); })
-        .then(function(data) {
-          var parser = new DOMParser();
-          var xml = parser.parseFromString(data.contents, 'text/xml');
-          var entries = xml.querySelectorAll('entry');
-          
-          if (entries.length === 0) {
-            grid.innerHTML = '<div class="youtube-card"><div class="youtube-placeholder">'
-              + '<span class="play-icon">▶</span><span>No videos yet</span>'
-              + '</div></div>';
-            if (ytUrl) {
-              cta.innerHTML = '<a href="' + ytUrl + '" target="_blank" rel="noopener">Visit Channel →</a>';
-            }
-            return;
-          }
-
-          // Get up to 3 latest videos
-          var videos = [];
-          for (var i = 0; i < Math.min(3, entries.length); i++) {
-            var entry = entries[i];
-            var videoId = entry.querySelector('videoId').textContent;
-            videos.push(videoId);
-          }
-
-          // Display video embeds
-          grid.innerHTML = videos.map(function(videoId) {
-            return '<div class="youtube-card">'
-              + '<iframe src="https://www.youtube.com/embed/' + videoId + '" '
-              + 'allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" '
-              + 'allowfullscreen></iframe>'
-              + '</div>';
-          }).join('');
-
-          // Update CTA
-          if (ytUrl) {
-            cta.innerHTML = '<a href="' + ytUrl + '" target="_blank" rel="noopener">View Channel →</a>';
-          }
-        })
-        .catch(function(err) {
-          console.warn('Failed to load YouTube videos:', err);
-          // Show placeholder on error
-          grid.innerHTML = '<div class="youtube-card"><div class="youtube-placeholder">'
-            + '<span class="play-icon">▶</span><span>Unable to load videos</span>'
-            + '</div></div>';
-          
-          if (ytUrl) {
-            cta.innerHTML = '<a href="' + ytUrl + '" target="_blank" rel="noopener">Visit Channel →</a>';
-          }
-        });
     })();
+
 
     // ============================================
     // Discord section

@@ -130,6 +130,30 @@
         </div>
       </div>
 
+      <!-- Featured YouTube Videos -->
+      <div class="card card-elevated mb-lg">
+        <h2 class="mb-md">Featured YouTube Videos</h2>
+        <p class="text-sm text-secondary mb-md">The 3 videos displayed on the homepage. Get video IDs from YouTube URLs (the part after "watch?v=").</p>
+        <div class="form-group">
+          <label>Video 1 ID <span class="label-hint">— most recent</span></label>
+          <input type="text" id="youtubeVideo1" placeholder="e.g., dQw4w9WgXcQ">
+        </div>
+        <div class="form-group">
+          <label>Video 2 ID</label>
+          <input type="text" id="youtubeVideo2" placeholder="e.g., dQw4w9WgXcQ">
+        </div>
+        <div class="form-group">
+          <label>Video 3 ID</label>
+          <input type="text" id="youtubeVideo3" placeholder="e.g., dQw4w9WgXcQ">
+        </div>
+        <div class="text-sm text-secondary" style="background: var(--bg-surface); padding: 12px; border-radius: 6px; border-left: 3px solid var(--gold-dim);">
+          <strong>How to get a video ID:</strong><br>
+          1. Go to your video on YouTube<br>
+          2. Look at the URL: <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">youtube.com/watch?v=<strong>ABC123xyz</strong></code><br>
+          3. Copy the part after "v=" (in this example: <strong>ABC123xyz</strong>)
+        </div>
+      </div>
+
       <!-- Show Context Prompt -->
       <div class="card card-elevated mb-lg">
         <h2 class="mb-md">Show Context Prompt</h2>
@@ -200,6 +224,9 @@
       document.getElementById('openaiModelId').value = config.openaiModelId || 'gpt-4o';
       document.getElementById('titleCount').value = config.titleCount || 3;
       document.getElementById('jokeCount').value = config.jokeCount || 5;
+      document.getElementById('youtubeVideo1').value = config.youtubeVideo1 || '';
+      document.getElementById('youtubeVideo2').value = config.youtubeVideo2 || '';
+      document.getElementById('youtubeVideo3').value = config.youtubeVideo3 || '';
       document.getElementById('showContext').value = config.showContext || '';
       document.getElementById('jokeContext').value = config.jokeContext || '';
       renderSegments(config.segments || []);
@@ -215,6 +242,9 @@
         openaiModelId: document.getElementById('openaiModelId').value,
         titleCount: parseInt(document.getElementById('titleCount').value) || 3,
         jokeCount: parseInt(document.getElementById('jokeCount').value) || 5,
+        youtubeVideo1: document.getElementById('youtubeVideo1').value,
+        youtubeVideo2: document.getElementById('youtubeVideo2').value,
+        youtubeVideo3: document.getElementById('youtubeVideo3').value,
         showContext: document.getElementById('showContext').value,
         jokeContext: document.getElementById('jokeContext').value,
         segments: getSegmentsFromDOM()
