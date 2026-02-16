@@ -23,6 +23,8 @@ const SiteConfig = {
   // ---- Support ----
   patreon: 'https://www.patreon.com/cw/SaltAllTheThingsPodcast',
   buyMeACoffee: 'https://buymeacoffee.com/saltallthethings',
+  kofi: 'https://ko-fi.com/saltallthethings',
+  paypal: 'https://www.paypal.com/donate/?hosted_button_id=929EXMERABQNC',
 
   // ---- Social Media ----
   social: {
@@ -46,7 +48,7 @@ const SiteConfig = {
     subtitle: 'A little salt for your day',
     launchDate: '2026-02-17',
     hosts: [
-      { name: 'Rocket', role: 'Primary Host', character: 'Zatañña' },
+      { name: 'Rocket', role: 'Primary Host', character: 'Rocket' },
       { name: 'Trog', role: 'Co-Host', character: 'Trogmoon' }
     ]
   },

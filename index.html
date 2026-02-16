@@ -1186,22 +1186,78 @@
       var grid = document.getElementById('youtubeGrid');
       var cta = document.getElementById('youtubeCta');
 
-      // Placeholder cards until real videos are added
-      var placeholders = [
-        'Channel trailer coming soon',
-        'Episode clips coming soon',
-        'Bonus content coming soon'
-      ];
-
-      grid.innerHTML = placeholders.map(function(text) {
-        return '<div class="youtube-card"><div class="youtube-placeholder">'
-          + '<span class="play-icon">▶</span><span>' + text + '</span>'
+      if (!ytUrl) {
+        grid.innerHTML = '<div class="youtube-card"><div class="youtube-placeholder">'
+          + '<span class="play-icon">▶</span><span>YouTube channel not configured</span>'
           + '</div></div>';
-      }).join('');
-
-      if (ytUrl) {
-        cta.innerHTML = '<a href="' + ytUrl + '" target="_blank" rel="noopener">Subscribe on YouTube →</a>';
+        return;
       }
+
+      // Extract channel ID from URL
+      var channelId = ytUrl.match(/channel\/([^\/\?]+)/);
+      if (!channelId || !channelId[1]) {
+        grid.innerHTML = '<div class="youtube-card"><div class="youtube-placeholder">'
+          + '<span class="play-icon">▶</span><span>Invalid YouTube channel URL</span>'
+          + '</div></div>';
+        return;
+      }
+
+      channelId = channelId[1];
+
+      // Fetch latest videos from YouTube RSS feed (no API key required!)
+      var rssUrl = 'https://www.youtube.com/feeds/videos.xml?channel_id=' + channelId;
+      
+      // Use a CORS proxy to fetch the RSS feed
+      fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(rssUrl))
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+          var parser = new DOMParser();
+          var xml = parser.parseFromString(data.contents, 'text/xml');
+          var entries = xml.querySelectorAll('entry');
+          
+          if (entries.length === 0) {
+            grid.innerHTML = '<div class="youtube-card"><div class="youtube-placeholder">'
+              + '<span class="play-icon">▶</span><span>No videos yet</span>'
+              + '</div></div>';
+            if (ytUrl) {
+              cta.innerHTML = '<a href="' + ytUrl + '" target="_blank" rel="noopener">Visit Channel →</a>';
+            }
+            return;
+          }
+
+          // Get up to 3 latest videos
+          var videos = [];
+          for (var i = 0; i < Math.min(3, entries.length); i++) {
+            var entry = entries[i];
+            var videoId = entry.querySelector('videoId').textContent;
+            videos.push(videoId);
+          }
+
+          // Display video embeds
+          grid.innerHTML = videos.map(function(videoId) {
+            return '<div class="youtube-card">'
+              + '<iframe src="https://www.youtube.com/embed/' + videoId + '" '
+              + 'allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" '
+              + 'allowfullscreen></iframe>'
+              + '</div>';
+          }).join('');
+
+          // Update CTA
+          if (ytUrl) {
+            cta.innerHTML = '<a href="' + ytUrl + '" target="_blank" rel="noopener">View Channel →</a>';
+          }
+        })
+        .catch(function(err) {
+          console.warn('Failed to load YouTube videos:', err);
+          // Show placeholder on error
+          grid.innerHTML = '<div class="youtube-card"><div class="youtube-placeholder">'
+            + '<span class="play-icon">▶</span><span>Unable to load videos</span>'
+            + '</div></div>';
+          
+          if (ytUrl) {
+            cta.innerHTML = '<a href="' + ytUrl + '" target="_blank" rel="noopener">Visit Channel →</a>';
+          }
+        });
     })();
 
     // ============================================
@@ -1236,10 +1292,16 @@
         + '<path d="M38 10H36V8C36 6.9 35.1 6 34 6H8C6.9 6 6 6.9 6 8V30C6 35.5 10.5 40 16 40H24C29.5 40 34 35.5 34 30V28H38C40.2 28 42 26.2 42 24V14C42 11.8 40.2 10 38 10ZM30 30C30 33.3 27.3 36 24 36H16C12.7 36 10 33.3 10 30V10H30V30ZM38 24H34V14H38V24Z" fill="#FFDD00"/>'
         + '</svg>';
 
-      // YouTube play button (official red #FF0000)
-      var youtubeLogo = '<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">'
-        + '<path d="M43.2 13.6C42.7 11.8 41.3 10.4 39.5 9.9C36.2 9 24 9 24 9C24 9 11.8 9 8.5 9.9C6.7 10.4 5.3 11.8 4.8 13.6C3.9 16.9 3.9 24 3.9 24C3.9 24 3.9 31.1 4.8 34.4C5.3 36.2 6.7 37.6 8.5 38.1C11.8 39 24 39 24 39C24 39 36.2 39 39.5 38.1C41.3 37.6 42.7 36.2 43.2 34.4C44.1 31.1 44.1 24 44.1 24C44.1 24 44.1 16.9 43.2 13.6Z" fill="#FF0000"/>'
-        + '<path d="M19.5 30.7L31.5 24L19.5 17.3V30.7Z" fill="white"/>'
+      // Ko-fi logo mark (official blue #13C3FF)
+      var kofiLogo = '<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">'
+        + '<path d="M42 16C42 14.3 40.7 13 39 13H38C38 11.3 36.7 10 35 10H11C9.3 10 8 11.3 8 13V29C8 33.4 11.6 37 16 37H26C30.4 37 34 33.4 34 29V28H39C40.7 28 42 26.7 42 25V16ZM30 29C30 31.2 28.2 33 26 33H16C13.8 33 12 31.2 12 29V14H30V29ZM38 24H34V17H38V24Z" fill="#13C3FF"/>'
+        + '<circle cx="18" cy="21" r="2" fill="#13C3FF"/><circle cx="24" cy="21" r="2" fill="#13C3FF"/>'
+        + '</svg>';
+
+      // PayPal logo mark (official navy #00457C)
+      var paypalLogo = '<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">'
+        + '<path d="M30.5 10H17C16.4 10 15.9 10.4 15.8 11L12 35C11.9 35.6 12.4 36 13 36H17L18 30H23C28.5 30 32 27 33 22C33.8 17.5 31 14 27 12C26.2 11.3 24.9 11 23.5 11L30.5 10Z" fill="#00457C"/>'
+        + '<path d="M23 18C23 18 25 18 26 19C27 20 27 22 26.5 24C26 26 24.5 27 23 27H20L21 20C21 19.4 21.4 18 22 18H23Z" fill="#009CDE"/>'
         + '</svg>';
 
       // --- Build cards ---
@@ -1259,22 +1321,33 @@
       var hasBmac = SiteConfig.buyMeACoffee && SiteConfig.buyMeACoffee.length > 0;
       cards.push({
         icon: bmacLogo,
-        title: 'Buy Us a Coffee',
+        title: 'Buy Me a Coffee',
         desc: 'A one-time tip to fuel the next recording session. Every cup counts.',
         link: hasBmac ? SiteConfig.buyMeACoffee : '#',
         linkText: hasBmac ? 'Buy a Coffee' : 'Coming Soon',
         disabled: !hasBmac
       });
 
-      // YouTube
-      var hasYt = SiteConfig.platforms.youtube && SiteConfig.platforms.youtube.length > 0;
+      // Ko-fi
+      var hasKofi = SiteConfig.kofi && SiteConfig.kofi.length > 0;
       cards.push({
-        icon: youtubeLogo,
-        title: 'Subscribe & Share',
-        desc: 'Free — subscribe on your favorite platform, leave a review, tell a friend.',
-        link: hasYt ? SiteConfig.platforms.youtube : '#',
-        linkText: 'Subscribe',
-        disabled: !hasYt
+        icon: kofiLogo,
+        title: 'Ko-fi',
+        desc: 'Support the show with a one-time or monthly contribution on Ko-fi.',
+        link: hasKofi ? SiteConfig.kofi : '#',
+        linkText: hasKofi ? 'Support on Ko-fi' : 'Coming Soon',
+        disabled: !hasKofi
+      });
+
+      // PayPal
+      var hasPaypal = SiteConfig.paypal && SiteConfig.paypal.length > 0;
+      cards.push({
+        icon: paypalLogo,
+        title: 'PayPal',
+        desc: 'Send a direct donation via PayPal — fast, simple, and secure.',
+        link: hasPaypal ? SiteConfig.paypal : '#',
+        linkText: hasPaypal ? 'Donate via PayPal' : 'Coming Soon',
+        disabled: !hasPaypal
       });
 
       container.innerHTML = cards.map(function(card) {
