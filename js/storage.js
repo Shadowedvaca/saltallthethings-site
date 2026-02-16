@@ -122,7 +122,8 @@ const Storage = {
 
   // ---- Config ----
   getConfig() {
-    return this.get('config') || {
+    var stored = this.get('config');
+    var defaults = {
       aiModel: 'claude',
       claudeApiKey: '',
       claudeModelId: 'claude-sonnet-4-5-20250929',
@@ -130,10 +131,19 @@ const Storage = {
       openaiModelId: 'gpt-4o',
       titleCount: 3,
       jokeCount: 5,
+      youtubeVideo1: '',
+      youtubeVideo2: '',
+      youtubeVideo3: '',
       showContext: this._defaultShowContext(),
       jokeContext: this._defaultJokeContext(),
       segments: this._defaultSegments()
     };
+    
+    // If no stored config, return defaults
+    if (!stored) return defaults;
+    
+    // Merge stored config with defaults (stored values take precedence)
+    return Object.assign({}, defaults, stored);
   },
 
   saveConfig(config) {
