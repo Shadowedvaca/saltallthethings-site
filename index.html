@@ -1148,6 +1148,8 @@
     // ============================================
     // Episodes section
     // ============================================
+    // Episodes section with pagination
+    // ============================================
     (function() {
       const apiUrl = SiteConfig.publicApiUrl;
       // Only fetch if API is configured
@@ -1156,26 +1158,82 @@
         return;
       }
 
-      fetch(apiUrl + '/public/episodes')
-        .then(function(r) { return r.json(); })
-        .then(function(episodes) {
-          if (!episodes || episodes.length === 0) return;
+      var currentPage = 1;
+      var totalPages = 1;
+
+      function loadEpisodes(page) {
+        fetch(apiUrl + '/public/episodes?page=' + page + '&limit=10')
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (!data || !data.episodes || data.episodes.length === 0) return;
+            
+            var grid = document.getElementById('episodesGrid');
+            var pagination = data.pagination;
+            currentPage = pagination.page;
+            totalPages = pagination.totalPages;
+            
+            // Render episodes
+            grid.innerHTML = data.episodes.map(function(ep) {
+              var row = '<div class="episode-row">'
+                + '<span class="ep-number">' + esc(ep.episodeNumber) + '</span>'
+                + '<div class="ep-info">'
+                + '<div class="ep-title">' + esc(ep.title) + '</div>'
+                + '<div class="ep-summary">' + esc(ep.summary || '') + '</div>'
+                + '</div>'
+                + '<span class="ep-date">' + formatDate(ep.releaseDate) + '</span>'
+                + '</div>';
+              return row;
+            }).join('');
+
+            // Render pagination controls
+            renderPaginationControls(pagination);
+          })
+          .catch(function(err) {
+            console.warn('Failed to load episodes:', err);
+          });
+      }
+
+      function renderPaginationControls(pagination) {
+        var container = document.getElementById('episodesPagination');
+        if (!container) {
+          // Create pagination container if it doesn't exist
           var grid = document.getElementById('episodesGrid');
-          grid.innerHTML = episodes.map(function(ep) {
-            var row = '<div class="episode-row">'
-              + '<span class="ep-number">' + esc(ep.episodeNumber) + '</span>'
-              + '<div class="ep-info">'
-              + '<div class="ep-title">' + esc(ep.title) + '</div>'
-              + '<div class="ep-summary">' + esc(ep.summary || '') + '</div>'
-              + '</div>'
-              + '<span class="ep-date">' + formatDate(ep.releaseDate) + '</span>'
-              + '</div>';
-            return row;
-          }).join('');
-        })
-        .catch(function(err) {
-          console.warn('Failed to load episodes:', err);
-        });
+          container = document.createElement('div');
+          container.id = 'episodesPagination';
+          container.style.cssText = 'display: flex; justify-content: center; align-items: center; gap: 1rem; margin-top: 2rem;';
+          grid.parentNode.insertBefore(container, grid.nextSibling);
+        }
+
+        if (pagination.totalPages <= 1) {
+          container.innerHTML = '';
+          return;
+        }
+
+        var html = '';
+        
+        // Previous button
+        if (pagination.page > 1) {
+          html += '<button onclick="loadEpisodesPage(' + (pagination.page - 1) + ')" '
+            + 'style="padding: 0.5rem 1rem; background: var(--gold); color: var(--bg-deep); border: none; border-radius: 6px; cursor: pointer; font-family: inherit;">← Previous</button>';
+        }
+
+        // Page info
+        html += '<span style="color: var(--text-secondary);">Page ' + pagination.page + ' of ' + pagination.totalPages + '</span>';
+
+        // Next button
+        if (pagination.hasMore) {
+          html += '<button onclick="loadEpisodesPage(' + (pagination.page + 1) + ')" '
+            + 'style="padding: 0.5rem 1rem; background: var(--gold); color: var(--bg-deep); border: none; border-radius: 6px; cursor: pointer; font-family: inherit;">Next →</button>';
+        }
+
+        container.innerHTML = html;
+      }
+
+      // Make loadEpisodes available globally for pagination buttons
+      window.loadEpisodesPage = loadEpisodes;
+
+      // Initial load
+      loadEpisodes(1);
     })();
 
     // ============================================

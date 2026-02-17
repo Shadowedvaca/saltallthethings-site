@@ -103,9 +103,17 @@ export default {
 /**
  * Public episodes endpoint.
  * Joins showSlots + assignments + ideas to return only:
- * - Episodes with a release date in the past
+ * - Episodes with a release date in the past (PST timezone)
  * - That have an assigned idea with a title and summary
- * Returns: [{ episodeNumber, title, summary, releaseDate }]
+ * 
+ * Query params:
+ *   page (optional): page number, default 1
+ *   limit (optional): episodes per page, default 10, max 50
+ * 
+ * Returns: {
+ *   episodes: [{ episodeNumber, title, summary, releaseDate }],
+ *   pagination: { page, limit, total, totalPages, hasMore }
+ * }
  */
 async function handlePublicEpisodes(env, request) {
   try {
@@ -119,14 +127,19 @@ async function handlePublicEpisodes(env, request) {
     const assignments = assignmentsRaw ? JSON.parse(assignmentsRaw) : {};
     const ideas = ideasRaw ? JSON.parse(ideasRaw) : [];
 
-    const today = new Date().toISOString().split('T')[0];
+    // Get current date in PST (UTC-8 or UTC-7 depending on DST)
+    // For simplicity, we'll use a fixed UTC-8 offset
+    const nowUTC = new Date();
+    const nowPST = new Date(nowUTC.getTime() - (8 * 60 * 60 * 1000));
+    const todayPST = nowPST.toISOString().split('T')[0];
+    
     const ideasMap = {};
     ideas.forEach(function(idea) { ideasMap[idea.id] = idea; });
 
-    const episodes = [];
+    const allEpisodes = [];
     for (const slot of slots) {
-      // Only include released episodes (release date <= today)
-      if (slot.releaseDate > today) continue;
+      // Only include released episodes (release date <= today in PST)
+      if (slot.releaseDate > todayPST) continue;
 
       const ideaId = assignments[slot.id];
       if (!ideaId) continue;
@@ -137,7 +150,7 @@ async function handlePublicEpisodes(env, request) {
       const title = idea.selectedTitle || (idea.titles && idea.titles[0]) || null;
       if (!title) continue;
 
-      episodes.push({
+      allEpisodes.push({
         episodeNumber: slot.episodeNumber,
         title: title,
         summary: idea.summary || '',
@@ -146,9 +159,31 @@ async function handlePublicEpisodes(env, request) {
     }
 
     // Sort newest first
-    episodes.sort(function(a, b) {
+    allEpisodes.sort(function(a, b) {
       return b.releaseDate.localeCompare(a.releaseDate);
     });
+
+    // Pagination
+    const url = new URL(request.url);
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+    const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || '10', 10)));
+    
+    const total = allEpisodes.length;
+    const totalPages = Math.ceil(total / limit);
+    const startIdx = (page - 1) * limit;
+    const endIdx = startIdx + limit;
+    const episodes = allEpisodes.slice(startIdx, endIdx);
+
+    const responseData = {
+      episodes: episodes,
+      pagination: {
+        page: page,
+        limit: limit,
+        total: total,
+        totalPages: totalPages,
+        hasMore: page < totalPages
+      }
+    };
 
     // Cache for 5 minutes — episodes don't change that often
     const headers = {
@@ -157,7 +192,7 @@ async function handlePublicEpisodes(env, request) {
       'Cache-Control': 'public, max-age=300'
     };
 
-    return new Response(JSON.stringify(episodes), { status: 200, headers });
+    return new Response(JSON.stringify(responseData), { status: 200, headers });
 
   } catch (err) {
     return json({ error: 'Failed to load episodes' }, 500, request);
