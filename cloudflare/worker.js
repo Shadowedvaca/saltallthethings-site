@@ -3,12 +3,13 @@
  * Cloudflare Worker + KV
  *
  * Routes:
- *   GET  /data/:key         — read a data key (ideas, jokes, config, etc.)
- *   PUT  /data/:key         — write a data key
- *   GET  /export            — dump all data as one JSON blob (for svtools)
- *   PUT  /import            — bulk import
- *   GET  /public/episodes   — public: released episodes (no auth)
- *   GET  /health            — public health check
+ *   GET  /data/:key           — read a data key (ideas, jokes, config, etc.)
+ *   PUT  /data/:key           — write a data key
+ *   GET  /export              — dump all data as one JSON blob (for svtools)
+ *   PUT  /import              — bulk import
+ *   GET  /public/episodes     — public: released episodes (no auth)
+ *   GET  /public/homepage     — public: YouTube video IDs (no auth)
+ *   GET  /health              — public health check
  *
  * Auth: All routes except /health and /public/* require X-Auth header.
  */
@@ -38,6 +39,11 @@ export default {
     // Public episodes — returns only released episodes with titles/summaries
     if (request.method === 'GET' && path === '/public/episodes') {
       return handlePublicEpisodes(env, request);
+    }
+
+    // Public homepage config — returns YouTube video IDs for homepage
+    if (request.method === 'GET' && path === '/public/homepage') {
+      return handlePublicHomepage(env, request);
     }
 
     // ---- Authenticated routes ----
@@ -155,6 +161,36 @@ async function handlePublicEpisodes(env, request) {
 
   } catch (err) {
     return json({ error: 'Failed to load episodes' }, 500, request);
+  }
+}
+
+/**
+ * Public homepage config endpoint.
+ * Returns YouTube video IDs and recent episodes for the homepage.
+ * No auth required.
+ */
+async function handlePublicHomepage(env, request) {
+  try {
+    const configRaw = await env.SATT_DATA.get('config');
+    const config = configRaw ? JSON.parse(configRaw) : {};
+
+    const data = {
+      youtubeVideo1: config.youtubeVideo1 || '',
+      youtubeVideo2: config.youtubeVideo2 || '',
+      youtubeVideo3: config.youtubeVideo3 || ''
+    };
+
+    // Cache for 5 minutes
+    const headers = {
+      ...corsHeaders(request),
+      'Content-Type': 'application/json',
+      'Cache-Control': 'public, max-age=300'
+    };
+
+    return new Response(JSON.stringify(data), { status: 200, headers });
+
+  } catch (err) {
+    return json({ error: 'Failed to load homepage config' }, 500, request);
   }
 }
 

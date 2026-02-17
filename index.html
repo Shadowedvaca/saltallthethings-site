@@ -1089,7 +1089,6 @@
 
   <!-- Scripts -->
   <script src="js/site-config.js"></script>
-  <script src="js/storage.js"></script>
   <script>
     // ============================================
     // Particles
@@ -1186,45 +1185,63 @@
       var ytUrl = SiteConfig.platforms.youtube;
       var grid = document.getElementById('youtubeGrid');
       var cta = document.getElementById('youtubeCta');
+      var apiUrl = SiteConfig.publicApiUrl;
 
-      // Load video IDs from config
-      var config = Storage.getConfig();
-      var latestVideoIds = [
-        config.youtubeVideo1 || '',
-        config.youtubeVideo2 || '',
-        config.youtubeVideo3 || ''
-      ];
+      // Fetch video IDs from public API
+      if (apiUrl && apiUrl !== '__' + 'API_URL' + '__') {
+        fetch(apiUrl + '/public/homepage')
+          .then(function(response) { return response.json(); })
+          .then(function(data) {
+            var videoIds = [
+              data.youtubeVideo1 || '',
+              data.youtubeVideo2 || '',
+              data.youtubeVideo3 || ''
+            ].filter(function(id) { return id && id.length > 0; });
 
-      // Filter out empty IDs
-      var videoIds = latestVideoIds.filter(function(id) { return id && id.length > 0; });
+            if (videoIds.length === 0) {
+              grid.innerHTML = '<div class="youtube-card"><div class="youtube-placeholder">'
+                + '<span class="play-icon">▶</span><span>Videos coming soon</span>'
+                + '</div></div>';
+              if (ytUrl) {
+                cta.innerHTML = '<a href="' + ytUrl + '" target="_blank" rel="noopener">Subscribe on YouTube →</a>';
+              }
+              return;
+            }
 
-      if (videoIds.length === 0) {
-        // No videos configured - show placeholder
+            // Display video embeds
+            grid.innerHTML = videoIds.map(function(videoId) {
+              return '<div class="youtube-card">'
+                + '<iframe src="https://www.youtube.com/embed/' + videoId + '" '
+                + 'allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" '
+                + 'referrerpolicy="strict-origin-when-cross-origin" '
+                + 'allowfullscreen></iframe>'
+                + '</div>';
+            }).join('');
+
+            // Update CTA
+            if (ytUrl) {
+              cta.innerHTML = '<a href="' + ytUrl + '" target="_blank" rel="noopener">View Channel →</a>';
+            }
+          })
+          .catch(function(err) {
+            console.warn('Failed to load YouTube videos:', err);
+            grid.innerHTML = '<div class="youtube-card"><div class="youtube-placeholder">'
+              + '<span class="play-icon">▶</span><span>Unable to load videos</span>'
+              + '</div></div>';
+            if (ytUrl) {
+              cta.innerHTML = '<a href="' + ytUrl + '" target="_blank" rel="noopener">Visit Channel →</a>';
+            }
+          });
+      } else {
+        // No API configured - show placeholder
         grid.innerHTML = '<div class="youtube-card"><div class="youtube-placeholder">'
           + '<span class="play-icon">▶</span><span>Videos coming soon</span>'
           + '</div></div>';
         if (ytUrl) {
           cta.innerHTML = '<a href="' + ytUrl + '" target="_blank" rel="noopener">Subscribe on YouTube →</a>';
         }
-        return;
-      }
-
-      // Display video embeds
-      grid.innerHTML = videoIds.map(function(videoId) {
-        return '<div class="youtube-card">'
-          + '<iframe src="https://www.youtube.com/embed/' + videoId + '" '
-          + 'allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" '
-          + 'referrerpolicy="strict-origin-when-cross-origin" '
-          + 'allowfullscreen></iframe>'
-          + '</div>';
-      }).join('');
-
-      // Update CTA
-      if (ytUrl) {
-        cta.innerHTML = '<a href="' + ytUrl + '" target="_blank" rel="noopener">View Channel →</a>';
       }
     })();
-
 
     // ============================================
     // Discord section
