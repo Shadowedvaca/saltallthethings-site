@@ -7,9 +7,9 @@ const ShowEngine = {
   // First recording date
   FIRST_RECORD_DATE: new Date('2026-01-20T00:00:00'),
   // Launch day - first 4 episodes all release here
-  LAUNCH_DATE: new Date('2026-02-17T00:00:00'),
-  // Number of launch-batch episodes
-  LAUNCH_BATCH_SIZE: 4,
+  LAUNCH_DATE: new Date('2026-03-03T00:00:00'),
+  // Banked episodes released per Tuesday during rollout (1-4)
+  ROLLOUT_EPISODES_PER_WEEK: 2,
   // How far out to generate (in months)
   GENERATE_MONTHS_AHEAD: 3,
 
@@ -74,7 +74,7 @@ const ShowEngine = {
         episodeNum: epNum,
         recordDate: recordDate.toISOString().split('T')[0],
         releaseDate: releaseDate.toISOString().split('T')[0],
-        isLaunchBatch: epNum <= this.LAUNCH_BATCH_SIZE
+        isRollout: this._isRolloutEpisode(recordDate)
       });
 
       epNum++;
@@ -90,13 +90,25 @@ const ShowEngine = {
    * EP005+: Release the Tuesday after recording
    */
   _calculateReleaseDate(recordDate, epNum) {
-    if (epNum <= this.LAUNCH_BATCH_SIZE) {
-      return new Date(this.LAUNCH_DATE);
+    const normalRelease = new Date(recordDate);
+    normalRelease.setDate(normalRelease.getDate() + 7);
+
+    // If normal release is after launch, this isn't a banked episode
+    if (normalRelease > this.LAUNCH_DATE) {
+      return normalRelease;
     }
-    // Next Tuesday after recording
-    const release = new Date(recordDate);
-    release.setDate(release.getDate() + 7);
+
+    // Banked episode — spread across Tuesdays at the rollout rate
+    const weekOffset = Math.floor((epNum - 1) / this.ROLLOUT_EPISODES_PER_WEEK);
+    const release = new Date(this.LAUNCH_DATE);
+    release.setDate(release.getDate() + (weekOffset * 7));
     return release;
+  },
+
+  _isRolloutEpisode(recordDate) {
+    const normalRelease = new Date(recordDate);
+    normalRelease.setDate(normalRelease.getDate() + 7);
+    return normalRelease <= this.LAUNCH_DATE;
   },
 
   /**
@@ -141,5 +153,36 @@ const ShowEngine = {
   formatDateShort(dateStr) {
     const d = new Date(dateStr + 'T12:00:00');
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  },
+
+  /**
+   * Get the effective release date for a slot (override wins)
+   */
+  getEffectiveReleaseDate(slot) {
+    return slot.releaseDateOverride || slot.releaseDate;
+  },
+
+  /**
+   * Set a custom release date on a slot
+   */
+  setReleaseDate(slotId, newDate) {
+    const slots = Storage.getShowSlots();
+    const slot = slots.find(s => s.id === slotId);
+    if (!slot) return null;
+    slot.releaseDateOverride = newDate;
+    Storage.saveShowSlots(slots);
+    return slot;
+  },
+
+  /**
+   * Reset release date back to calculated default
+   */
+  resetReleaseDate(slotId) {
+    const slots = Storage.getShowSlots();
+    const slot = slots.find(s => s.id === slotId);
+    if (!slot) return null;
+    delete slot.releaseDateOverride;
+    Storage.saveShowSlots(slots);
+    return slot;
   }
 };

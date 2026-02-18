@@ -46,7 +46,7 @@ const SiteConfig = {
     name: 'Salt All The Things',
     tagline: 'Two friends, two decades of WoW, and zero filter — the good, the bad, and the salty.',
     subtitle: 'A little salt for your day',
-    launchDate: '2026-02-17',
+    launchDate: '2026-03-03',
     hosts: [
       { name: 'Rocket', role: 'Primary Host', character: 'Rocket' },
       { name: 'Trog', role: 'Co-Host', character: 'Trogmoon' }

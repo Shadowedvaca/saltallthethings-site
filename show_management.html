@@ -113,6 +113,7 @@
     }
     .date-badge.record { background: rgba(100,200,255,0.1); color: var(--ice); border: 1px solid rgba(100,200,255,0.2); }
     .date-badge.release { background: rgba(100,255,150,0.1); color: var(--status-scheduled); border: 1px solid rgba(100,255,150,0.2); }
+    .date-badge.release.override { background: rgba(255,200,50,0.15); color: var(--gold-bright); border-color: rgba(255,200,50,0.3); }
     .date-badge.ep { background: rgba(200,168,78,0.1); color: var(--gold); border: 1px solid rgba(200,168,78,0.2); }
 
     /* Past episodes collapsible section */
@@ -368,7 +369,7 @@
     // ============================================
     // State
     // ============================================
-    let currentMonth = 1; // February
+    let currentMonth = 2; // March
     let currentYear = 2026;
     let draggedIdeaId = null;
     const editingIdeas = new Set();
@@ -554,7 +555,7 @@
         scheduleHtml = '<div class="schedule-info">'
           + '<span class="date-badge ep">' + slot.episodeNumber + '</span>'
           + '<span class="date-badge record">Record: ' + ShowEngine.formatDateShort(slot.recordDate) + '</span>'
-          + '<span class="date-badge release">Release: ' + ShowEngine.formatDateShort(slot.releaseDate) + '</span>'
+          + '<span class="date-badge release' + (slot.releaseDateOverride ? ' override' : '') + '">Release: ' + ShowEngine.formatDateShort(ShowEngine.getEffectiveReleaseDate(slot)) + (slot.releaseDateOverride ? ' ✎' : '') + '</span>'
           + '<a href="#show/' + slot.id + '" class="show-display-link" onclick="event.stopPropagation(); openShowDisplay(\'' + slot.id + '\'); return false;" title="Full show display">⛶ View</a>'
           + '</div>';
       }
@@ -685,6 +686,20 @@
         + '<button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); saveEdits(\'' + idea.id + '\')">Save Changes</button>'
         + '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); cancelEdit(\'' + idea.id + '\')">Cancel</button>'
         + '</div></div>';
+      
+      // Release date editor (only if scheduled)
+      var editSlot = getScheduleInfoForIdea(idea.id);
+      if (editSlot) {
+        var effectiveRelease = ShowEngine.getEffectiveReleaseDate(editSlot);
+        var isOverridden = !!editSlot.releaseDateOverride;
+        html += '<div class="mb-md" onclick="event.stopPropagation()" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">'
+          + '<label class="text-xs text-muted" style="text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Release Date:</label>'
+          + '<input type="date" value="' + effectiveRelease + '" onchange="updateReleaseDate(\'' + editSlot.id + '\', this.value)" '
+          + 'style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-default); border-radius: 4px; padding: 4px 8px; font-size: 0.8rem;">'
+          + (isOverridden ? '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); resetReleaseDate(\'' + editSlot.id + '\')" title="Reset to calculated default">↩ Reset</button>' : '')
+          + (isOverridden ? '<span class="text-xs" style="color: var(--gold-bright);">✎ Custom date</span>' : '<span class="text-xs text-muted">(default: record + 7 days)</span>')
+          + '</div>';
+      }
 
       // Editable titles
       html += '<div class="mb-md" onclick="event.stopPropagation()">'
@@ -1006,7 +1021,7 @@
         + '<div>'
         + '<span class="ep-badge">' + slot.episodeNumber + '</span>'
         + '<h1>' + esc(title) + '</h1>'
-        + '<div class="dates">Record: ' + ShowEngine.formatDateShort(slot.recordDate) + ' &nbsp;|&nbsp; Release: ' + ShowEngine.formatDateShort(slot.releaseDate) + '</div>'
+        + '<div class="dates">Record: ' + ShowEngine.formatDateShort(slot.recordDate) + ' &nbsp;|&nbsp; Release: ' + ShowEngine.formatDateShort(ShowEngine.getEffectiveReleaseDate(slot)) + '</div>'
         + '</div>'
         + '<button class="show-display-close" onclick="closeShowDisplay()">✕ Close</button>'
         + '</div>';
@@ -1164,7 +1179,7 @@
       var assignments = Storage.getAssignments();
       var ideas = Storage.getIdeas();
       var recordSlot = slots.find(function(s) { return s.recordDate === dateStr; });
-      var publishSlots = slots.filter(function(s) { return s.releaseDate === dateStr; });
+      var publishSlots = slots.filter(function(s) { return ShowEngine.getEffectiveReleaseDate(s) === dateStr; });
       var recordHtml = '';
       if (recordSlot) {
         var assignedIdeaId = assignments[recordSlot.id];
@@ -1181,7 +1196,7 @@
       }
       var publishHtml = '';
       if (publishSlots.length > 0) {
-        var isLaunch = publishSlots.some(function(s) { return s.isLaunchBatch; });
+        var isRollout = publishSlots.some(function(s) { return s.isRollout; });
         publishHtml = publishSlots.map(function(ps) {
           var aid = assignments[ps.id];
           if (aid) {
@@ -1191,7 +1206,11 @@
           }
           return '<div class="tuesday-drop" style="border-left: 2px solid var(--status-scheduled); opacity: 0.5;"><span class="empty-placeholder">' + ps.episodeNumber + '</span></div>';
         }).join('');
-        if (isLaunch) publishHtml = '<span class="launch-badge">Launch Day</span>' + publishHtml;
+        if (isRollout && publishSlots.length > 1) {
+          publishHtml = '<span class="launch-badge">Rollout</span>' + publishHtml;
+        } else if (isRollout) {
+          publishHtml = '<span class="launch-badge" style="background: rgba(100,200,255,0.15); color: var(--ice);">Rollout</span>' + publishHtml;
+        }
       }
       return '<div class="' + classes + '"><span class="day-number">' + dayNum + '</span><div class="tuesday-sections">'
         + (recordSlot ? '<div><div class="tuesday-section-label record">Record</div>' + recordHtml + '</div>' : '')
@@ -1225,6 +1244,20 @@
       Toast.success('Assigned to ' + slot.episodeNumber + ' (record ' + ShowEngine.formatDateShort(slot.recordDate) + ')');
     }
     function unassignShow(slotId) { Storage.unassignSlot(slotId); renderScheduleBoard(); renderIdeasList(); Toast.info('Show unassigned.'); }
+
+    function updateReleaseDate(slotId, newDate) {
+      ShowEngine.setReleaseDate(slotId, newDate);
+      renderIdeasList();
+      renderCalendar();
+      Toast.show('Release date updated', 'success');
+    }
+
+    function resetReleaseDate(slotId) {
+      ShowEngine.resetReleaseDate(slotId);
+      renderIdeasList();
+      renderCalendar();
+      Toast.show('Release date reset to default', 'info');
+    }
 
     // ============================================
     // Utilities
