@@ -10,6 +10,9 @@ Thumbs.db
 *.bak
 *.tmp
 
+# Scripts secrets
+scripts/secrets.bat
+
 # Sensitive data
 settings-backup/
 cloudflare/backup_push.bat
