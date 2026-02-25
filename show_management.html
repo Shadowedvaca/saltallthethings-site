@@ -574,7 +574,7 @@
         + '</div>'
         + '<div class="flex gap-xs" onclick="event.stopPropagation()">'
         + (idea.status === 'draft' ? '<button class="btn btn-secondary btn-sm" onclick="reprocessIdea(\'' + idea.id + '\')">Process</button>' : '')
-        + '<button class="btn btn-ghost btn-sm" onclick="deleteIdea(\'' + idea.id + '\')">✕</button>'
+        + '<button class="btn btn-ghost btn-sm" onclick="deleteIdea(\'' + idea.id + '\')" title="Delete this episode idea" style="color: var(--danger, #cc4444); font-size: 0.7rem; padding: 4px 8px;">Delete</button>'
         + '</div>'
         + '</div>'
         + '<div class="idea-expanded-content" id="expanded-' + idea.id + '">'
@@ -694,7 +694,7 @@
         var isOverridden = !!editSlot.releaseDateOverride;
         html += '<div class="mb-md" onclick="event.stopPropagation()" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">'
           + '<label class="text-xs text-muted" style="text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Release Date:</label>'
-          + '<input type="date" value="' + effectiveRelease + '" onchange="updateReleaseDate(\'' + editSlot.id + '\', this.value)" '
+          + '<input type="date" value="' + effectiveRelease + '" onblur="if(this.value && /^\\d{4}-\\d{2}-\\d{2}$/.test(this.value)) updateReleaseDate(\'' + editSlot.id + '\', this.value)" '
           + 'style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-default); border-radius: 4px; padding: 4px 8px; font-size: 0.8rem;">'
           + (isOverridden ? '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); resetReleaseDate(\'' + editSlot.id + '\')" title="Reset to calculated default">↩ Reset</button>' : '')
           + (isOverridden ? '<span class="text-xs" style="color: var(--gold-bright);">✎ Custom date</span>' : '<span class="text-xs text-muted">(default: record + 7 days)</span>')
