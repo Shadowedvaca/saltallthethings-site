@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from satt.auth_bridge import require_auth
@@ -87,7 +87,7 @@ async def get_data(
 @router.put("/data/{key}")
 async def put_data(
     key: str,
-    body: Any,
+    body: Any = Body(...),
     _user: dict = Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
