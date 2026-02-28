@@ -18,3 +18,12 @@ settings-backup/
 cloudflare/backup_push.bat
 cloudflare/backup_pull.bat
 cloudflare/SITE_DATA_BACKUP_*
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+.pytest_cache/
+*.egg-info/

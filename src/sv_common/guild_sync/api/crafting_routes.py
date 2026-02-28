@@ -1,0 +1,302 @@
+"""
+API routes for the Crafting Corner.
+
+Mounted at /api/crafting/ on the main FastAPI app.
+Public read endpoints + auth-required write endpoints.
+"""
+
+import logging
+from typing import Optional
+
+import asyncpg
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
+
+from sv_common.guild_sync import crafting_service
+
+logger = logging.getLogger(__name__)
+
+crafting_router = APIRouter(prefix="/api/crafting", tags=["Crafting Corner"])
+
+
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
+
+
+async def get_db_pool(request: Request) -> asyncpg.Pool:
+    """Retrieve the asyncpg pool stored on app state."""
+    pool = getattr(request.app.state, "guild_sync_pool", None)
+    if pool is None:
+        raise HTTPException(503, "Database pool not available")
+    return pool
+
+
+async def _get_current_player_id(request: Request) -> Optional[int]:
+    """Extract player_id from JWT cookie if present. Returns None if not logged in."""
+    from patt.deps import get_page_member
+    from sv_common.db.engine import get_session_factory
+    from patt.config import get_settings
+
+    settings = get_settings()
+    factory = get_session_factory(settings.database_url)
+    async with factory() as session:
+        player = await get_page_member(request, session)
+    return player.id if player else None
+
+
+# ---------------------------------------------------------------------------
+# Request / Response Models
+# ---------------------------------------------------------------------------
+
+
+class GuildOrderRequest(BaseModel):
+    recipe_id: int
+    message: str = ""
+
+
+class CraftingPreferenceRequest(BaseModel):
+    enabled: bool
+
+
+# ---------------------------------------------------------------------------
+# Public Read Endpoints
+# ---------------------------------------------------------------------------
+
+
+@crafting_router.get("/professions")
+async def list_professions(pool: asyncpg.Pool = Depends(get_db_pool)):
+    """All professions that have at least one recipe, sorted alphabetically."""
+    data = await crafting_service.get_profession_list(pool)
+    return {"ok": True, "data": data}
+
+
+@crafting_router.get("/expansions/{profession_id}")
+async def list_expansions(
+    profession_id: int,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+):
+    """All expansion tiers for a profession, newest first."""
+    data = await crafting_service.get_expansion_list(pool, profession_id)
+    return {"ok": True, "data": data}
+
+
+@crafting_router.get("/recipes/{profession_id}/{tier_id}")
+async def list_recipes(
+    profession_id: int,
+    tier_id: int,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+):
+    """All recipes for a profession+tier, alphabetical, with crafter counts."""
+    data = await crafting_service.get_recipes_for_filter(pool, profession_id, tier_id)
+    return {"ok": True, "data": data}
+
+
+@crafting_router.get("/recipe/{recipe_id}/crafters")
+async def get_crafters(
+    recipe_id: int,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+):
+    """Crafters for a recipe, grouped by guild rank tier."""
+    data = await crafting_service.get_recipe_crafters(pool, recipe_id)
+    if data["recipe"] is None:
+        raise HTTPException(404, "Recipe not found")
+    return {"ok": True, "data": data}
+
+
+@crafting_router.get("/search")
+async def search_recipes(
+    q: str = "",
+    pool: asyncpg.Pool = Depends(get_db_pool),
+):
+    """Full-text search across all recipes."""
+    if len(q) < 2:
+        return {"ok": True, "data": []}
+    data = await crafting_service.search_recipes(pool, q)
+    return {"ok": True, "data": data}
+
+
+@crafting_router.get("/sync-status")
+async def sync_status(pool: asyncpg.Pool = Depends(get_db_pool)):
+    """Sync status: season name, last/next sync, cadence."""
+    data = await crafting_service.get_sync_status(pool)
+    return {"ok": True, "data": data}
+
+
+# ---------------------------------------------------------------------------
+# Auth-Required Endpoints
+# ---------------------------------------------------------------------------
+
+
+@crafting_router.post("/guild-order")
+async def post_guild_order(
+    request: Request,
+    order: GuildOrderRequest,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+):
+    """
+    Post a guild crafting order to the #crafters-corner Discord channel.
+
+    Requirements:
+    - User must be logged in (JWT cookie)
+    - Recipe must exist
+    """
+    player_id = await _get_current_player_id(request)
+    if player_id is None:
+        raise HTTPException(401, "Login required to place a guild order")
+
+    # Get requester's discord_id
+    async with pool.acquire() as conn:
+        requester = await conn.fetchrow(
+            """SELECT p.id, du.discord_id, du.username
+               FROM guild_identity.players p
+               LEFT JOIN guild_identity.discord_users du ON du.id = p.discord_user_id
+               WHERE p.id = $1""",
+            player_id,
+        )
+
+    if not requester or not requester["discord_id"]:
+        raise HTTPException(
+            400,
+            "You need a linked Discord account to place a guild order. "
+            "Contact an officer to link your accounts.",
+        )
+
+    # Get recipe + crafter info
+    crafter_data = await crafting_service.get_recipe_crafters(pool, order.recipe_id)
+    if crafter_data["recipe"] is None:
+        raise HTTPException(404, "Recipe not found")
+
+    recipe = crafter_data["recipe"]
+    all_crafters = [
+        c for group in crafter_data["rank_groups"] for c in group["crafters"]
+    ]
+
+    # Post to Discord
+    try:
+        from sv_common.discord.bot import get_bot
+        from sv_common.discord.channel_sync import get_discord_channel
+        import discord
+
+        bot = get_bot()
+        if not bot or bot.is_closed():
+            raise HTTPException(503, "Discord bot is not running.")
+
+        # Load channel from DB config — never from env vars
+        async with pool.acquire() as conn:
+            channel_id = await conn.fetchval(
+                "SELECT crafters_corner_channel_id FROM guild_identity.crafting_sync_config LIMIT 1"
+            )
+
+        channel = await get_discord_channel(pool, bot, channel_id)
+
+        # Build the conversational message
+        crafter_mentions = " ".join(
+            f"<@{c['player_discord_id']}>"
+            for c in all_crafters
+            if c.get("player_discord_id")
+        )
+        no_discord = ", ".join(
+            c["character_name"] for c in all_crafters if not c.get("player_discord_id")
+        )
+
+        content = (
+            f"<@{requester['discord_id']}> needs someone to make "
+            f"**{recipe['name']}**, who can do this?"
+        )
+        if order.message:
+            content += f"\n> {order.message}"
+        if crafter_mentions:
+            content += f"\n{crafter_mentions}"
+        if no_discord:
+            content += f"\n*(Also known crafters without Discord: {no_discord})*"
+        if not crafter_mentions and not no_discord:
+            content += "\n*(No known crafters found — recipe may need a sync)*"
+
+        # Minimal embed for the Wowhead link
+        embed = discord.Embed(
+            title=recipe["name"],
+            url=recipe["wowhead_url"],
+            color=0xD4A84B,
+        )
+        embed.set_footer(text="Crafting Corner \u2022 pullallthethings.com")
+
+        await channel.send(content=content, embed=embed)
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Guild order Discord post failed: %s", exc)
+        raise HTTPException(503, f"Discord post failed: {exc}")
+
+    return {"ok": True, "status": "posted"}
+
+
+@crafting_router.get("/preferences")
+async def get_preferences(
+    request: Request,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+):
+    """Get the logged-in user's crafting notification preference."""
+    player_id = await _get_current_player_id(request)
+    if player_id is None:
+        raise HTTPException(401, "Login required")
+    enabled = await crafting_service.get_player_crafting_preference(pool, player_id)
+    return {"ok": True, "data": {"crafting_notifications_enabled": enabled}}
+
+
+@crafting_router.post("/preferences")
+async def update_preferences(
+    request: Request,
+    pref: CraftingPreferenceRequest,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+):
+    """Update the logged-in user's crafting notification preference."""
+    player_id = await _get_current_player_id(request)
+    if player_id is None:
+        raise HTTPException(401, "Login required")
+    success = await crafting_service.set_player_crafting_preference(
+        pool, player_id, pref.enabled
+    )
+    if not success:
+        raise HTTPException(404, "Player not found")
+    return {"ok": True, "data": {"crafting_notifications_enabled": pref.enabled}}
+
+
+# ---------------------------------------------------------------------------
+# Admin Endpoints
+# ---------------------------------------------------------------------------
+
+
+@crafting_router.get("/admin/config")
+async def get_admin_config(
+    request: Request,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+):
+    """Get full crafting sync config (admin only)."""
+    player_id = await _get_current_player_id(request)
+    if player_id is None:
+        raise HTTPException(401, "Login required")
+
+    data = await crafting_service.get_full_config(pool)
+    return {"ok": True, "data": data}
+
+
+class ChannelConfigUpdate(BaseModel):
+    crafters_corner_channel_id: str | None = None
+
+
+@crafting_router.patch("/admin/config")
+async def update_admin_config(
+    request: Request,
+    body: ChannelConfigUpdate,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+):
+    """Update crafting sync config settings (admin only)."""
+    player_id = await _get_current_player_id(request)
+    if player_id is None:
+        raise HTTPException(401, "Login required")
+
+    await crafting_service.set_crafters_corner_channel(pool, body.crafters_corner_channel_id)
+    data = await crafting_service.get_full_config(pool)
+    return {"ok": True, "data": data}
