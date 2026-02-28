@@ -74,15 +74,31 @@ async def test_schema():
 
 @pytest_asyncio.fixture
 async def db_session(test_schema) -> AsyncGenerator[AsyncSession, None]:
-    """Yield a DB session that rolls back after each test."""
+    """Yield a DB session per test.
+
+    Data written in the test is flushed but never committed, so it is
+    invisible to all other sessions. Best-effort rollback + dispose on
+    teardown; swallow errors that occur when the cleanup event loop
+    differs from the connection's origin loop (NullPool teardown quirk).
+    """
     engine = _make_engine()
     factory = async_sessionmaker(engine, expire_on_commit=False)
-    async with factory() as session:
+    session = factory()
+    try:
+        yield session
+    finally:
         try:
-            yield session
-        finally:
             await session.rollback()
-    await engine.dispose()
+        except Exception:
+            pass
+        try:
+            await session.close()
+        except Exception:
+            pass
+        try:
+            await engine.dispose()
+        except Exception:
+            pass
 
 
 @pytest_asyncio.fixture
