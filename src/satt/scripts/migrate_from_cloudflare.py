@@ -38,6 +38,14 @@ def _parse_dt(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+def _parse_date(value: str | None):
+    """Parse YYYY-MM-DD string → date. asyncpg requires date objects."""
+    if not value:
+        return None
+    from datetime import date
+    return date.fromisoformat(value)
+
+
 # ---------------------------------------------------------------------------
 # Fetch from Cloudflare
 # ---------------------------------------------------------------------------
@@ -181,10 +189,10 @@ async def migrate_show_slots(session: AsyncSession, slots: list, dry_run: bool) 
                 "id": slot["id"],
                 "episode_number": slot.get("episodeNumber", ""),
                 "episode_num": slot.get("episodeNum", 0),
-                "record_date": slot.get("recordDate"),
-                "release_date": slot.get("releaseDate"),
+                "record_date": _parse_date(slot.get("recordDate")),
+                "release_date": _parse_date(slot.get("releaseDate")),
                 "is_rollout": slot.get("isRollout", False),
-                "release_date_override": slot.get("releaseDateOverride"),
+                "release_date_override": _parse_date(slot.get("releaseDateOverride")),
             },
         )
         count += 1
