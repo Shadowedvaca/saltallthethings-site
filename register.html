@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Register — Salt All The Things</title>
+  <link rel="icon" type="image/jpeg" href="images/256x256.jpeg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-deep);
+    }
+    .login-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-xl);
+      padding: var(--space-2xl) var(--space-xl);
+      max-width: 420px;
+      width: 90%;
+      text-align: center;
+      box-shadow: var(--shadow-elevated);
+    }
+    .login-logo {
+      width: 80px;
+      border-radius: var(--radius-md);
+      margin-bottom: var(--space-lg);
+      filter: drop-shadow(0 0 20px rgba(200,168,78,0.2));
+    }
+    .login-title {
+      font-family: 'Cinzel', serif;
+      font-size: 1.4rem;
+      color: var(--text-gold);
+      margin-bottom: var(--space-xs);
+    }
+    .login-subtitle {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      margin-bottom: var(--space-xl);
+    }
+    .login-form { text-align: left; }
+    .login-footer {
+      margin-top: var(--space-lg);
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    .login-footer a { color: var(--gold-dim); text-decoration: none; }
+    .login-footer a:hover { color: var(--gold); }
+    .login-error {
+      display: none;
+      background: rgba(204,68,68,0.1);
+      border: 1px solid var(--danger);
+      border-radius: var(--radius-md);
+      padding: var(--space-sm) var(--space-md);
+      color: var(--danger);
+      font-size: 0.85rem;
+      margin-bottom: var(--space-md);
+      text-align: center;
+    }
+    .login-success {
+      display: none;
+      background: rgba(74,170,106,0.1);
+      border: 1px solid var(--status-scheduled);
+      border-radius: var(--radius-md);
+      padding: var(--space-sm) var(--space-md);
+      color: var(--status-scheduled);
+      font-size: 0.85rem;
+      margin-bottom: var(--space-md);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="login-card">
+    <img src="images/256x256.jpeg" alt="SATT" class="login-logo">
+    <h1 class="login-title">Salt All The Things</h1>
+    <p class="login-subtitle">Create Account</p>
+
+    <form class="login-form" id="registerForm" onsubmit="handleRegister(event)">
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" autocomplete="username" placeholder="Choose a username" required>
+      </div>
+      <div class="form-group">
+        <label for="inviteCode">Invite Code</label>
+        <input type="text" id="inviteCode" placeholder="Enter your invite code" required autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" autocomplete="new-password" placeholder="Choose a password" required>
+      </div>
+      <div class="form-group">
+        <label for="confirmPassword">Confirm Password</label>
+        <input type="password" id="confirmPassword" autocomplete="new-password" placeholder="Repeat your password" required>
+      </div>
+
+      <div class="login-error" id="registerError"></div>
+      <div class="login-success" id="registerSuccess">Account created! Redirecting...</div>
+
+      <button type="submit" class="btn btn-primary btn-lg" style="width: 100%;" id="submitBtn">Create Account</button>
+    </form>
+
+    <div class="login-footer">
+      Already have an account? <a href="login.html">Sign in →</a>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = '__API_URL__';
+
+    async function handleRegister(e) {
+      e.preventDefault();
+      var username = document.getElementById('username').value.trim();
+      var inviteCode = document.getElementById('inviteCode').value.trim();
+      var password = document.getElementById('password').value;
+      var confirmPassword = document.getElementById('confirmPassword').value;
+      var errorEl = document.getElementById('registerError');
+      var successEl = document.getElementById('registerSuccess');
+      var submitBtn = document.getElementById('submitBtn');
+
+      errorEl.style.display = 'none';
+      successEl.style.display = 'none';
+
+      if (password !== confirmPassword) {
+        errorEl.textContent = 'Passwords do not match';
+        errorEl.style.display = 'block';
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Creating account...';
+
+      try {
+        var resp = await fetch(API_URL + '/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: username, password: password, invite_code: inviteCode })
+        });
+
+        var data = await resp.json();
+
+        if (!resp.ok) {
+          errorEl.textContent = data.detail || 'Registration failed';
+          errorEl.style.display = 'block';
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Create Account';
+          return;
+        }
+
+        // Store JWT and redirect
+        localStorage.setItem('satt_jwt', JSON.stringify({
+          token: data.access_token,
+          username: username,
+          isAdmin: data.is_admin || false
+        }));
+
+        successEl.style.display = 'block';
+        setTimeout(function() { location.href = 'show_management.html'; }, 1200);
+
+      } catch(err) {
+        errorEl.textContent = 'Connection error — check your network';
+        errorEl.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Create Account';
+      }
+    }
+  </script>
+</body>
+</html>

@@ -15,21 +15,17 @@ const Storage = {
 
   // ---- Initialization ----
   async init() {
-    const password = this._getPassword();
-    if (!password) throw new Error('Not authenticated');
+    const token = this._getToken();
+    if (!token) throw new Error('Not authenticated');
 
-    // If API URL not configured, fall back to localStorage
+    // If API URL not configured, fail loudly
     if (this._apiUrl === '__' + 'API_URL' + '__' || !this._apiUrl) {
-      console.warn('Storage: No API URL configured, using localStorage fallback.');
-      this._useLocalFallback = true;
-      this._loadFromLocalStorage();
-      this._ready = true;
-      return;
+      throw new Error('API URL not configured');
     }
 
     try {
       const resp = await fetch(this._apiUrl + '/export', {
-        headers: { 'X-Auth': password }
+        headers: { 'Authorization': 'Bearer ' + token }
       });
       if (resp.status === 401) throw new Error('Invalid password');
       if (!resp.ok) throw new Error('API error: ' + resp.status);
@@ -49,13 +45,8 @@ const Storage = {
     }
   },
 
-  _getPassword() {
-    try {
-      const raw = sessionStorage.getItem('satt_auth_token');
-      if (!raw) return null;
-      const session = JSON.parse(raw);
-      return session.password || null;
-    } catch { return null; }
+  _getToken() {
+    return typeof Auth !== 'undefined' ? Auth.getToken() : null;
   },
 
   // ---- Core get/set (synchronous from cache) ----
@@ -80,8 +71,8 @@ const Storage = {
   },
 
   _pushToApi(key, value) {
-    const password = this._getPassword();
-    if (!password || !this._apiUrl) return;
+    const token = this._getToken();
+    if (!token || !this._apiUrl) return;
 
     // Debounce: if already saving this key, mark as dirty
     if (this._syncing[key]) {
@@ -94,7 +85,7 @@ const Storage = {
 
     fetch(this._apiUrl + '/data/' + key, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-Auth': password },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
       body: JSON.stringify(value)
     })
     .then(resp => {
@@ -347,10 +338,10 @@ const Storage = {
 
     if (Object.keys(data).length === 0) return false;
 
-    var password = this._getPassword();
+    var token = this._getToken();
     var resp = await fetch(this._apiUrl + '/import', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-Auth': password },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
       body: JSON.stringify(data)
     });
     if (!resp.ok) throw new Error('Migration failed: ' + resp.status);
