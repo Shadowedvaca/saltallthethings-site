@@ -31,6 +31,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 load_dotenv(Path(__file__).parent.parent.parent.parent / ".env")
 
 
+def _parse_dt(value: str | None) -> datetime | None:
+    """Parse ISO 8601 string → datetime. asyncpg requires datetime objects."""
+    if not value:
+        return None
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
 # ---------------------------------------------------------------------------
 # Fetch from Cloudflare
 # ---------------------------------------------------------------------------
@@ -105,8 +112,8 @@ async def migrate_ideas(session: AsyncSession, ideas: list, dry_run: bool) -> in
                 "status": idea.get("status", "draft"),
                 "image_file_id": idea.get("imageFileId"),
                 "raw_notes": idea.get("rawNotes"),
-                "created_at": idea.get("createdAt"),
-                "updated_at": idea.get("updatedAt"),
+                "created_at": _parse_dt(idea.get("createdAt")),
+                "updated_at": _parse_dt(idea.get("updatedAt")),
             },
         )
         count += 1
@@ -137,7 +144,7 @@ async def migrate_jokes(session: AsyncSession, jokes: list, dry_run: bool) -> in
                 "status": joke.get("status", "active"),
                 "source": joke.get("source", "manual"),
                 "used_by_idea_id": joke.get("usedByIdeaId"),
-                "created_at": joke.get("createdAt"),
+                "created_at": _parse_dt(joke.get("createdAt")),
             },
         )
         count += 1
