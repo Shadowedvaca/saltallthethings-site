@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from satt.config import get_settings
 from satt.routes.ai import router as ai_router
 from satt.routes.auth import router as auth_router
 from satt.routes.data import router as data_router
@@ -10,11 +11,13 @@ from satt.routes.health import router as health_router
 from satt.routes.public import router as public_router
 from satt.routes.users import router as users_router
 
+_settings = get_settings()
+
 app = FastAPI(title="Salt All The Things API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://saltallthethings.com", "https://salt.shadowedvaca.com"],
+    allow_origins=[o.strip() for o in _settings.cors_origins.split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

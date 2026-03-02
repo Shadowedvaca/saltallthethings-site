@@ -55,7 +55,7 @@ const SiteConfig = {
 
   // ---- API ----
   // Public episodes endpoint (no auth required)
-  publicApiUrl: 'https://salt.shadowedvaca.com/api',
+  publicApiUrl: 'https://saltallthethings.com/api',
 
   // ---- Helper Methods ----
   hasLink(key) {

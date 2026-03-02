@@ -5,7 +5,7 @@
    Prompt construction lives in prompts.py.
    ============================================ */
 
-const API_BASE = 'https://salt.shadowedvaca.com/api';
+const API_BASE = 'https://saltallthethings.com/api';
 
 const AIService = {
   async processIdea(rawNotes) {

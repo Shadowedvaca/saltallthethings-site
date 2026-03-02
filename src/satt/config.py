@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     secret_key: str = "dev-secret-key-change-in-production"
     environment: str = "development"
     site_url: str = "https://saltallthethings.com"
+    cors_origins: str = "https://saltallthethings.com,https://salt.shadowedvaca.com"
     ai_request_timeout: int = 60
 
     # JWT settings

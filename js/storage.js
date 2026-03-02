@@ -8,7 +8,7 @@
    ============================================ */
 
 const Storage = {
-  _apiUrl: 'https://salt.shadowedvaca.com/api',
+  _apiUrl: 'https://saltallthethings.com/api',
   _cache: {},               // in-memory data store
   _ready: false,
   _syncing: {},             // track in-flight saves per key
