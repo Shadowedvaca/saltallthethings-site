@@ -11,8 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from satt.auth import (
     consume_invite_code,
     create_access_token,
+    generate_invite_code,
     get_user_by_username,
 )
+from satt.auth_bridge import require_auth
 from satt.database import get_db
 from satt.models import User
 from sv_common.auth.passwords import hash_password, verify_password
@@ -53,6 +55,25 @@ class RegisterRequest(BaseModel):
     username: str
     password: str
     inviteCode: str
+
+
+# ---------------------------------------------------------------------------
+# POST /api/auth/invite
+# ---------------------------------------------------------------------------
+
+
+@router.post("/auth/invite")
+async def create_invite(
+    _user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    if not _user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    user_id: int | None = _user.get("user_id")
+    code = await generate_invite_code(db, created_by_user_id=user_id)
+    invite_url = f"https://salt.shadowedvaca.com/register?code={code}"
+    return {"invite_url": invite_url}
 
 
 @router.post("/auth/register", status_code=201)

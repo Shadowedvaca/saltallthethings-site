@@ -113,7 +113,13 @@
   </div>
 
   <script>
-    const API_URL = '__API_URL__';
+    const API_URL = 'https://salt.shadowedvaca.com/api';
+
+    // Pre-populate invite code from ?code= query param
+    (function() {
+      var code = new URLSearchParams(location.search).get('code');
+      if (code) document.getElementById('inviteCode').value = code;
+    })();
 
     async function handleRegister(e) {
       e.preventDefault();
@@ -141,7 +147,7 @@
         var resp = await fetch(API_URL + '/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: username, password: password, invite_code: inviteCode })
+          body: JSON.stringify({ username: username, password: password, inviteCode: inviteCode })
         });
 
         var data = await resp.json();
@@ -156,9 +162,9 @@
 
         // Store JWT and redirect
         localStorage.setItem('satt_jwt', JSON.stringify({
-          token: data.access_token,
+          token: data.token,
           username: username,
-          isAdmin: data.is_admin || false
+          isAdmin: data.isAdmin || false
         }));
 
         successEl.style.display = 'block';

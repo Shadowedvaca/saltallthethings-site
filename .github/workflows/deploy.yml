@@ -25,39 +25,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Inject API URL into storage.js and site-config.js
-        env:
-          SATT_API_URL: ${{ secrets.SATT_API_URL }}
-        run: |
-          if [ -z "$SATT_API_URL" ]; then
-            echo "⚠️  SATT_API_URL secret not set — will use localStorage fallback"
-            exit 0
-          fi
-
-          # Replace placeholder in storage.js
-          sed -i "s|__API_URL__|${SATT_API_URL}|g" js/storage.js
-
-          if grep -q "__API_URL__" js/storage.js; then
-            echo "❌ ERROR: API URL placeholder was not replaced in storage.js!"
-            exit 1
-          else
-            echo "✅ API URL injected into js/storage.js"
-          fi
-
-          # Replace placeholder in site-config.js
-          sed -i "s|__API_URL__|${SATT_API_URL}|g" js/site-config.js
-
-          if grep -q "__API_URL__" js/site-config.js; then
-            echo "❌ ERROR: API URL placeholder was not replaced in site-config.js!"
-            exit 1
-          else
-            echo "✅ API URL injected into js/site-config.js"
-          fi
-
-          # Replace placeholder in login.html and register.html
-          sed -i "s|__API_URL__|${SATT_API_URL}|g" login.html register.html
-          echo "✅ API URL injected into login.html and register.html"
-
       - name: Setup Pages
         uses: actions/configure-pages@v4
 

@@ -1,14 +1,14 @@
 /* ============================================
-   Storage Module (v2 — API-backed)
-   
-   In-memory cache + Cloudflare Worker API.
+   Storage Module (v3 — Hetzner API-backed)
+
+   In-memory cache + FastAPI backend.
    All reads are synchronous from cache.
    All writes update cache immediately, then
    push to API in the background.
    ============================================ */
 
 const Storage = {
-  _apiUrl: '__API_URL__',   // replaced at deploy time, or set manually
+  _apiUrl: 'https://salt.shadowedvaca.com/api',
   _cache: {},               // in-memory data store
   _ready: false,
   _syncing: {},             // track in-flight saves per key
@@ -18,16 +18,11 @@ const Storage = {
     const token = this._getToken();
     if (!token) throw new Error('Not authenticated');
 
-    // If API URL not configured, fail loudly
-    if (this._apiUrl === '__' + 'API_URL' + '__' || !this._apiUrl) {
-      throw new Error('API URL not configured');
-    }
-
     try {
       const resp = await fetch(this._apiUrl + '/export', {
         headers: { 'Authorization': 'Bearer ' + token }
       });
-      if (resp.status === 401) throw new Error('Invalid password');
+      if (resp.status === 401) throw new Error('Invalid credentials');
       if (!resp.ok) throw new Error('API error: ' + resp.status);
       const data = await resp.json();
 
@@ -51,20 +46,10 @@ const Storage = {
 
   // ---- Core get/set (synchronous from cache) ----
   get(key) {
-    if (this._useLocalFallback) {
-      try {
-        const raw = localStorage.getItem('satt_' + key);
-        return raw ? JSON.parse(raw) : null;
-      } catch { return null; }
-    }
     return this._cache[key] !== undefined ? this._cache[key] : null;
   },
 
   set(key, value) {
-    if (this._useLocalFallback) {
-      try { localStorage.setItem('satt_' + key, JSON.stringify(value)); } catch(e) { console.error(e); }
-      return true;
-    }
     this._cache[key] = value;
     this._pushToApi(key, value);
     return true;
@@ -72,7 +57,7 @@ const Storage = {
 
   _pushToApi(key, value) {
     const token = this._getToken();
-    if (!token || !this._apiUrl) return;
+    if (!token) return;
 
     // Debounce: if already saving this key, mark as dirty
     if (this._syncing[key]) {
@@ -102,15 +87,6 @@ const Storage = {
     });
   },
 
-  _loadFromLocalStorage() {
-    ['config', 'ideas', 'jokes', 'showSlots', 'assignments'].forEach(key => {
-      try {
-        const raw = localStorage.getItem('satt_' + key);
-        this._cache[key] = raw ? JSON.parse(raw) : null;
-      } catch { this._cache[key] = null; }
-    });
-  },
-
   // ---- Config ----
   getConfig() {
     var stored = this.get('config');
@@ -129,10 +105,10 @@ const Storage = {
       jokeContext: this._defaultJokeContext(),
       segments: this._defaultSegments()
     };
-    
+
     // If no stored config, return defaults
     if (!stored) return defaults;
-    
+
     // Merge stored config with defaults (stored values take precedence)
     return Object.assign({}, defaults, stored);
   },
@@ -324,30 +300,5 @@ const Storage = {
     if (data.jokes) this.saveJokes(data.jokes);
     if (data.showSlots) this.saveShowSlots(data.showSlots);
     if (data.assignments) this.saveAssignments(data.assignments);
-  },
-
-  // Migrate localStorage data to API (one-time)
-  async migrateFromLocalStorage() {
-    var data = {};
-    ['config', 'ideas', 'jokes', 'showSlots', 'assignments'].forEach(function(key) {
-      try {
-        var raw = localStorage.getItem('satt_' + key);
-        if (raw) data[key] = JSON.parse(raw);
-      } catch(e) {}
-    });
-
-    if (Object.keys(data).length === 0) return false;
-
-    var token = this._getToken();
-    var resp = await fetch(this._apiUrl + '/import', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify(data)
-    });
-    if (!resp.ok) throw new Error('Migration failed: ' + resp.status);
-
-    // Reload cache from API
-    await this.init();
-    return true;
   }
 };

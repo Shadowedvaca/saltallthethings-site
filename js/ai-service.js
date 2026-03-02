@@ -1,250 +1,58 @@
 /* ============================================
-   AI Service Module
-   Handles API calls to Claude and ChatGPT
+   AI Service Module (v2 — server-side proxy)
+
+   All AI calls go through the FastAPI backend.
+   Prompt construction lives in prompts.py.
    ============================================ */
 
+const API_BASE = 'https://salt.shadowedvaca.com/api';
+
 const AIService = {
-  async generateJokes(themeHint) {
-    const config = Storage.getConfig();
-    if (!config.aiModel) throw new Error('No AI model configured.');
-
-    const usedJokes = Storage.getUsedJokes();
-    const usedList = usedJokes.map(j => `- ${j.text}`).join('\n');
-
-    const systemPrompt = `${config.jokeContext}
-
-${usedList ? `ALREADY USED JOKES (do NOT repeat these or anything too similar):\n${usedList}\n` : ''}
-Return ONLY a JSON array of strings, each being one joke. No markdown, no backticks, no explanation. Example: ["joke one", "joke two"]
-Generate exactly ${config.jokeCount || 5} jokes.`;
-
-    const userPrompt = themeHint
-      ? `Generate salt jokes. Theme/topic hint for this batch: ${themeHint}`
-      : `Generate a batch of general salt jokes for the show.`;
-
-    if (config.aiModel === 'claude') {
-      return this._callClaudeJokes(systemPrompt, userPrompt, config);
-    } else if (config.aiModel === 'openai') {
-      return this._callOpenAIJokes(systemPrompt, userPrompt, config);
-    }
-    throw new Error(`Unknown AI model: ${config.aiModel}`);
-  },
-
-  async _callClaudeJokes(systemPrompt, userPrompt, config) {
-    if (!config.claudeApiKey) throw new Error('Claude API key not configured.');
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': config.claudeApiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: config.claudeModelId || 'claude-sonnet-4-5-20250929',
-        max_tokens: 1024,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }]
-      })
-    });
-    if (!response.ok) { const err = await response.text(); throw new Error(`Claude API error (${response.status}): ${err}`); }
-    const data = await response.json();
-    const text = data.content.filter(b => b.type === 'text').map(b => b.text).join('');
-    return this._parseJokeResponse(text);
-  },
-
-  async _callOpenAIJokes(systemPrompt, userPrompt, config) {
-    if (!config.openaiApiKey) throw new Error('OpenAI API key not configured.');
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config.openaiApiKey}` },
-      body: JSON.stringify({
-        model: config.openaiModelId || 'gpt-4o',
-        max_tokens: 1024,
-        messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
-        temperature: 0.9
-      })
-    });
-    if (!response.ok) { const err = await response.text(); throw new Error(`OpenAI API error (${response.status}): ${err}`); }
-    const data = await response.json();
-    const text = data.choices[0]?.message?.content || '';
-    return this._parseJokeResponse(text);
-  },
-
-  _parseJokeResponse(text) {
-    let cleaned = text.trim();
-    if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
-    else if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
-    if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
-    cleaned = cleaned.trim();
-    try {
-      const parsed = JSON.parse(cleaned);
-      if (!Array.isArray(parsed)) throw new Error('Expected array of jokes');
-      return parsed.filter(j => typeof j === 'string');
-    } catch (e) {
-      console.error('Failed to parse joke response:', text);
-      throw new Error(`Failed to parse joke response: ${e.message}`);
-    }
-  },
-
   async processIdea(rawNotes) {
-    const config = Storage.getConfig();
-
-    if (!config.aiModel) {
-      throw new Error('No AI model configured. Please set up your AI provider in Config.');
-    }
-
-    const systemPrompt = this._buildSystemPrompt(config);
-    const userPrompt = this._buildUserPrompt(rawNotes, config);
-
-    if (config.aiModel === 'claude') {
-      return this._callClaude(systemPrompt, userPrompt, config);
-    } else if (config.aiModel === 'openai') {
-      return this._callOpenAI(systemPrompt, userPrompt, config);
-    } else {
-      throw new Error(`Unknown AI model: ${config.aiModel}`);
-    }
-  },
-
-  _buildSystemPrompt(config) {
-    const segmentList = config.segments
-      .map((s, i) => `${i + 1}. ${s.name}${s.description ? ' — ' + s.description : ''}`)
-      .join('\n');
-
-    return `${config.showContext}
-
-SHOW SEGMENTS (in order):
-${segmentList}
-
-YOUR TASK:
-When given raw show notes/ideas from the host, you must return a JSON response with EXACTLY this structure (no markdown, no backticks, just pure JSON):
-
-{
-  "titles": ["Title Option 1", "Title Option 2", "Title Option 3"],
-  "summary": "A 2-3 sentence clean summary of what this episode is about.",
-  "outline": [
-    {
-      "segmentId": "opening",
-      "segmentName": "Opening Hook / Intro",
-      "talkingPoints": [
-        "First conversation prompt or topic to discuss",
-        "Second conversation prompt"
-      ]
-    }
-  ]
-}
-
-RULES:
-- Generate exactly ${config.titleCount} title options. Titles should be catchy, on-brand (salty, fun, WoW-themed), and hint at the main topic.
-- The summary should be clean and compelling — good enough for a podcast description.
-- The outline must include ALL segments listed above, in order.
-- Each segment should have 2-5 talking points that are natural conversation starters, not lecture bullets.
-- Talking points should be phrased as discussion prompts between two friends.
-- Return ONLY valid JSON. No explanation, no markdown fences, no preamble.`;
-  },
-
-  _buildUserPrompt(rawNotes, config) {
-    return `Here are Rocket's raw notes for an upcoming episode. Process these into the structured format:\n\n---\n${rawNotes}\n---`;
-  },
-
-  async _callClaude(systemPrompt, userPrompt, config) {
-    if (!config.claudeApiKey) {
-      throw new Error('Claude API key not configured. Add it in Config.');
-    }
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const token = Auth.getToken();
+    const response = await fetch(`${API_BASE}/ai/process-idea`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': config.claudeApiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
+        'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({
-        model: config.claudeModelId || 'claude-sonnet-4-5-20250929',
-        max_tokens: 4096,
-        system: systemPrompt,
-        messages: [
-          { role: 'user', content: userPrompt }
-        ]
-      })
+      body: JSON.stringify({ rawNotes })
     });
-
     if (!response.ok) {
-      const errBody = await response.text();
-      throw new Error(`Claude API error (${response.status}): ${errBody}`);
+      const err = await response.json();
+      throw new Error(err.error || `AI error (${response.status})`);
     }
-
     const data = await response.json();
-    const text = data.content
-      .filter(block => block.type === 'text')
-      .map(block => block.text)
-      .join('');
-
-    return this._parseAIResponse(text);
+    return this._parseAIResponse(data);
   },
 
-  async _callOpenAI(systemPrompt, userPrompt, config) {
-    if (!config.openaiApiKey) {
-      throw new Error('OpenAI API key not configured. Add it in Config.');
-    }
-
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  async generateJokes(themeHint) {
+    const token = Auth.getToken();
+    const response = await fetch(`${API_BASE}/ai/generate-jokes`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.openaiApiKey}`
+        'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({
-        model: config.openaiModelId || 'gpt-4o',
-        max_tokens: 4096,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        temperature: 0.7
-      })
+      body: JSON.stringify({ themeHint: themeHint || '' })
     });
-
     if (!response.ok) {
-      const errBody = await response.text();
-      throw new Error(`OpenAI API error (${response.status}): ${errBody}`);
+      const err = await response.json();
+      throw new Error(err.error || `AI error (${response.status})`);
     }
-
     const data = await response.json();
-    const text = data.choices[0]?.message?.content || '';
-
-    return this._parseAIResponse(text);
+    return data.jokes;  // string[]
   },
 
-  _parseAIResponse(text) {
-    // Strip markdown fences if present
-    let cleaned = text.trim();
-    if (cleaned.startsWith('```json')) {
-      cleaned = cleaned.slice(7);
-    } else if (cleaned.startsWith('```')) {
-      cleaned = cleaned.slice(3);
+  _parseAIResponse(data) {
+    // Validate structure returned from the proxy
+    if (!Array.isArray(data.titles) || !data.summary || !Array.isArray(data.outline)) {
+      throw new Error('Response missing required fields (titles, summary, outline)');
     }
-    if (cleaned.endsWith('```')) {
-      cleaned = cleaned.slice(0, -3);
-    }
-    cleaned = cleaned.trim();
-
-    try {
-      const parsed = JSON.parse(cleaned);
-
-      // Validate structure
-      if (!Array.isArray(parsed.titles) || !parsed.summary || !Array.isArray(parsed.outline)) {
-        throw new Error('Response missing required fields (titles, summary, outline)');
-      }
-
-      return {
-        titles: parsed.titles,
-        summary: parsed.summary,
-        outline: parsed.outline
-      };
-    } catch (e) {
-      console.error('Failed to parse AI response:', text);
-      throw new Error(`Failed to parse AI response: ${e.message}`);
-    }
+    return {
+      titles: data.titles,
+      summary: data.summary,
+      outline: data.outline
+    };
   }
 };

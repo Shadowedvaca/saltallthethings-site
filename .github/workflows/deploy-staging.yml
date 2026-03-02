@@ -18,8 +18,6 @@ jobs:
           echo "${{ secrets.STAGING_SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
 
       - name: Deploy to server
-        env:
-          API_URL: https://salt.shadowedvaca.com/api
         run: |
           ssh -i ~/.ssh/deploy_key root@5.78.114.224 bash << 'ENDSSH'
             set -e
@@ -31,18 +29,6 @@ jobs:
             echo "=== Copying static files ==="
             cp *.html static/
             cp -r css/ js/ images/ static/
-
-            echo "=== Injecting API URL ==="
-            API_URL="https://salt.shadowedvaca.com/api"
-            sed -i "s|__API_URL__|${API_URL}|g" \
-              static/login.html \
-              static/register.html \
-              static/js/storage.js \
-              static/js/site-config.js
-
-            echo "=== Verifying ==="
-            grep -r '__API_URL__' static/ && echo "ERROR: unreplaced placeholders!" && exit 1 || true
-            grep "const API_URL" static/login.html
 
             echo "=== Done ==="
           ENDSSH

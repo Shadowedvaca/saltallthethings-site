@@ -93,7 +93,7 @@
   </div>
 
   <script>
-    const API_URL = '__API_URL__';
+    const API_URL = 'https://salt.shadowedvaca.com/api';
 
     // If already logged in, redirect immediately
     (function() {
@@ -149,9 +149,9 @@
 
         var data = await resp.json();
         localStorage.setItem('satt_jwt', JSON.stringify({
-          token: data.access_token,
+          token: data.token,
           username: username,
-          isAdmin: data.is_admin || false
+          isAdmin: data.isAdmin || false
         }));
 
         var next = new URLSearchParams(location.search).get('next') || 'show_management.html';

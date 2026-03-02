@@ -155,6 +155,22 @@
         </div>
       </div>
 
+      <!-- Invite Codes -->
+      <div class="card card-elevated mb-lg">
+        <h2 class="mb-md">Invite Codes</h2>
+        <p class="text-sm text-secondary mb-md">Generate a one-time invite link to send to a new crew member. Expires in 48 hours.</p>
+        <button class="btn btn-secondary" onclick="generateInviteCode()" id="inviteBtn">Generate Invite Code</button>
+        <div id="inviteResult" style="display: none; margin-top: var(--space-md);">
+          <div style="background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-md);">
+            <div class="flex gap-sm items-center" style="flex-wrap: wrap;">
+              <code id="inviteUrl" style="flex: 1; word-break: break-all; font-size: 0.85rem; color: var(--text-primary); background: var(--bg-deep); padding: 6px 10px; border-radius: var(--radius-sm);"></code>
+              <button class="btn btn-ghost btn-sm" onclick="copyInviteUrl()">Copy Link</button>
+            </div>
+            <p class="text-sm text-muted mt-sm">Expires in 48 hours. One-time use.</p>
+          </div>
+        </div>
+      </div>
+
       <!-- Save -->
       <div class="flex justify-between items-center" style="padding: 1rem 0;">
         <span id="saveStatus" class="text-sm text-muted"></span>
@@ -301,6 +317,42 @@
           loadConfig(); Toast.info('All data cleared.');
         }
       }
+    }
+
+    async function generateInviteCode() {
+      var btn = document.getElementById('inviteBtn');
+      var resultEl = document.getElementById('inviteResult');
+      btn.disabled = true;
+      btn.textContent = 'Generating...';
+      resultEl.style.display = 'none';
+
+      try {
+        var resp = await fetch('https://salt.shadowedvaca.com/api/auth/invite', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + Auth.getToken() }
+        });
+        var data = await resp.json();
+        if (!resp.ok) {
+          Toast.error(data.detail || 'Failed to generate invite code');
+          return;
+        }
+        document.getElementById('inviteUrl').textContent = data.invite_url;
+        resultEl.style.display = 'block';
+      } catch (err) {
+        Toast.error('Connection error: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Generate Invite Code';
+      }
+    }
+
+    function copyInviteUrl() {
+      var url = document.getElementById('inviteUrl').textContent;
+      navigator.clipboard.writeText(url).then(function() {
+        Toast.success('Link copied!');
+      }).catch(function() {
+        Toast.error('Failed to copy — select the link manually');
+      });
     }
 
     // Called by Auth after Storage.init() completes
