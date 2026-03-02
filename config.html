@@ -171,6 +171,34 @@
         </div>
       </div>
 
+      <!-- User Management -->
+      <div class="card card-elevated mb-lg">
+        <h2 class="mb-md">Account</h2>
+
+        <!-- Change password (any user) -->
+        <h3 style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: var(--space-sm);">Change Password</h3>
+        <div class="form-group">
+          <label for="currentPassword">Current Password</label>
+          <input type="password" id="currentPassword" autocomplete="current-password" placeholder="••••••••">
+        </div>
+        <div class="form-group">
+          <label for="newPassword">New Password</label>
+          <input type="password" id="newPassword" autocomplete="new-password" placeholder="••••••••">
+        </div>
+        <div class="form-group">
+          <label for="confirmNewPassword">Confirm New Password</label>
+          <input type="password" id="confirmNewPassword" autocomplete="new-password" placeholder="••••••••">
+        </div>
+        <button class="btn btn-secondary" onclick="changePassword()" id="changePasswordBtn">Update Password</button>
+
+        <!-- User list (admin only) -->
+        <div id="userListSection" style="display: none; margin-top: var(--space-xl);">
+          <h3 style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: var(--space-sm);">Registered Users</h3>
+          <div id="userList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+          <button class="btn btn-ghost btn-sm mt-md" onclick="loadUsers()">Refresh</button>
+        </div>
+      </div>
+
       <!-- Save -->
       <div class="flex justify-between items-center" style="padding: 1rem 0;">
         <span id="saveStatus" class="text-sm text-muted"></span>
@@ -319,6 +347,63 @@
       }
     }
 
+    async function changePassword() {
+      var current = document.getElementById('currentPassword').value;
+      var next = document.getElementById('newPassword').value;
+      var confirm = document.getElementById('confirmNewPassword').value;
+      var btn = document.getElementById('changePasswordBtn');
+
+      if (!current || !next) { Toast.error('Fill in all password fields'); return; }
+      if (next !== confirm) { Toast.error('New passwords do not match'); return; }
+      if (next.length < 8) { Toast.error('New password must be at least 8 characters'); return; }
+
+      btn.disabled = true;
+      btn.textContent = 'Updating...';
+      try {
+        var resp = await fetch('https://salt.shadowedvaca.com/api/users/me/password', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + Auth.getToken() },
+          body: JSON.stringify({ currentPassword: current, newPassword: next })
+        });
+        var data = await resp.json();
+        if (!resp.ok) { Toast.error(data.detail || 'Failed to update password'); return; }
+        Toast.success('Password updated!');
+        document.getElementById('currentPassword').value = '';
+        document.getElementById('newPassword').value = '';
+        document.getElementById('confirmNewPassword').value = '';
+      } catch (err) {
+        Toast.error('Connection error: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Update Password';
+      }
+    }
+
+    async function loadUsers() {
+      var container = document.getElementById('userList');
+      container.innerHTML = '<span class="text-muted text-sm">Loading...</span>';
+      try {
+        var resp = await fetch('https://salt.shadowedvaca.com/api/users', {
+          headers: { 'Authorization': 'Bearer ' + Auth.getToken() }
+        });
+        if (!resp.ok) return;
+        var users = await resp.json();
+        container.innerHTML = '';
+        users.forEach(function(u) {
+          var row = document.createElement('div');
+          row.style.cssText = 'display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--bg-surface); border-radius: var(--radius-md); border: 1px solid var(--border-subtle);';
+          var badges = '';
+          if (u.isAdmin) badges += '<span style="font-size: 0.7rem; padding: 2px 6px; background: rgba(200,168,78,0.15); color: var(--gold); border-radius: 4px;">admin</span>';
+          if (!u.isActive) badges += '<span style="font-size: 0.7rem; padding: 2px 6px; background: rgba(204,68,68,0.15); color: var(--danger); border-radius: 4px;">inactive</span>';
+          row.innerHTML = '<span style="flex: 1; font-weight: 500;">' + u.username + '</span>' + badges + '<span class="text-muted text-sm">joined ' + new Date(u.createdAt).toLocaleDateString() + '</span>';
+          container.appendChild(row);
+        });
+        if (users.length === 0) container.innerHTML = '<span class="text-muted text-sm">No users found.</span>';
+      } catch (err) {
+        container.innerHTML = '<span class="text-muted text-sm">Failed to load users.</span>';
+      }
+    }
+
     async function generateInviteCode() {
       var btn = document.getElementById('inviteBtn');
       var resultEl = document.getElementById('inviteResult');
@@ -356,7 +441,14 @@
     }
 
     // Called by Auth after Storage.init() completes
-    function onStorageReady() { loadConfig(); }
+    function onStorageReady() {
+      loadConfig();
+      var session = Auth._getSession();
+      if (session && session.isAdmin) {
+        document.getElementById('userListSection').style.display = 'block';
+        loadUsers();
+      }
+    }
   </script>
 </body>
 </html>
