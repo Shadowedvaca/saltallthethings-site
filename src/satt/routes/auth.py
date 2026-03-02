@@ -13,8 +13,9 @@ from satt.auth import (
     create_access_token,
     generate_invite_code,
     get_user_by_username,
+    require_auth,
 )
-from satt.auth import require_auth
+from satt.config import get_settings
 from satt.database import get_db
 from satt.models import User
 from sv_common.auth.passwords import hash_password, verify_password
@@ -72,7 +73,8 @@ async def create_invite(
 
     user_id: int | None = _user.get("user_id")
     code = await generate_invite_code(db, created_by_user_id=user_id)
-    invite_url = f"https://saltallthethings.com/register?code={code}"
+    site_url = get_settings().site_url.rstrip("/")
+    invite_url = f"{site_url}/register?code={code}"
     return {"invite_url": invite_url}
 
 

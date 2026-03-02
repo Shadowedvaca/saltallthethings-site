@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://localhost/sattdb"
     secret_key: str = "dev-secret-key-change-in-production"
     environment: str = "development"
+    site_url: str = "https://saltallthethings.com"
     ai_request_timeout: int = 60
 
     # JWT settings
