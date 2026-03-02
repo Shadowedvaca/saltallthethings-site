@@ -4,7 +4,27 @@
       "Bash(dir:*)",
       "Bash(cd:*)",
       "Bash(wc:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(xargs cat:*)",
+      "Bash(cp:*)",
+      "Bash(mkdir:*)",
+      "Bash(python:*)",
+      "Bash(venv/Scripts/pip install:*)",
+      "Bash(PYTHONPATH=src venv/Scripts/python:*)",
+      "Bash(ssh:*)",
+      "Bash(PYTHONPATH=src python:*)",
+      "Bash(venv/Scripts/python:*)",
+      "Bash(ssh-add:*)",
+      "Bash(python3:*)",
+      "Bash(scp:*)",
+      "Bash(nslookup:*)",
+      "Bash(curl:*)",
+      "Bash(gh run:*)",
+      "Bash(ssh-keygen:*)",
+      "Bash(gh secret:*)",
+      "Bash(ls:*)",
+      "Bash(PYTHONPATH=src pytest:*)",
+      "Bash(npx wrangler:*)"
     ]
   }
 }
