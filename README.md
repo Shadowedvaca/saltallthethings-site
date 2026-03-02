@@ -2,62 +2,117 @@
 
 Website and internal production tools for the *Salt All The Things* WoW podcast.
 
-## Setup
+**Production:** https://saltallthethings.com
+**Staging:** https://salt.shadowedvaca.com
 
-### 1. Create the GitHub repo
+---
 
-Push this entire folder to a new GitHub repo (e.g. `salt-all-the-things`).
+## Stack
 
-### 2. Set the admin password
+- **Frontend:** Plain HTML/CSS/JS — no build step, no framework
+- **Backend:** FastAPI + Uvicorn (Python), SQLAlchemy async, Alembic
+- **Database:** Postgres (`satt` schema on shared Hetzner instance)
+- **Auth:** JWT (8h TTL) + bcrypt, invite-code registration
+- **AI:** Anthropic/OpenAI proxied through FastAPI — keys stored in DB, never in code
+- **Host:** Hetzner VPS `5.78.114.224`, served by Nginx + Let's Encrypt
 
-Go to your repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
+---
 
-- **Name:** `ADMIN_PASSWORD`
-- **Value:** whatever password you want for the admin pages
+## Deploy
 
-### 3. Enable GitHub Pages
+### Static files (automatic)
 
-Go to **Settings** → **Pages** → Under "Build and deployment":
-- **Source:** GitHub Actions
+Push to `main` — GitHub Actions SSHes into the server, runs `git pull`, copies
+static files to `/opt/satt-platform/static/`, and restarts the `satt` service.
 
-That's it. The included workflow (`.github/workflows/deploy.yml`) handles everything:
-- Hashes your password (never stored in plain text)
-- Injects the hash into the auth script
-- Deploys to GitHub Pages
+Required GitHub secrets:
+- `STAGING_SSH_KEY` — private key for `root@5.78.114.224`
+- `STAGING_SSH_KNOWN_HOSTS` — server host fingerprint
 
-### 4. First deploy
+### Backend (manual)
 
-Push to `main` and the Action runs automatically. Your site will be live at:
+```bash
+ssh hetzner
+cd /opt/satt-platform
+git pull
+PYTHONPATH=src alembic upgrade head   # only if there are schema changes
+sudo systemctl restart satt
 ```
-https://<your-username>.github.io/<repo-name>/
-```
 
-## Pages
-
-| Page | URL | Auth Required |
-|------|-----|---------------|
-| Landing page | `/index.html` | No — public |
-| Show Management | `/show_management.html` | Yes |
-| Config | `/config.html` | Yes |
-
-## Changing the password
-
-Update the `ADMIN_PASSWORD` secret in GitHub and either push a commit or manually trigger the workflow (Actions → Deploy → Run workflow). The hash gets regenerated on every deploy.
+---
 
 ## Local development
 
-When running locally (just opening the HTML files in a browser), the auth gate is automatically skipped since the password hash placeholder hasn't been replaced. All features work normally.
+### Python backend
 
-## Data storage
+```bash
+python -m venv venv
+venv/Scripts/activate        # Windows
+pip install -r requirements.txt
 
-All data (ideas, show schedule, config, API keys) is stored in your browser's `localStorage`. This means:
-- Data is per-browser, per-device
-- API keys never leave your browser or hit GitHub
-- Use the Export/Import feature on the Config page to backup or transfer data between devices
+# Needs a local Postgres instance or tunnel to the server
+cp .env.example .env         # fill in DATABASE_URL, SECRET_KEY
+PYTHONPATH=src uvicorn satt.main:app --reload
+```
 
-## Tech stack
+### Frontend
 
-- Pure HTML/CSS/JS — no build step, no frameworks
-- GitHub Pages for hosting
-- GitHub Actions for CI/CD
-- Anthropic Claude API or OpenAI API for show idea processing
+Open the HTML files directly in a browser or serve them statically.
+The JS hardcodes `https://saltallthethings.com/api` as the API base —
+override in `js/storage.js` and `js/ai-service.js` if pointing at a local backend.
+
+### Tests
+
+```bash
+PYTHONPATH=src pytest src/satt/tests/ -v
+```
+
+Tests use a separate `satt_test` Postgres schema. Never run against production.
+
+---
+
+## Pages
+
+| Page | Auth | Purpose |
+|---|---|---|
+| `index.html` | No | Public landing — hero, YouTube embeds, platform links |
+| `show_management.html` | Yes | Ideas workshop + drag-and-drop schedule board |
+| `jokes.html` | Yes | Joke bank — AI generator + manual CRUD |
+| `config.html` | Yes | AI settings, prompts, YouTube IDs, invite codes, user management |
+| `register.html` | No | Invite-code registration for new users |
+| `login.html` | No | JWT login gate (redirects to referrer after auth) |
+
+---
+
+## Environment variables
+
+Stored in `/opt/satt-platform/.env` on the server:
+
+```
+DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/satt_db
+SECRET_KEY=<hex string>
+ENVIRONMENT=production
+SITE_URL=https://saltallthethings.com
+CORS_ORIGINS=https://saltallthethings.com,https://salt.shadowedvaca.com
+AI_REQUEST_TIMEOUT=60
+```
+
+AI API keys are **not** in `.env` — they are stored in `satt.config` in Postgres
+and managed through the Config page.
+
+---
+
+## Server management
+
+```bash
+# Service status / logs
+sudo systemctl status satt
+journalctl -u satt -f
+
+# Nginx
+sudo nginx -t
+sudo systemctl reload nginx
+
+# SSL certs (auto-renew via certbot timer)
+sudo certbot renew --dry-run
+```

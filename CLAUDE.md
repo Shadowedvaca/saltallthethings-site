@@ -22,7 +22,7 @@ saltallthethings-site/
 ├── .github/
 │   └── workflows/
 │       └── deploy.yml          ← deploys static files to Hetzner (no build step)
-├── references/                 ← migration phase docs (read-only reference)
+├── reference/                  ← migration phase docs (read-only reference)
 ├── src/
 │   ├── sv_common/              ← shared auth/services package (DO NOT MODIFY)
 │   └── satt/                   ← FastAPI application
@@ -169,7 +169,6 @@ manually propagated here.
 - JWT in `Authorization: Bearer <token>` header
 - Token TTL: 8 hours
 - Invite codes: one-time use, 48-hour expiry
-- No X-Auth header support — that bridge was removed after Phase 4 cutover
 
 ---
 
