@@ -1,38 +1,38 @@
-name: Deploy to GitHub Pages
+name: Deploy to Production (Hetzner)
 
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:  # Allow manual trigger
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  workflow_dispatch:
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
+      - name: Deploy to server
+        run: |
+          ssh -i ~/.ssh/deploy_key root@5.78.114.224 bash << 'ENDSSH'
+            set -e
+            cd /opt/satt-platform
 
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: '.'
+            echo "=== Pulling latest code ==="
+            git pull
 
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+            echo "=== Copying static files ==="
+            cp *.html static/
+            cp -r css/ js/ images/ static/
+
+            echo "=== Restarting backend ==="
+            systemctl restart satt
+            systemctl is-active satt
+
+            echo "=== Done ==="
+          ENDSSH

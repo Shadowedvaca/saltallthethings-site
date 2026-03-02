@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from satt.ai_client import call_ai
-from satt.auth_bridge import require_auth
+from satt.auth import require_auth
 from satt.crud import get_config, get_jokes
 from satt.database import get_db
 from satt.prompts import build_generate_jokes_prompts, build_process_idea_prompts

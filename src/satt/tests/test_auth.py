@@ -1,4 +1,4 @@
-"""Tests for authentication middleware (JWT and X-Auth bridge)."""
+"""Tests for authentication middleware (JWT Bearer)."""
 
 from __future__ import annotations
 
@@ -94,15 +94,6 @@ async def test_unknown_key_returns_400(client: AsyncClient):
     # Auth passes but key is invalid — expect 400 (or could get 500 due to no DB)
     # The key validation happens before DB access in the route handler
     assert response.status_code in (400, 500)
-
-
-@pytest.mark.asyncio
-async def test_x_auth_wrong_password_returns_401(client: AsyncClient):
-    """X-Auth with wrong password is rejected."""
-    response = await client.get(
-        "/api/export", headers={"X-Auth": "definitely-wrong-password"}
-    )
-    assert response.status_code == 401
 
 
 # ---------------------------------------------------------------------------

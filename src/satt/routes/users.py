@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from satt.auth_bridge import require_auth
+from satt.auth import require_auth
 from satt.database import get_db
 from satt.models import User
 from sv_common.auth.passwords import hash_password, verify_password

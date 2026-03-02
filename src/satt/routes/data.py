@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from satt.auth_bridge import require_auth
+from satt.auth import require_auth
 from satt.crud import (
     get_assignments,
     get_config,

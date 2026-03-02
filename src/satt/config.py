@@ -17,9 +17,6 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 480  # 8 hours
 
-    # X-Auth bridge (Phase 2 only — removed in Phase 4)
-    admin_password_hash: str = ""
-
 
 @lru_cache
 def get_settings() -> Settings:
