@@ -1,104 +1,249 @@
 @echo off
 setlocal enabledelayedexpansion
 
-set "AUDIO_DIR=J:\Shared drives\Salt All The Things\Show Recordings\Finished Episodes"
+:: ============================================
+::   Salt All The Things - Episode Transcriber
+::   v2.0 - Multi-machine / Smart Queue
+:: ============================================
+
+set "RAW_DIR=J:\Shared drives\Salt All The Things\Show Recordings\Raw Dog Recordings"
+set "FINISHED_DIR=J:\Shared drives\Salt All The Things\Show Recordings\Finished Episodes"
 set "OUTPUT_DIR=J:\Shared drives\Salt All The Things\Show Recordings\Transcripts"
 set "MODEL=medium"
 set "PATH=C:\ffmpeg\bin;%PATH%"
 
-:: Default host names suggested during speaker labeling
 set "HOST1=Rocket"
 set "HOST2=Trog"
-
-:: Path to the speaker labeling script (same folder as this bat)
 set "LABEL_SCRIPT=%~dp0label-speakers.py"
-
-:: Load HuggingFace token from secrets file (not committed to git)
 set "SECRETS_FILE=%~dp0secrets.bat"
+
 if not exist "%SECRETS_FILE%" (
     echo ERROR: secrets.bat not found at %SECRETS_FILE%
-    echo Please create it with the line:  set "HF_TOKEN=your_token_here"
-    echo See secrets.bat.example for reference.
+    echo Please create it with:  set "HF_TOKEN=your_token_here"
     echo.
     pause
     exit /b 1
 )
 call "%SECRETS_FILE%"
 
-echo ============================================
-echo   Salt All The Things - Episode Transcriber
-echo      (with Speaker Diarization via WhisperX)
-echo ============================================
-echo.
-
-:: Make sure output folder exists
 if not exist "%OUTPUT_DIR%" mkdir "%OUTPUT_DIR%"
 
-:: Count mp3 files
-set COUNT=0
-for %%f in ("%AUDIO_DIR%\*.mp3") do set /a COUNT+=1
+echo ============================================
+echo   Salt All The Things - Episode Transcriber
+echo ============================================
+echo.
+echo Which folder do you want to scan?
+echo   [1] Raw Dog Recordings (glued, pre-Skate)
+echo   [2] Finished Episodes  (Skate's final output)
+echo   [3] Both
+echo.
+set /p FOLDER_CHOICE="Enter 1, 2, or 3: "
 
-if %COUNT%==0 (
-    echo No .mp3 files found in:
-    echo %AUDIO_DIR%
+set "SCAN_RAW=0"
+set "SCAN_FINISHED=0"
+if "%FOLDER_CHOICE%"=="1" set "SCAN_RAW=1"
+if "%FOLDER_CHOICE%"=="2" set "SCAN_FINISHED=1"
+if "%FOLDER_CHOICE%"=="3" (
+    set "SCAN_RAW=1"
+    set "SCAN_FINISHED=1"
+)
+
+if "%SCAN_RAW%"=="0" if "%SCAN_FINISHED%"=="0" (
+    echo Invalid choice. Exiting.
+    pause
+    exit /b 1
+)
+
+echo.
+echo Scanning for unprocessed or stale episodes...
+echo.
+
+set IDX=0
+
+:: ---- Helper: get file's last-modified date as YYYYMMDDHHMMSS ----
+:: We use PowerShell for reliable date comparison
+:: Stored as: FILE_DATE_n=<timestamp>
+
+if "%SCAN_RAW%"=="1" (
+    echo [Raw Dog Recordings]
+    for %%f in ("%RAW_DIR%\*.mp3" "%RAW_DIR%\*.wav") do (
+        set "BASENAME=%%~nf"
+        set "AUDIOFILE=%%f"
+        set "TXTFILE=%OUTPUT_DIR%\!BASENAME!.txt"
+        set "NEEDS_PROCESSING=0"
+        set "REASON="
+
+        if not exist "!TXTFILE!" (
+            set "NEEDS_PROCESSING=1"
+            set "REASON=no transcript"
+        ) else (
+            :: Compare dates via PowerShell - is audio newer than transcript?
+            for /f %%d in ('powershell -NoProfile -Command ^
+                "$a = (Get-Item '%%f').LastWriteTime; $b = (Get-Item '!TXTFILE!').LastWriteTime; if ($a -gt $b) { 'STALE' } else { 'OK' }"') do (
+                if "%%d"=="STALE" (
+                    set "NEEDS_PROCESSING=1"
+                    set "REASON=transcript older than audio"
+                )
+            )
+        )
+
+        if "!NEEDS_PROCESSING!"=="1" (
+            set /a IDX+=1
+            set "FILE_!IDX!=%%f"
+            set "NAME_!IDX!=%%~nxf"
+            set "REASON_!IDX!=!REASON!"
+            echo   [!IDX!] %%~nxf  ^(!REASON!^)
+        )
+    )
+    echo.
+)
+
+if "%SCAN_FINISHED%"=="1" (
+    echo [Finished Episodes]
+    for %%f in ("%FINISHED_DIR%\*.mp3" "%FINISHED_DIR%\*.wav") do (
+        set "BASENAME=%%~nf"
+        set "AUDIOFILE=%%f"
+        set "TXTFILE=%OUTPUT_DIR%\!BASENAME!.txt"
+        set "NEEDS_PROCESSING=0"
+        set "REASON="
+
+        if not exist "!TXTFILE!" (
+            set "NEEDS_PROCESSING=1"
+            set "REASON=no transcript"
+        ) else (
+            for /f %%d in ('powershell -NoProfile -Command ^
+                "$a = (Get-Item '%%f').LastWriteTime; $b = (Get-Item '!TXTFILE!').LastWriteTime; if ($a -gt $b) { 'STALE' } else { 'OK' }"') do (
+                if "%%d"=="STALE" (
+                    set "NEEDS_PROCESSING=1"
+                    set "REASON=transcript older than audio"
+                )
+            )
+        )
+
+        if "!NEEDS_PROCESSING!"=="1" (
+            set /a IDX+=1
+            set "FILE_!IDX!=%%f"
+            set "NAME_!IDX!=%%~nxf"
+            set "REASON_!IDX!=!REASON!"
+            echo   [!IDX!] %%~nxf  ^(!REASON!^)
+        )
+    )
+    echo.
+)
+
+if %IDX%==0 (
+    echo No unprocessed or stale episodes found. You're all caught up!
     echo.
     pause
     exit /b
 )
 
-echo Found %COUNT% .mp3 file(s) in:
-echo %AUDIO_DIR%
+echo Found %IDX% episode(s) needing transcription.
 echo.
-echo Output going to:
-echo %OUTPUT_DIR%
+echo Enter the numbers you want THIS machine to process.
+echo   Examples:  ALL   ^|   1   ^|   1 3 5   ^|   2-4   ^|   1 3-5 7
 echo.
-echo Model: %MODEL%
-echo Hosts: %HOST1%, %HOST2%
-echo.
-echo Press any key to start transcribing, or Ctrl+C to cancel...
-pause >nul
-echo.
+set /p SELECTION="Your selection: "
 
-set CURRENT=0
-for %%f in ("%AUDIO_DIR%\*.mp3") do (
-    set /a CURRENT+=1
-    set "BASENAME=%%~nf"
-    echo [!CURRENT!/%COUNT%] Transcribing: %%~nxf
-    echo -------------------------------------------
+:: ---- Parse selection into a "selected" flag array ----
+:: selected_n=1 means process file n
 
-    :: Skip if labeled transcript already exists
-    if exist "%OUTPUT_DIR%\!BASENAME!.txt" (
-        echo   Already transcribed, skipping.
-        echo.
+:: Initialize all to 0
+for /l %%i in (1,1,%IDX%) do set "SELECTED_%%i=0"
+
+:: Handle ALL
+if /i "%SELECTION%"=="ALL" (
+    for /l %%i in (1,1,%IDX%) do set "SELECTED_%%i=1"
+    goto :run
+)
+
+:: Parse tokens (handles individual numbers and ranges like 2-4)
+for %%t in (%SELECTION%) do (
+    set "TOKEN=%%t"
+    :: Check if token contains a dash (range)
+    echo !TOKEN! | findstr /r "^[0-9][0-9]*-[0-9][0-9]*$" >nul 2>&1
+    if not errorlevel 1 (
+        :: It's a range - split on dash
+        for /f "tokens=1,2 delims=-" %%a in ("!TOKEN!") do (
+            set "RANGE_START=%%a"
+            set "RANGE_END=%%b"
+            for /l %%i in (!RANGE_START!,1,!RANGE_END!) do (
+                if %%i geq 1 if %%i leq %IDX% set "SELECTED_%%i=1"
+            )
+        )
     ) else (
-        :: Step 1: Run WhisperX with diarization, output JSON so we get speaker labels
-        echo   Transcribing with speaker diarization...
+        :: It's a single number
+        set "NUM=!TOKEN!"
+        if !NUM! geq 1 if !NUM! leq %IDX% set "SELECTED_!NUM!=1"
+    )
+)
+
+:run
+echo.
+echo ============================================
+echo   Starting transcription...
+echo ============================================
+echo.
+
+set DONE_COUNT=0
+set SKIP_COUNT=0
+
+for /l %%i in (1,1,%IDX%) do (
+    if "!SELECTED_%%i!"=="1" (
+        set /a DONE_COUNT+=1
+        set "CURRENT_FILE=!FILE_%%i!"
+        set "CURRENT_NAME=!NAME_%%i!"
+
+        :: Extract basename without extension
+        for %%x in ("!CURRENT_FILE!") do set "BASENAME=%%~nx"
+        for %%x in ("!CURRENT_FILE!") do set "BASENAME=%%~n"
+        :: Simpler approach: strip extension manually
+        set "BASENAME=!CURRENT_NAME!"
+        set "BASENAME=!BASENAME:.mp3=!"
+        set "BASENAME=!BASENAME:.wav=!"
+        set "BASENAME=!BASENAME:.MP3=!"
+        set "BASENAME=!BASENAME:.WAV=!"
+
+        echo [!DONE_COUNT!] Processing: !CURRENT_NAME!
+        echo     Reason: !REASON_%%i!
+        echo -------------------------------------------
+
         set "JSON_OUT=%OUTPUT_DIR%\!BASENAME!.json"
-        whisperx "%%f" --model %MODEL% --language en --compute_type int8 --diarize --hf_token %HF_TOKEN% --output_format json --output_dir "%OUTPUT_DIR%"
+        set "TXT_OUT=%OUTPUT_DIR%\!BASENAME!.txt"
+
+        echo   Step 1/2: Running WhisperX with diarization...
+        whisperx "!CURRENT_FILE!" --model %MODEL% --language en --compute_type int8 --diarize --hf_token %HF_TOKEN% --output_format json --output_dir "%OUTPUT_DIR%"
+
         if errorlevel 1 (
-            echo   ERROR: WhisperX failed on %%~nxf
+            echo   ERROR: WhisperX failed on !CURRENT_NAME!
         ) else (
             if exist "!JSON_OUT!" (
-                echo   WhisperX complete. Now identifying speakers...
+                echo   Step 2/2: Identifying speakers...
                 echo.
-
-                :: Step 2: Run the speaker labeling script interactively
-                python "!LABEL_SCRIPT!" "!JSON_OUT!" "%OUTPUT_DIR%\!BASENAME!.txt" --hosts %HOST1% %HOST2%
+                python "!LABEL_SCRIPT!" "!JSON_OUT!" "!TXT_OUT!" --hosts %HOST1% %HOST2%
                 if errorlevel 1 (
                     echo   ERROR: Speaker labeling failed. Raw JSON kept at !JSON_OUT!
                 ) else (
-                    echo   Labeled transcript saved as !BASENAME!.txt
+                    echo   Done: !BASENAME!.txt
                 )
             ) else (
-                echo   WARNING: Expected JSON output not found. Check %OUTPUT_DIR% manually.
+                echo   WARNING: Expected JSON not found at !JSON_OUT!
+                echo   Check %OUTPUT_DIR% manually.
             )
         )
         echo.
+    ) else (
+        set /a SKIP_COUNT+=1
     )
 )
 
 echo ============================================
-echo   Done! %COUNT% file(s) processed.
+echo   All done!
+echo   Processed: %DONE_COUNT% episode(s)
 echo ============================================
 echo.
+
+:: Play completion sound
+powershell -NoProfile -c "(New-Object Media.SoundPlayer 'C:\Windows\Media\chimes.wav').PlaySync()"
+
 pause
