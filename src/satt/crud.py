@@ -10,8 +10,10 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import update
+
 from satt.models import Assignment, Config, Idea, Joke, ShowSlot
-from satt.serializers import serialize_idea, serialize_joke, serialize_show_slot
+from satt.serializers import serialize_idea, serialize_joke, serialize_postprod_row, serialize_show_slot
 
 _PST = pytz.timezone("America/Los_Angeles")
 
@@ -240,6 +242,41 @@ async def replace_assignments(db: AsyncSession, assignments: dict) -> None:
             set_={"idea_id": pg_insert(Assignment.__table__).excluded.idea_id},
         )
         await db.execute(stmt)
+    await db.flush()
+
+
+# ---------------------------------------------------------------------------
+# Post-production queue
+# ---------------------------------------------------------------------------
+
+
+async def get_postproduction_queue(db: AsyncSession) -> list[dict]:
+    today = datetime.now(_PST).date()
+    result = await db.execute(
+        select(ShowSlot, Idea)
+        .outerjoin(Assignment, Assignment.slot_id == ShowSlot.id)
+        .outerjoin(Idea, Idea.id == Assignment.idea_id)
+        .where(ShowSlot.record_date <= today)
+        .order_by(ShowSlot.record_date.desc())
+    )
+    return [serialize_postprod_row(slot, idea) for slot, idea in result.all()]
+
+
+async def set_production_file_key(db: AsyncSession, slot_id: str, key: str) -> None:
+    await db.execute(
+        update(ShowSlot)
+        .where(ShowSlot.id == slot_id)
+        .values(production_file_key=key)
+    )
+    await db.flush()
+
+
+async def set_asset_inventory(db: AsyncSession, slot_id: str, inventory: dict) -> None:
+    await db.execute(
+        update(ShowSlot)
+        .where(ShowSlot.id == slot_id)
+        .values(asset_inventory=inventory)
+    )
     await db.flush()
 
 

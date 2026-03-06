@@ -1,0 +1,501 @@
+I’d set it up like a repeatable art direction pipeline so every episode image feels like part of the same brand, but not like the same cover over and over.
+
+The goal
+
+Each weekly image should always read as:
+
+Salt All The Things
+
+WoW-fantasy
+
+playful + epic
+
+about this specific episode
+
+So the system needs two things at once:
+
+Stable brand anchors
+
+Rotating scene formulas
+
+1. Lock the permanent brand anchors
+
+These should almost never change.
+
+Character rules
+
+Big salt elemental = hero mascot, broad-shouldered, imposing, glowing blue eyes, bronze/gold armor.
+
+Baby salt elementals = comic actors, chibi, expressive, mischievous, always doing the funny version of the topic.
+
+All salt elementals keep the same material language:
+
+icy blue crystal bodies
+
+jagged spikes
+
+glowing cyan eyes
+
+bronze/gold armor accents
+
+Prop rules
+
+Use these as your recurring visual “podcast identity” markers:
+
+vintage bronze microphone
+
+salt shaker
+
+glowing spilled salt
+
+occasional treasure, lanterns, wood tables, maps, tools
+
+Lighting rules
+
+dark moody background
+
+cool blue character highlights
+
+warm orange fire/torch accents
+
+high contrast, cinematic rim light
+
+Style rules
+
+painterly fantasy illustration
+
+WoW-inspired environment storytelling
+
+no text in image
+
+no real people
+
+square composition, readable at thumbnail size
+
+That becomes your style bible.
+
+2. Build a small library of scene archetypes
+
+Instead of inventing from scratch every week, we classify episodes into a few reliable artwork types.
+
+Here’s the system I’d recommend.
+
+A. Tavern Talk
+
+Best for:
+
+general discussion episodes
+
+opinion episodes
+
+patch reactions
+
+community talk
+
+Visual formula:
+
+tavern/bar/podcast set
+
+microphone on table
+
+big salt elemental as host in background
+
+babies acting out jokes around the table
+
+Why it works:
+
+instantly reads “podcast”
+
+easy fallback when transcript is broad
+
+B. Delve / Cave Expedition
+
+Best for:
+
+exploration
+
+new zones
+
+systems discussion
+
+mystery/speculation
+
+lore-heavy episodes
+
+Visual formula:
+
+cave, ruins, labyrinth, treasure chamber
+
+big elemental as guide/guardian
+
+babies exploring, arguing over a map, pulling a wagon, triggering traps
+
+Why it works:
+
+matches your fantasy tone well
+
+good for “what’s coming next” episodes
+
+C. Raid / Battle Chaos
+
+Best for:
+
+class balance
+
+boss discussion
+
+raid prep
+
+major patch or expansion launch
+
+high-energy salt episodes
+
+Visual formula:
+
+dramatic combat-ready scene
+
+big elemental in dominant action pose
+
+babies panicking, cheering, casting, carrying loot, spilling salt everywhere
+
+Why it works:
+
+makes big episodes feel important
+
+thumbnail pops well
+
+D. Workshop / Build Room
+
+Best for:
+
+housing
+
+crafting
+
+UI/tools/systems
+
+guild infrastructure
+
+making/planning episodes
+
+Visual formula:
+
+forge room, workshop, construction site, blueprint table
+
+babies building, hammering, misplacing things, copy-paste joke visuals
+
+big elemental supervising or facepalming
+
+Why it works:
+
+perfect for housing/tooling topics
+
+gives visual variety from caves and taverns
+
+E. Lore Vision / Cosmic Tension
+
+Best for:
+
+light vs void
+
+story speculation
+
+character arcs
+
+philosophical discussion
+
+Visual formula:
+
+dramatic magical environment
+
+split lighting: blue/void vs gold/light
+
+big elemental caught between forces
+
+babies reacting to magical phenomena in funny ways
+
+Why it works:
+
+makes lore episodes feel distinct and elevated
+
+F. Auction House / Town Comedy
+
+Best for:
+
+economy
+
+professions
+
+farming
+
+mounts
+
+collectibles
+
+side-content episodes
+
+Visual formula:
+
+market stall, treasure room, cluttered guild hall, mailboxes, item piles
+
+babies selling, hoarding, sorting, fighting over loot
+
+big elemental as merchant, banker, or exhausted overseer
+
+Why it works:
+
+great comedy potential
+
+strong object storytelling
+
+3. Give each episode a “composition recipe”
+
+Once you classify the episode, use a repeatable layout.
+
+A good default recipe:
+
+Foreground
+
+2–3 baby salt elementals doing the funniest topic-specific actions
+
+Midground
+
+key prop cluster: microphone, salt shaker, map, tools, loot, ritual object, etc.
+
+Background
+
+big salt elemental as the anchor silhouette
+
+Lighting accent
+
+one strong warm light source
+
+one magical/cool light source
+
+This keeps the images consistent even when the setting changes.
+
+4. Use topic mapping
+
+Every transcript gets reduced into:
+
+Topic A
+
+Topic B
+
+Topic C
+
+Emotional tone
+
+Then we convert topics into props/actions.
+
+For Episode 6, for example:
+
+Midnight hype → cavern/delve/exploration
+
+housing/building → babies building structure
+
+demonology/class prep → small demons / magical prep energy
+
+tone = excited + funny + speculative
+
+That becomes the image plan.
+
+5. Add recurring “visual gags”
+
+This is where the series starts feeling really alive.
+
+You want a few recurring joke beats that can come back in different contexts:
+
+baby salt hiding in spilled salt
+
+baby salt clinging to the microphone
+
+one baby causing the mess while another looks smug
+
+big elemental facepalming in certain episodes
+
+tiny construction failures
+
+map reading gone wrong
+
+treasure chest or mount-related frustration
+
+babies overreacting to void/light magic
+
+These are like your visual catchphrases.
+
+6. Rotate the archetypes so the feed stays varied
+
+A simple rotation system could be:
+
+General episode → Tavern Talk
+
+Expansion/system speculation → Delve / Cave Expedition
+
+Class/raid focus → Raid / Battle Chaos
+
+Housing/crafting/tools → Workshop / Build Room
+
+Lore-heavy episode → Lore Vision / Cosmic Tension
+
+Economy/mount/profession episode → Auction House / Town Comedy
+
+That gives you consistency without repetition.
+
+7. Build a reusable prompt template
+
+Each week, I’d use the same prompt structure under the hood.
+
+Something like:
+
+Base style block
+
+square 1024x1024
+
+WoW-inspired fantasy digital painting
+
+icy blue crystalline salt elementals with glowing blue eyes and bronze/gold armor
+
+dark moody environment, warm torchlight, rich saturated colors
+
+vintage bronze microphone, salt shakers, glowing spilled salt
+
+no text
+
+Episode block
+
+dominant themes
+
+chosen scene archetype
+
+specific props tied to episode topics
+
+specific baby salt actions
+
+pose for big elemental
+
+environment choice
+
+emotional tone
+
+That makes output quality more stable.
+
+8. Create a continuity tracker
+
+I’d keep a lightweight episode art log with:
+
+episode number
+
+top themes
+
+chosen archetype
+
+environment used
+
+big elemental role
+
+baby gag used
+
+special props used
+
+That prevents accidental repetition like:
+
+“another cave with a mic and babies yelling”
+
+“another tavern with identical pose”
+
+“same housing joke three weeks in a row”
+
+9. Optional: assign “signature uses” to recurring subjects
+
+This makes things even more intentional.
+
+For example:
+
+Housing → workshop / construction / treehouse / blueprint table
+
+Delves → cave, map, lanterns, labyrinth entrance
+
+Void/Light lore → magical split-color scene
+
+Raid prep → war table / armory / combat stance
+
+Auction house → cluttered market / piles of loot / mailbox humor
+
+Mount talk → treasure stable / trophy room / chasing rare creature silhouettes
+
+10. My recommended production workflow with you
+
+Each week, you paste the transcript and I return:
+
+Step 1: episode breakdown
+
+2–3 dominant topics
+
+overall emotional tone
+
+Step 2: concept shortlist
+
+I give you 2–3 scene concepts, for example:
+
+“Labyrinth cave prep scene”
+
+“Workshop housing chaos scene”
+
+“Void-vs-light prophecy chamber”
+
+Step 3: pick the best one
+
+Either I choose the strongest automatically, or you choose if you want more control.
+
+Step 4: generate image
+
+Using the locked brand rules and selected archetype.
+
+Step 5: optional archive note
+
+I keep a simple running continuity note so future episode art stays varied.
+
+Best version for your podcast
+
+For Salt All The Things, I’d recommend this default hierarchy:
+
+Primary archetypes: Tavern, Delve, Workshop, Raid
+
+Secondary archetypes: Lore Vision, Auction House
+
+Always include: at least one strong podcast prop or salt prop
+
+Always include: at least one comedic baby action tied directly to the episode
+
+That gives you a recognizable show identity while still letting each episode feel custom.
+
+Practical example of how I’d systemize it for future episodes
+
+When you send a transcript, I’d internally do something like:
+
+Identify themes
+
+Tag episode type
+
+Choose archetype
+
+Choose environment
+
+Choose 1 hero action for big elemental
+
+Choose 2–3 joke actions for babies
+
+Choose 2–4 props tied to the topics
+
+Generate
+
+Example output format from me could be:
+
+Themes: Midnight hype, housing tools, class prep
+Episode type: expansion speculation + systems
+Archetype: Delve / Workshop hybrid
+Scene: cavern outpost where baby salts are building a crooked mini house beside a podcast mic while the big salt elemental prepares for an expedition
+Why this works: combines the two most memorable recurring beats of the episode while preserving the epic Midnight mood
+
+If you want, I can turn this into a one-page Salt All The Things Episode Art Playbook we can reuse every week.

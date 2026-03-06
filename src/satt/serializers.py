@@ -48,3 +48,43 @@ def serialize_show_slot(row: Any) -> dict:
         "isRollout": row.is_rollout,
         "releaseDateOverride": _iso(row.release_date_override),
     }
+
+
+def _compute_next_step(slot: Any) -> str:
+    if not slot.production_file_key:
+        return "set_key"
+    inv = slot.asset_inventory or {}
+    raw = inv.get("raw_audio", {})
+    if not raw.get("present"):
+        return "upload_raw"
+    txt = inv.get("transcript_txt", {})
+    if not txt.get("present"):
+        return "transcribe"
+    raw_modified = raw.get("modified")
+    txt_modified = txt.get("modified")
+    if raw_modified and txt_modified and raw_modified > txt_modified:
+        return "retranscribe"
+    art = inv.get("album_art", {})
+    if not art.get("present"):
+        return "generate_art"
+    finished = inv.get("finished_audio", {})
+    if not finished.get("present"):
+        return "awaiting_editor"
+    return "complete"
+
+
+def serialize_postprod_row(slot: Any, idea: Any) -> dict:
+    return {
+        "slotId": slot.id,
+        "episodeNumber": slot.episode_number,
+        "episodeNum": slot.episode_num,
+        "recordDate": _iso(slot.record_date),
+        "releaseDate": _iso(slot.release_date),
+        "productionFileKey": slot.production_file_key,
+        "ideaId": idea.id if idea else None,
+        "selectedTitle": idea.selected_title if idea else None,
+        "ideaStatus": idea.status if idea else None,
+        "imageFileId": idea.image_file_id if idea else None,
+        "assetInventory": slot.asset_inventory,
+        "nextStep": _compute_next_step(slot),
+    }
