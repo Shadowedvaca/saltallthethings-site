@@ -6,6 +6,8 @@ consistent before and after migration.
 
 from __future__ import annotations
 
+import json
+
 
 def build_process_idea_prompts(config: dict, raw_notes: str) -> tuple[str, str]:
     """Returns (system_prompt, user_prompt) for the process-idea endpoint."""
@@ -81,6 +83,87 @@ def build_generate_jokes_prompts(
         f"Generate salt jokes. Theme/topic hint for this batch: {theme_hint}"
         if theme_hint
         else "Generate a batch of general salt jokes for the show."
+    )
+
+    return system_prompt, user_prompt
+
+
+def build_generate_art_direction_prompts(
+    config: dict, episode_data: dict
+) -> tuple[str, str]:
+    """Returns (system_prompt, user_prompt) for the generate-art-direction endpoint."""
+    style_bible = config.get("artStyleBible") or {}
+    archetypes = config.get("artArchetypes") or []
+    art_log = config.get("artLog") or []
+    recent_log = art_log[-5:]
+
+    style_bible_text = json.dumps(style_bible, indent=2)
+    archetypes_text = json.dumps(archetypes, indent=2)
+
+    continuity_section = ""
+    if recent_log:
+        continuity_section = (
+            "\n\nRECENT EPISODE ART LOG (last 5 — for variety, avoid repeating):\n"
+            + json.dumps(recent_log, indent=2)
+            + "\n\nCONTINUITY RULES:\n"
+            "- Do NOT repeat the same archetype as either of the last 2 episodes.\n"
+            "- Do NOT repeat the same environment setting as either of the last 2 episodes.\n"
+            "- Do NOT repeat the same baby gag as any of the last 3 episodes.\n"
+        )
+
+    system_prompt = (
+        "You are an art director for the Salt All The Things World of Warcraft podcast.\n\n"
+        "STYLE BIBLE:\n"
+        f"{style_bible_text}\n\n"
+        "VISUAL ARCHETYPES:\n"
+        f"{archetypes_text}"
+        f"{continuity_section}\n\n"
+        "YOUR TASK:\n"
+        "Analyze the episode and produce a complete art direction plan. "
+        "Return ONLY valid JSON with EXACTLY this structure (no markdown, no backticks, just pure JSON):\n\n"
+        "{\n"
+        '  "topics": ["topic A", "topic B", "topic C"],\n'
+        '  "tone": "excited and funny",\n'
+        '  "archetype": {\n'
+        '    "id": "delve_expedition",\n'
+        '    "name": "Delve / Cave Expedition",\n'
+        '    "reason": "Episode centers on exploration and speculation about new zones"\n'
+        '  },\n'
+        '  "environment": "ancient labyrinth with glowing runes and collapsed archways",\n'
+        '  "bigElementalRole": "stands at the entrance as expedition leader, torch in hand",\n'
+        '  "babyGags": [\n'
+        '    "one baby reading the map upside down",\n'
+        '    "one baby clinging to the arm salt-scared"\n'
+        '  ],\n'
+        '  "props": ["bronze microphone", "salt shaker", "lantern"],\n'
+        '  "sceneSummary": "Labyrinth entrance scene: the big salt elemental leads the expedition while baby elementals cause comedic chaos",\n'
+        '  "finalImagePrompt": "Square 1024x1024 fantasy digital painting in World of Warcraft style. Scene: ..."\n'
+        "}\n\n"
+        "FINAL IMAGE PROMPT STRUCTURE — the finalImagePrompt must be a complete, ready-to-send DALL-E "
+        "prompt combining:\n"
+        "1. Format and art style from the style bible\n"
+        "2. Scene summary\n"
+        "3. Character descriptions (big elemental + baby elementals) from style bible\n"
+        "4. Baby gags as action descriptions\n"
+        "5. Props list\n"
+        "6. Environment details\n"
+        "7. Lighting from style bible\n"
+        "8. All rules from style bible (no text in image, no real people, etc.)\n\n"
+        "Return ONLY valid JSON. No explanation, no markdown fences, no preamble."
+    )
+
+    transcript = episode_data.get("transcript") or ""
+    if len(transcript) > 6000:
+        transcript = transcript[:6000] + "\n[transcript truncated]"
+
+    outline_text = json.dumps(episode_data.get("outline") or [], indent=2)
+
+    user_prompt = (
+        f"Episode: {episode_data.get('episodeNumber', '')} — {episode_data.get('title', '')}\n\n"
+        f"Summary:\n{episode_data.get('summary', '')}\n\n"
+        f"Outline:\n{outline_text}\n\n"
+        f"Transcript excerpt:\n{transcript}\n\n"
+        "Analyze this episode and return the art direction JSON."
     )
 
     return system_prompt, user_prompt

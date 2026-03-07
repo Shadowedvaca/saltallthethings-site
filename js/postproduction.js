@@ -1,13 +1,16 @@
 /* ============================================
    Post-Production Module
    Handles post-production queue display,
-   asset scanning, and file key editing.
+   asset scanning, file key editing, and
+   AI art direction generation.
    ============================================ */
 
 const PostProd = {
   _apiBase: 'https://saltallthethings.com/api',
   _queue: [],
   _showComplete: false,
+  _artDirection: {},
+  _artDirectionLoading: {},
 
   _headers() {
     return {
@@ -133,6 +136,115 @@ const PostProd = {
     }[nextStep] || nextStep;
   },
 
+  // --- Art direction ---
+
+  async generateArtDirection(slotId) {
+    const row = this._queue.find(r => r.slotId === slotId);
+    if (!row || !row.ideaId) return;
+
+    const inv = row.assetInventory;
+    const driveFileId = inv && inv.transcript_txt && inv.transcript_txt.drive_file_id;
+    if (!driveFileId) {
+      Toast.error('No transcript Drive file ID found. Re-scan assets first.');
+      return;
+    }
+
+    this._artDirectionLoading[slotId] = true;
+    this.renderTable();
+
+    let transcriptText = '';
+    try {
+      const driveUrl = 'https://drive.google.com/uc?export=download&id=' + driveFileId;
+      const transcriptResp = await fetch(driveUrl);
+      if (!transcriptResp.ok) throw new Error('HTTP ' + transcriptResp.status);
+      transcriptText = await transcriptResp.text();
+      // Sanity check — if we got HTML back (auth redirect), bail out
+      if (transcriptText.trimStart().startsWith('<!')) {
+        throw new Error('Got HTML instead of text — check that you are signed into Google.');
+      }
+    } catch (err) {
+      this._artDirectionLoading[slotId] = false;
+      this.renderTable();
+      Toast.error('Failed to fetch transcript from Drive: ' + err.message);
+      return;
+    }
+
+    try {
+      const resp = await fetch(this._apiBase + '/ai/generate-art-direction', {
+        method: 'POST',
+        headers: this._headers(),
+        body: JSON.stringify({ ideaId: row.ideaId, transcriptText: transcriptText })
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || ('API error: ' + resp.status));
+      }
+      const result = await resp.json();
+      this._artDirection[slotId] = result;
+      Toast.success('Art direction generated.');
+    } catch (err) {
+      Toast.error('Art direction failed: ' + err.message);
+    } finally {
+      this._artDirectionLoading[slotId] = false;
+      this.renderTable();
+    }
+  },
+
+  dismissArtDirection(slotId) {
+    delete this._artDirection[slotId];
+    this.renderTable();
+  },
+
+  copyPrompt(slotId) {
+    const textarea = document.getElementById('pp-prompt-' + slotId);
+    if (!textarea) return;
+    const text = textarea.value;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text)
+        .then(() => Toast.success('Prompt copied to clipboard.'))
+        .catch(() => { textarea.select(); document.execCommand('copy'); Toast.success('Prompt copied.'); });
+    } else {
+      textarea.select();
+      document.execCommand('copy');
+      Toast.success('Prompt copied.');
+    }
+  },
+
+  _artDirectionRowHtml(slotId) {
+    const art = this._artDirection[slotId];
+    if (!art) return '';
+
+    const babyGagsList = art.babyGags.map(g => '<li>' + escHtml(g) + '</li>').join('');
+    const topicsText = art.topics.join(', ');
+    const propsText = art.props.join(', ');
+
+    return '<tr class="pp-art-row">'
+      + '<td colspan="10" class="pp-art-cell">'
+      + '<div class="pp-art-panel">'
+      + '<div class="pp-art-meta">'
+      + '<span class="pp-art-archetype">' + escHtml(art.archetype.name) + '</span>'
+      + ' <span class="pp-art-reason">\u2014 ' + escHtml(art.archetype.reason) + '</span>'
+      + '</div>'
+      + '<div class="pp-art-grid">'
+      + '<div><span class="pp-art-label">Scene</span><p>' + escHtml(art.sceneSummary) + '</p></div>'
+      + '<div><span class="pp-art-label">Baby Gags</span><ul class="pp-art-gags">' + babyGagsList + '</ul></div>'
+      + '<div><span class="pp-art-label">Topics</span><p>' + escHtml(topicsText) + '</p></div>'
+      + '<div><span class="pp-art-label">Tone &amp; Props</span><p><em>' + escHtml(art.tone) + '</em><br>' + escHtml(propsText) + '</p></div>'
+      + '</div>'
+      + '<div class="pp-art-prompt-wrap">'
+      + '<span class="pp-art-label">Final Image Prompt (editable)</span>'
+      + '<textarea id="pp-prompt-' + escHtml(slotId) + '" class="pp-art-textarea">' + escHtml(art.finalImagePrompt) + '</textarea>'
+      + '<div class="pp-art-actions">'
+      + '<button class="btn btn-secondary btn-sm" onclick="PostProd.copyPrompt(\'' + escHtml(slotId) + '\')">Copy Prompt</button>'
+      + '<button class="btn btn-ghost btn-sm" disabled title="Coming in Phase 6">Generate Art</button>'
+      + '<button class="btn btn-ghost btn-sm pp-art-dismiss" onclick="PostProd.dismissArtDirection(\'' + escHtml(slotId) + '\')">&#x2715; Dismiss</button>'
+      + '</div>'
+      + '</div>'
+      + '</div>'
+      + '</td>'
+      + '</tr>';
+  },
+
   // --- Table rendering ---
 
   renderTable() {
@@ -145,7 +257,7 @@ const PostProd = {
       const msg = this._queue.length === 0
         ? 'No recorded episodes in the queue yet.'
         : 'All episodes complete. Use "Show complete" to see them.';
-      tbody.innerHTML = '<tr><td colspan="9" class="pp-empty">' + escHtml(msg) + '</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="pp-empty">' + escHtml(msg) + '</td></tr>';
       return;
     }
 
@@ -168,7 +280,19 @@ const PostProd = {
 
       const nextClass = row.nextStep === 'complete' ? ' pp-complete' : (row.nextStep === 'set_key' ? ' pp-urgent' : '');
 
-      return '<tr data-slot="' + escHtml(row.slotId) + '">'
+      // Actions cell — show Generate Art Direction when transcript is present with drive_file_id
+      const hasTranscript = inv && inv.transcript_txt && inv.transcript_txt.present && inv.transcript_txt.drive_file_id;
+      const canGenerateArt = hasKey && hasTranscript && row.ideaId;
+      let actionCell = '<td class="col-actions">';
+      if (this._artDirectionLoading[row.slotId]) {
+        actionCell += '<span class="pp-art-loading"><svg viewBox="0 0 50 50" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:4px;"><circle cx="25" cy="25" r="20" fill="none" stroke="currentColor" stroke-width="5" stroke-dasharray="80 40" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" values="0 25 25;360 25 25" dur="0.8s" repeatCount="indefinite"/></circle></svg>Generating...</span>';
+      } else if (canGenerateArt) {
+        const btnLabel = this._artDirection[row.slotId] ? 'Regenerate' : 'Generate Art Direction';
+        actionCell += '<button class="btn btn-ghost btn-sm pp-art-btn" onclick="PostProd.generateArtDirection(\'' + escHtml(row.slotId) + '\')">' + btnLabel + '</button>';
+      }
+      actionCell += '</td>';
+
+      const rowHtml = '<tr data-slot="' + escHtml(row.slotId) + '">'
         + '<td class="col-ep">' + escHtml(row.episodeNumber || '') + '</td>'
         + '<td class="col-title">' + title + '</td>'
         + '<td class="col-date">' + escHtml(row.recordDate || '') + '</td>'
@@ -181,7 +305,10 @@ const PostProd = {
         + '<td class="col-asset">' + artBadge + '</td>'
         + '<td class="col-asset">' + finishedBadge + '</td>'
         + '<td class="col-next' + nextClass + '">' + escHtml(this._nextStepLabel(row.nextStep)) + '</td>'
+        + actionCell
         + '</tr>';
+
+      return rowHtml + this._artDirectionRowHtml(row.slotId);
     }).join('');
 
     // Attach key input event listeners

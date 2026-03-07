@@ -76,6 +76,22 @@ async def get_ideas(db: AsyncSession) -> list[dict]:
     return [serialize_idea(row) for row in result.scalars()]
 
 
+async def get_idea_and_slot(
+    db: AsyncSession, idea_id: str
+) -> tuple[Idea | None, ShowSlot | None]:
+    """Return (Idea, ShowSlot) for an idea_id. ShowSlot may be None if not assigned."""
+    result = await db.execute(
+        select(Idea, ShowSlot)
+        .outerjoin(Assignment, Assignment.idea_id == Idea.id)
+        .outerjoin(ShowSlot, ShowSlot.id == Assignment.slot_id)
+        .where(Idea.id == idea_id)
+    )
+    row = result.one_or_none()
+    if row is None:
+        return None, None
+    return row[0], row[1]
+
+
 async def replace_ideas(db: AsyncSession, ideas: list[dict]) -> None:
     new_ids = {idea["id"] for idea in ideas}
 
