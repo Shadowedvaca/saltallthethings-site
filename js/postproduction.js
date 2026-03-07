@@ -142,38 +142,14 @@ const PostProd = {
     const row = this._queue.find(r => r.slotId === slotId);
     if (!row || !row.ideaId) return;
 
-    const inv = row.assetInventory;
-    const driveFileId = inv && inv.transcript_txt && inv.transcript_txt.drive_file_id;
-    if (!driveFileId) {
-      Toast.error('No transcript Drive file ID found. Re-scan assets first.');
-      return;
-    }
-
     this._artDirectionLoading[slotId] = true;
     this.renderTable();
-
-    let transcriptText = '';
-    try {
-      const driveUrl = 'https://drive.google.com/uc?export=download&id=' + driveFileId;
-      const transcriptResp = await fetch(driveUrl);
-      if (!transcriptResp.ok) throw new Error('HTTP ' + transcriptResp.status);
-      transcriptText = await transcriptResp.text();
-      // Sanity check — if we got HTML back (auth redirect), bail out
-      if (transcriptText.trimStart().startsWith('<!')) {
-        throw new Error('Got HTML instead of text — check that you are signed into Google.');
-      }
-    } catch (err) {
-      this._artDirectionLoading[slotId] = false;
-      this.renderTable();
-      Toast.error('Failed to fetch transcript from Drive: ' + err.message);
-      return;
-    }
 
     try {
       const resp = await fetch(this._apiBase + '/ai/generate-art-direction', {
         method: 'POST',
         headers: this._headers(),
-        body: JSON.stringify({ ideaId: row.ideaId, transcriptText: transcriptText })
+        body: JSON.stringify({ ideaId: row.ideaId })
       });
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));

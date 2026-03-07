@@ -13,8 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from satt.ai_client import call_ai
 from satt.auth import require_auth
+from satt.config import get_settings
 from satt.crud import get_config, get_idea_and_slot, get_jokes, save_config
 from satt.database import get_db
+from satt.gdrive import fetch_file_content, get_drive_access_token
 from satt.prompts import (
     build_generate_art_direction_prompts,
     build_generate_jokes_prompts,
@@ -294,7 +296,6 @@ def _parse_art_direction_response(text: str) -> dict:
 
 class GenerateArtDirectionRequest(BaseModel):
     ideaId: str
-    transcriptText: str = ""
 
 
 @router.post("/ai/generate-art-direction")
@@ -303,11 +304,6 @@ async def generate_art_direction(
     _user: dict = Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ) -> JSONResponse:
-    if not body.transcriptText.strip():
-        return JSONResponse(
-            status_code=422, content={"error": "transcriptText must not be empty"}
-        )
-
     config = await get_config(db)
 
     # Seed art defaults into config on first use
@@ -337,12 +333,46 @@ async def generate_art_direction(
     if idea is None:
         return JSONResponse(status_code=404, content={"error": "Idea not found"})
 
+    # Fetch transcript from Google Drive via backend OAuth credentials
+    settings = get_settings()
+    inv = (slot.asset_inventory or {}) if slot else {}
+    transcript_asset = inv.get("transcript_txt", {})
+    drive_file_id = transcript_asset.get("drive_file_id")
+
+    if not drive_file_id:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "No transcript file found in asset inventory. Scan assets first."},
+        )
+    if not all([
+        settings.google_oauth_client_id,
+        settings.google_oauth_client_secret,
+        settings.google_oauth_refresh_token,
+    ]):
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Google Drive OAuth not configured on server."},
+        )
+
+    try:
+        access_token = await get_drive_access_token(
+            settings.google_oauth_client_id,
+            settings.google_oauth_client_secret,
+            settings.google_oauth_refresh_token,
+        )
+        transcript_text = await fetch_file_content(access_token, drive_file_id)
+    except (httpx.HTTPStatusError, httpx.RequestError) as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Failed to fetch transcript from Drive: {e}"},
+        )
+
     episode_data = {
         "episodeNumber": slot.episode_number if slot else "",
         "title": idea.selected_title or "",
         "summary": idea.summary or "",
         "outline": idea.outline or [],
-        "transcript": body.transcriptText,
+        "transcript": transcript_text,
     }
 
     system_prompt, user_prompt = build_generate_art_direction_prompts(config, episode_data)

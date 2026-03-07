@@ -1,8 +1,8 @@
 """Tests for POST /api/ai/generate-art-direction.
 
-Mocks httpx.AsyncClient so no real AI API calls are made.
+Mocks httpx.AsyncClient so no real AI or Drive API calls are made.
 Verifies art direction shape, artLog update, continuity prompt injection,
-transcript validation, and auth guard.
+missing-transcript guard, missing-key guard, and auth guard.
 """
 
 from __future__ import annotations
@@ -72,7 +72,16 @@ class _FakeIdea:
 class _FakeSlot:
     episode_number = "EP042"
     episode_num = 42
+    asset_inventory = {
+        "transcript_txt": {
+            "present": True,
+            "drive_file_id": "fake-drive-file-id",
+            "modified": "2026-03-01T19:00:00Z",
+        }
+    }
 
+
+_FAKE_TRANSCRIPT = "Rocket: Hey everyone, welcome back to Salt All The Things! Today we're talking ranked seasons..."
 
 _VALID_ART_DIRECTION = {
     "topics": ["ranked seasons", "pvp", "patch changes"],
@@ -104,25 +113,35 @@ async def _override_get_db():
     yield AsyncMock()
 
 
+def _patch_drive(transcript: str = _FAKE_TRANSCRIPT):
+    """Context managers that mock the Drive token + file fetch."""
+    return (
+        patch("satt.routes.ai.get_drive_access_token", new=AsyncMock(return_value="fake-token")),
+        patch("satt.routes.ai.fetch_file_content", new=AsyncMock(return_value=transcript)),
+    )
+
+
 @pytest.mark.asyncio
 async def test_generate_art_direction_success(client: AsyncClient):
     app.dependency_overrides[get_db] = _override_get_db
 
+    token_patch, fetch_patch = _patch_drive()
     with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=_fake_config())):
         with patch("satt.routes.ai.save_config", new=AsyncMock()):
             with patch(
                 "satt.routes.ai.get_idea_and_slot",
                 new=AsyncMock(return_value=(_FakeIdea(), _FakeSlot())),
             ):
-                with patch(
-                    "satt.routes.ai.call_ai",
-                    new=AsyncMock(return_value=json.dumps(_VALID_ART_DIRECTION)),
-                ):
-                    resp = await client.post(
-                        "/api/ai/generate-art-direction",
-                        json={"ideaId": "idea-1", "transcriptText": "This is the full transcript."},
-                        headers={"Authorization": f"Bearer {_token()}"},
-                    )
+                with token_patch, fetch_patch:
+                    with patch(
+                        "satt.routes.ai.call_ai",
+                        new=AsyncMock(return_value=json.dumps(_VALID_ART_DIRECTION)),
+                    ):
+                        resp = await client.post(
+                            "/api/ai/generate-art-direction",
+                            json={"ideaId": "idea-1"},
+                            headers={"Authorization": f"Bearer {_token()}"},
+                        )
 
     app.dependency_overrides.clear()
     assert resp.status_code == 200
@@ -146,28 +165,29 @@ async def test_generate_art_direction_artlog_updated(client: AsyncClient):
     saved_configs: list[dict] = []
 
     async def capture_save(db, config):
-        saved_configs.append(json.loads(json.dumps(config)))  # deep copy
+        saved_configs.append(json.loads(json.dumps(config)))
 
+    token_patch, fetch_patch = _patch_drive()
     with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=_fake_config())):
         with patch("satt.routes.ai.save_config", new=capture_save):
             with patch(
                 "satt.routes.ai.get_idea_and_slot",
                 new=AsyncMock(return_value=(_FakeIdea(), _FakeSlot())),
             ):
-                with patch(
-                    "satt.routes.ai.call_ai",
-                    new=AsyncMock(return_value=json.dumps(_VALID_ART_DIRECTION)),
-                ):
-                    resp = await client.post(
-                        "/api/ai/generate-art-direction",
-                        json={"ideaId": "idea-1", "transcriptText": "Transcript text here."},
-                        headers={"Authorization": f"Bearer {_token()}"},
-                    )
+                with token_patch, fetch_patch:
+                    with patch(
+                        "satt.routes.ai.call_ai",
+                        new=AsyncMock(return_value=json.dumps(_VALID_ART_DIRECTION)),
+                    ):
+                        resp = await client.post(
+                            "/api/ai/generate-art-direction",
+                            json={"ideaId": "idea-1"},
+                            headers={"Authorization": f"Bearer {_token()}"},
+                        )
 
     app.dependency_overrides.clear()
     assert resp.status_code == 200
 
-    # The last save_config call should include the new artLog entry
     artlog_saves = [c for c in saved_configs if c.get("artLog")]
     assert artlog_saves, "save_config should have been called with a non-empty artLog"
     last_log = artlog_saves[-1]["artLog"]
@@ -184,8 +204,15 @@ async def test_generate_art_direction_artlog_capped_at_50(client: AsyncClient):
 
     config = _fake_config()
     config["artLog"] = [
-        {"episodeNum": i, "episodeNumber": f"EP{i:03d}", "archetypeId": "tavern_talk",
-         "environment": f"env{i}", "babyGags": [], "props": [], "generatedAt": "2026-01-01T00:00:00Z"}
+        {
+            "episodeNum": i,
+            "episodeNumber": f"EP{i:03d}",
+            "archetypeId": "tavern_talk",
+            "environment": f"env{i}",
+            "babyGags": [],
+            "props": [],
+            "generatedAt": "2026-01-01T00:00:00Z",
+        }
         for i in range(50)
     ]
 
@@ -194,21 +221,23 @@ async def test_generate_art_direction_artlog_capped_at_50(client: AsyncClient):
     async def capture_save(db, cfg):
         saved_configs.append(json.loads(json.dumps(cfg)))
 
+    token_patch, fetch_patch = _patch_drive()
     with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=config)):
         with patch("satt.routes.ai.save_config", new=capture_save):
             with patch(
                 "satt.routes.ai.get_idea_and_slot",
                 new=AsyncMock(return_value=(_FakeIdea(), _FakeSlot())),
             ):
-                with patch(
-                    "satt.routes.ai.call_ai",
-                    new=AsyncMock(return_value=json.dumps(_VALID_ART_DIRECTION)),
-                ):
-                    resp = await client.post(
-                        "/api/ai/generate-art-direction",
-                        json={"ideaId": "idea-1", "transcriptText": "Long transcript."},
-                        headers={"Authorization": f"Bearer {_token()}"},
-                    )
+                with token_patch, fetch_patch:
+                    with patch(
+                        "satt.routes.ai.call_ai",
+                        new=AsyncMock(return_value=json.dumps(_VALID_ART_DIRECTION)),
+                    ):
+                        resp = await client.post(
+                            "/api/ai/generate-art-direction",
+                            json={"ideaId": "idea-1"},
+                            headers={"Authorization": f"Bearer {_token()}"},
+                        )
 
     app.dependency_overrides.clear()
     assert resp.status_code == 200
@@ -218,36 +247,30 @@ async def test_generate_art_direction_artlog_capped_at_50(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_generate_art_direction_empty_transcript_returns_422(client: AsyncClient):
+async def test_generate_art_direction_no_transcript_returns_400(client: AsyncClient):
+    """Returns 400 if the slot has no transcript drive_file_id in asset_inventory."""
     app.dependency_overrides[get_db] = _override_get_db
+
+    class _SlotNoTranscript:
+        episode_number = "EP042"
+        episode_num = 42
+        asset_inventory = {"transcript_txt": {"present": False}}
 
     with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=_fake_config())):
         with patch("satt.routes.ai.save_config", new=AsyncMock()):
-            resp = await client.post(
-                "/api/ai/generate-art-direction",
-                json={"ideaId": "idea-1", "transcriptText": ""},
-                headers={"Authorization": f"Bearer {_token()}"},
-            )
+            with patch(
+                "satt.routes.ai.get_idea_and_slot",
+                new=AsyncMock(return_value=(_FakeIdea(), _SlotNoTranscript())),
+            ):
+                resp = await client.post(
+                    "/api/ai/generate-art-direction",
+                    json={"ideaId": "idea-1"},
+                    headers={"Authorization": f"Bearer {_token()}"},
+                )
 
     app.dependency_overrides.clear()
-    assert resp.status_code == 422
-    assert "transcriptText" in resp.json()["error"]
-
-
-@pytest.mark.asyncio
-async def test_generate_art_direction_whitespace_transcript_returns_422(client: AsyncClient):
-    app.dependency_overrides[get_db] = _override_get_db
-
-    with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=_fake_config())):
-        with patch("satt.routes.ai.save_config", new=AsyncMock()):
-            resp = await client.post(
-                "/api/ai/generate-art-direction",
-                json={"ideaId": "idea-1", "transcriptText": "   "},
-                headers={"Authorization": f"Bearer {_token()}"},
-            )
-
-    app.dependency_overrides.clear()
-    assert resp.status_code == 422
+    assert resp.status_code == 400
+    assert "transcript" in resp.json()["error"].lower()
 
 
 @pytest.mark.asyncio
@@ -260,7 +283,7 @@ async def test_generate_art_direction_missing_api_key_returns_400(client: AsyncC
         with patch("satt.routes.ai.save_config", new=AsyncMock()):
             resp = await client.post(
                 "/api/ai/generate-art-direction",
-                json={"ideaId": "idea-1", "transcriptText": "Transcript text here."},
+                json={"ideaId": "idea-1"},
                 headers={"Authorization": f"Bearer {_token()}"},
             )
 
@@ -279,7 +302,7 @@ async def test_generate_art_direction_missing_openai_key_returns_400(client: Asy
         with patch("satt.routes.ai.save_config", new=AsyncMock()):
             resp = await client.post(
                 "/api/ai/generate-art-direction",
-                json={"ideaId": "idea-1", "transcriptText": "Transcript text here."},
+                json={"ideaId": "idea-1"},
                 headers={"Authorization": f"Bearer {_token()}"},
             )
 
@@ -313,18 +336,20 @@ async def test_generate_art_direction_continuity_in_prompt_when_artlog_present(
         }
     ]
 
+    token_patch, fetch_patch = _patch_drive()
     with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=config)):
         with patch("satt.routes.ai.save_config", new=AsyncMock()):
             with patch(
                 "satt.routes.ai.get_idea_and_slot",
                 new=AsyncMock(return_value=(_FakeIdea(), _FakeSlot())),
             ):
-                with patch("satt.routes.ai.call_ai", new=mock_call_ai):
-                    resp = await client.post(
-                        "/api/ai/generate-art-direction",
-                        json={"ideaId": "idea-1", "transcriptText": "Transcript here."},
-                        headers={"Authorization": f"Bearer {_token()}"},
-                    )
+                with token_patch, fetch_patch:
+                    with patch("satt.routes.ai.call_ai", new=mock_call_ai):
+                        resp = await client.post(
+                            "/api/ai/generate-art-direction",
+                            json={"ideaId": "idea-1"},
+                            headers={"Authorization": f"Bearer {_token()}"},
+                        )
 
     app.dependency_overrides.clear()
     assert resp.status_code == 200
@@ -346,18 +371,20 @@ async def test_generate_art_direction_no_continuity_when_artlog_empty(client: As
         captured.append({"system": system_prompt})
         return json.dumps(_VALID_ART_DIRECTION)
 
+    token_patch, fetch_patch = _patch_drive()
     with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=_fake_config())):
         with patch("satt.routes.ai.save_config", new=AsyncMock()):
             with patch(
                 "satt.routes.ai.get_idea_and_slot",
                 new=AsyncMock(return_value=(_FakeIdea(), _FakeSlot())),
             ):
-                with patch("satt.routes.ai.call_ai", new=mock_call_ai):
-                    resp = await client.post(
-                        "/api/ai/generate-art-direction",
-                        json={"ideaId": "idea-1", "transcriptText": "Transcript here."},
-                        headers={"Authorization": f"Bearer {_token()}"},
-                    )
+                with token_patch, fetch_patch:
+                    with patch("satt.routes.ai.call_ai", new=mock_call_ai):
+                        resp = await client.post(
+                            "/api/ai/generate-art-direction",
+                            json={"ideaId": "idea-1"},
+                            headers={"Authorization": f"Bearer {_token()}"},
+                        )
 
     app.dependency_overrides.clear()
     assert resp.status_code == 200
@@ -369,6 +396,6 @@ async def test_generate_art_direction_no_continuity_when_artlog_empty(client: As
 async def test_generate_art_direction_requires_auth(client: AsyncClient):
     resp = await client.post(
         "/api/ai/generate-art-direction",
-        json={"ideaId": "idea-1", "transcriptText": "Something here."},
+        json={"ideaId": "idea-1"},
     )
     assert resp.status_code == 401

@@ -46,6 +46,18 @@ async def get_drive_access_token(
     return token
 
 
+async def fetch_file_content(access_token: str, file_id: str) -> str:
+    """Download a file from Drive and return its text content."""
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.get(
+            f"https://www.googleapis.com/drive/v3/files/{file_id}",
+            params={"alt": "media", "supportsAllDrives": "true"},
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        resp.raise_for_status()
+        return resp.text
+
+
 async def list_folder_files(access_token: str, folder_id: str) -> list[dict]:
     """List files in a Drive folder. Returns list of {id, name, modifiedTime}."""
     async with httpx.AsyncClient() as client:
