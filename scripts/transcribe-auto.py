@@ -30,9 +30,10 @@ LABEL_SCRIPT = os.path.join(_SCRIPTS_DIR, "label-speakers.py")
 
 
 def load_secrets():
-    """Load HF_TOKEN and SATT_API_TOKEN from scripts/secrets.py or environment."""
+    """Load HF_TOKEN, SATT_USERNAME, SATT_PASSWORD from scripts/secrets.py or environment."""
     hf_token = os.environ.get("HF_TOKEN", "")
-    satt_token = os.environ.get("SATT_API_TOKEN", "")
+    satt_username = os.environ.get("SATT_USERNAME", "")
+    satt_password = os.environ.get("SATT_PASSWORD", "")
 
     secrets_path = os.path.join(_SCRIPTS_DIR, "secrets.py")
     if os.path.isfile(secrets_path):
@@ -40,9 +41,35 @@ def load_secrets():
         with open(secrets_path, "r", encoding="utf-8") as f:
             exec(compile(f.read(), secrets_path, "exec"), ns)
         hf_token = hf_token or ns.get("HF_TOKEN", "")
-        satt_token = satt_token or ns.get("SATT_API_TOKEN", "")
+        satt_username = satt_username or ns.get("SATT_USERNAME", "")
+        satt_password = satt_password or ns.get("SATT_PASSWORD", "")
 
-    return hf_token, satt_token
+    return hf_token, satt_username, satt_password
+
+
+def get_jwt(username, password):
+    """Log in to the site and return a fresh JWT token."""
+    import json
+    import urllib.request
+    import urllib.error
+
+    url = "https://saltallthethings.com/api/auth/login"
+    payload = json.dumps({"username": username, "password": password}).encode()
+    req = urllib.request.Request(
+        url,
+        method="POST",
+        headers={"Content-Type": "application/json"},
+        data=payload,
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+            return data.get("access_token")
+    except urllib.error.HTTPError as e:
+        print(f"[transcribe-auto] Login failed: HTTP {e.code}")
+    except Exception as e:
+        print(f"[transcribe-auto] Login error: {e}")
+    return None
 
 
 def transcribe(audio_path, hf_token):
@@ -75,7 +102,7 @@ def label_speakers(json_path, txt_path):
     return result.returncode == 0
 
 
-def notify_server(satt_token):
+def notify_server(token):
     """POST to the server scan endpoint to refresh asset inventory."""
     import urllib.request
     import urllib.error
@@ -85,7 +112,7 @@ def notify_server(satt_token):
         url,
         method="POST",
         headers={
-            "Authorization": f"Bearer {satt_token}",
+            "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
         },
         data=b"{}",
@@ -123,7 +150,7 @@ def main():
         print(f"[transcribe-auto] ERROR: Unsupported file type '{ext}' — must be .wav or .mp3")
         sys.exit(1)
 
-    hf_token, satt_token = load_secrets()
+    hf_token, satt_username, satt_password = load_secrets()
     if not hf_token:
         print("[transcribe-auto] ERROR: HF_TOKEN not set. Add it to scripts/secrets.py or environment.")
         sys.exit(1)
@@ -152,10 +179,15 @@ def main():
 
     # Step 3: Notify server (optional)
     if args.notify_server:
-        if not satt_token:
-            print("[transcribe-auto] WARNING: --notify-server set but SATT_API_TOKEN not found. Skipping.")
+        if not satt_username or not satt_password:
+            print("[transcribe-auto] WARNING: --notify-server set but SATT_USERNAME/SATT_PASSWORD not found in secrets.py. Skipping.")
         else:
-            notify_server(satt_token)
+            print("[transcribe-auto] Logging in to get fresh token...")
+            token = get_jwt(satt_username, satt_password)
+            if token:
+                notify_server(token)
+            else:
+                print("[transcribe-auto] Could not obtain token — server not notified.")
 
 
 if __name__ == "__main__":
