@@ -131,7 +131,7 @@
           <input type="text" id="gdriveFolderCoverArt" placeholder="e.g., 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms">
         </div>
         <div class="text-sm text-secondary mt-md" style="background: var(--bg-surface); padding: 12px; border-radius: 6px; border-left: 3px solid var(--gold-dim);">
-          <strong>Service Account:</strong> The Google service account JSON key is set server-side in <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">/opt/satt-platform/.env</code> as <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">GOOGLE_SERVICE_ACCOUNT_JSON</code>. It cannot be entered here. Contact Trog to configure it on the server.
+          <strong>OAuth2 credentials</strong> are set server-side in <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">/opt/satt-platform/.env</code> as <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">GOOGLE_OAUTH_CLIENT_ID</code>, <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">GOOGLE_OAUTH_CLIENT_SECRET</code>, and <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">GOOGLE_OAUTH_REFRESH_TOKEN</code>. Run <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">python3 scripts/get_gdrive_token.py</code> locally to generate these values.
         </div>
       </div>
 

@@ -48,6 +48,40 @@ async def put_production_key(
     raise HTTPException(status_code=404, detail=f"Slot {slot_id!r} not found in post-production queue")
 
 
+def _build_scan_config(settings, db_config: dict) -> dict:
+    """Merge OAuth credentials from settings into the DB config dict."""
+    return {
+        **db_config,
+        "clientId": settings.google_oauth_client_id,
+        "clientSecret": settings.google_oauth_client_secret,
+        "refreshToken": settings.google_oauth_refresh_token,
+    }
+
+
+def _check_scan_config(settings, db_config: dict) -> None:
+    """Raise 400 if Drive credentials or folder IDs are not fully configured."""
+    missing = []
+    if not settings.google_oauth_client_id:
+        missing.append("GOOGLE_OAUTH_CLIENT_ID")
+    if not settings.google_oauth_client_secret:
+        missing.append("GOOGLE_OAUTH_CLIENT_SECRET")
+    if not settings.google_oauth_refresh_token:
+        missing.append("GOOGLE_OAUTH_REFRESH_TOKEN")
+    if not db_config.get("gdriveFolderRawAudio"):
+        missing.append("gdriveFolderRawAudio")
+    if not db_config.get("gdriveFolderFinishedAudio"):
+        missing.append("gdriveFolderFinishedAudio")
+    if not db_config.get("gdriveFolderTranscripts"):
+        missing.append("gdriveFolderTranscripts")
+    if not db_config.get("gdriveFolderCoverArt"):
+        missing.append("gdriveFolderCoverArt")
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Drive scan not configured. Missing: {', '.join(missing)}",
+        )
+
+
 @router.post("/postproduction/scan")
 async def scan_all_postproduction(
     _user: dict = Depends(require_auth),
@@ -55,24 +89,9 @@ async def scan_all_postproduction(
 ) -> dict:
     """Scan all eligible slots against Google Drive and update their asset inventories."""
     settings = get_settings()
-    service_account_json = settings.google_service_account_json
-
     db_config = await get_config(db)
-    folder_raw = db_config.get("gdriveFolderRawAudio", "")
-    folder_finished = db_config.get("gdriveFolderFinishedAudio", "")
-    folder_transcripts = db_config.get("gdriveFolderTranscripts", "")
-    folder_art = db_config.get("gdriveFolderCoverArt", "")
-
-    if not all([service_account_json, folder_raw, folder_finished, folder_transcripts, folder_art]):
-        raise HTTPException(
-            status_code=400,
-            detail="Google Drive folder IDs and service account must be configured before scanning.",
-        )
-
-    scan_config = {
-        **db_config,
-        "serviceAccountJson": service_account_json,
-    }
+    _check_scan_config(settings, db_config)
+    scan_config = _build_scan_config(settings, db_config)
 
     slots = await get_slots_for_scan(db)
     scanned = 0
@@ -99,19 +118,9 @@ async def scan_single_postproduction(
 ) -> dict:
     """Scan a single slot's assets and update its inventory."""
     settings = get_settings()
-    service_account_json = settings.google_service_account_json
-
     db_config = await get_config(db)
-    folder_raw = db_config.get("gdriveFolderRawAudio", "")
-    folder_finished = db_config.get("gdriveFolderFinishedAudio", "")
-    folder_transcripts = db_config.get("gdriveFolderTranscripts", "")
-    folder_art = db_config.get("gdriveFolderCoverArt", "")
-
-    if not all([service_account_json, folder_raw, folder_finished, folder_transcripts, folder_art]):
-        raise HTTPException(
-            status_code=400,
-            detail="Google Drive folder IDs and service account must be configured before scanning.",
-        )
+    _check_scan_config(settings, db_config)
+    scan_config = _build_scan_config(settings, db_config)
 
     slots = await get_slots_for_scan(db)
     slot_data = next((s for s in slots if s["slot_id"] == slot_id), None)
@@ -121,7 +130,6 @@ async def scan_single_postproduction(
             detail=f"Slot {slot_id!r} not found or not eligible for scanning (needs past record_date and production_file_key).",
         )
 
-    scan_config = {**db_config, "serviceAccountJson": service_account_json}
     inventory = await build_asset_inventory(
         slot_data["slot_id"], slot_data["production_file_key"], scan_config
     )

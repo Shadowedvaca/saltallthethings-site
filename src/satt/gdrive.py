@@ -1,62 +1,48 @@
 """Google Drive API integration — raw httpx calls, no Google SDK.
 
-Authentication uses a service account JWT (RS256) exchanged for an OAuth2
-access token. The token is cached in-process for 1 hour minus a 60-second
-buffer to avoid using an about-to-expire token.
+Authentication uses an OAuth2 refresh token exchanged for a short-lived
+access token. The access token is cached in-process and refreshed when it
+expires (or is within 60 seconds of expiry).
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 from datetime import datetime, timezone
 
 import httpx
-import jwt as pyjwt
 
 _TOKEN_CACHE: dict = {}
 _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 _DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files"
-_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 
 
-async def get_drive_access_token(service_account_json: str) -> str:
-    """Return a cached or fresh OAuth2 access token for the service account."""
+async def get_drive_access_token(
+    client_id: str, client_secret: str, refresh_token: str
+) -> str:
+    """Return a cached or fresh OAuth2 access token via refresh token exchange."""
     now = time.time()
     cached = _TOKEN_CACHE.get("entry")
     if cached and cached["expiry"] > now + 60:
         return cached["token"]
 
-    sa = json.loads(service_account_json)
-    iat = int(now)
-    exp = iat + 3600
-
-    assertion = pyjwt.encode(
-        {
-            "iss": sa["client_email"],
-            "scope": _SCOPE,
-            "aud": _GOOGLE_TOKEN_URL,
-            "iat": iat,
-            "exp": exp,
-        },
-        sa["private_key"],
-        algorithm="RS256",
-    )
-
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             _GOOGLE_TOKEN_URL,
             data={
-                "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
-                "assertion": assertion,
+                "grant_type": "refresh_token",
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
             },
         )
         resp.raise_for_status()
         token_data = resp.json()
 
     token = token_data["access_token"]
-    _TOKEN_CACHE["entry"] = {"token": token, "expiry": now + 3600}
+    expires_in = token_data.get("expires_in", 3600)
+    _TOKEN_CACHE["entry"] = {"token": token, "expiry": now + expires_in}
     return token
 
 
@@ -101,13 +87,17 @@ async def build_asset_inventory(
     """Scan all four Drive folders and return an asset_inventory dict.
 
     config must contain:
-      - serviceAccountJson (str): the full service account JSON
+      - clientId (str): OAuth2 client ID
+      - clientSecret (str): OAuth2 client secret
+      - refreshToken (str): OAuth2 refresh token
       - gdriveFolderRawAudio (str): folder ID
       - gdriveFolderFinishedAudio (str): folder ID
       - gdriveFolderTranscripts (str): folder ID
       - gdriveFolderCoverArt (str): folder ID
     """
-    access_token = await get_drive_access_token(config["serviceAccountJson"])
+    access_token = await get_drive_access_token(
+        config["clientId"], config["clientSecret"], config["refreshToken"]
+    )
 
     raw_files, finished_files, transcript_files, art_files = await asyncio.gather(
         list_folder_files(access_token, config["gdriveFolderRawAudio"]),

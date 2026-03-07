@@ -5,7 +5,6 @@ All Google Drive API calls are mocked — no real network calls are made.
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -24,12 +23,12 @@ from satt.main import app
 # ---------------------------------------------------------------------------
 
 
-def _headers(is_admin: bool = False) -> dict:
+def _headers() -> dict:
     settings = get_settings()
     payload = {
         "user_id": 1,
         "username": "testuser",
-        "is_admin": is_admin,
+        "is_admin": False,
         "exp": datetime.now(timezone.utc) + timedelta(hours=1),
         "iat": datetime.now(timezone.utc),
     }
@@ -37,20 +36,32 @@ def _headers(is_admin: bool = False) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _fake_sa_json() -> str:
-    return json.dumps({"client_email": "svc@project.iam.gserviceaccount.com", "private_key": "FAKE"})
-
-
-def _full_config(empty: bool = False) -> dict:
-    if empty:
-        return {}
+def _full_config() -> dict:
     return {
         "gdriveFolderRawAudio": "folder_raw_id",
         "gdriveFolderFinishedAudio": "folder_finished_id",
         "gdriveFolderTranscripts": "folder_transcripts_id",
         "gdriveFolderCoverArt": "folder_art_id",
-        "serviceAccountJson": _fake_sa_json(),
+        "clientId": "fake-client-id",
+        "clientSecret": "fake-client-secret",
+        "refreshToken": "fake-refresh-token",
     }
+
+
+def _fake_settings():
+    s = MagicMock()
+    s.google_oauth_client_id = "fake-client-id"
+    s.google_oauth_client_secret = "fake-client-secret"
+    s.google_oauth_refresh_token = "fake-refresh-token"
+    return s
+
+
+def _empty_settings():
+    s = MagicMock()
+    s.google_oauth_client_id = ""
+    s.google_oauth_client_secret = ""
+    s.google_oauth_refresh_token = ""
+    return s
 
 
 async def _override_get_db():
@@ -140,10 +151,9 @@ async def test_build_asset_inventory_all_present():
     async def fake_list(token, folder_id):
         return folder_files.get(folder_id, [])
 
-    config = _full_config()
     with patch("satt.gdrive.get_drive_access_token", new=AsyncMock(return_value="fake_token")):
         with patch("satt.gdrive.list_folder_files", new=AsyncMock(side_effect=fake_list)):
-            result = await build_asset_inventory("slot1", key, config)
+            result = await build_asset_inventory("slot1", key, _full_config())
 
     assert result["raw_audio"]["present"] is True
     assert result["finished_audio"]["present"] is True
@@ -160,10 +170,9 @@ async def test_build_asset_inventory_all_missing():
     async def fake_list(token, folder_id):
         return []
 
-    config = _full_config()
     with patch("satt.gdrive.get_drive_access_token", new=AsyncMock(return_value="fake_token")):
         with patch("satt.gdrive.list_folder_files", new=AsyncMock(side_effect=fake_list)):
-            result = await build_asset_inventory("slot1", key, config)
+            result = await build_asset_inventory("slot1", key, _full_config())
 
     assert result["raw_audio"]["present"] is False
     assert result["finished_audio"]["present"] is False
@@ -185,10 +194,9 @@ async def test_build_asset_inventory_conflict():
             return duplicate
         return []
 
-    config = _full_config()
     with patch("satt.gdrive.get_drive_access_token", new=AsyncMock(return_value="fake_token")):
         with patch("satt.gdrive.list_folder_files", new=AsyncMock(side_effect=fake_list)):
-            result = await build_asset_inventory("slot1", key, config)
+            result = await build_asset_inventory("slot1", key, _full_config())
 
     assert result["raw_audio"]["present"] is False
     assert result["raw_audio"].get("conflict") is True
@@ -203,15 +211,14 @@ async def test_build_asset_inventory_conflict():
 async def test_scan_all_returns_400_when_folders_not_configured(client: AsyncClient):
     app.dependency_overrides[get_db] = _override_get_db
     with patch("satt.routes.postproduction.get_config", new=AsyncMock(return_value={})):
-        with patch("satt.routes.postproduction.get_settings") as mock_settings:
-            mock_settings.return_value.google_service_account_json = ""
+        with patch("satt.routes.postproduction.get_settings", return_value=_empty_settings()):
             resp = await client.post("/api/postproduction/scan", headers=_headers())
     app.dependency_overrides.clear()
     assert resp.status_code == 400
 
 
 @pytest.mark.asyncio
-async def test_scan_all_returns_400_when_service_account_not_set(client: AsyncClient):
+async def test_scan_all_returns_400_when_oauth_not_set(client: AsyncClient):
     app.dependency_overrides[get_db] = _override_get_db
     db_cfg = {
         "gdriveFolderRawAudio": "r",
@@ -220,8 +227,7 @@ async def test_scan_all_returns_400_when_service_account_not_set(client: AsyncCl
         "gdriveFolderCoverArt": "a",
     }
     with patch("satt.routes.postproduction.get_config", new=AsyncMock(return_value=db_cfg)):
-        with patch("satt.routes.postproduction.get_settings") as mock_settings:
-            mock_settings.return_value.google_service_account_json = ""
+        with patch("satt.routes.postproduction.get_settings", return_value=_empty_settings()):
             resp = await client.post("/api/postproduction/scan", headers=_headers())
     app.dependency_overrides.clear()
     assert resp.status_code == 400
@@ -243,8 +249,7 @@ async def test_scan_all_calls_build_for_each_eligible_slot(client: AsyncClient):
     fake_inventory = {"scanned_at": "2026-03-06T00:00:00+00:00", "raw_audio": {"present": False}}
 
     with patch("satt.routes.postproduction.get_config", new=AsyncMock(return_value=_full_config())):
-        with patch("satt.routes.postproduction.get_settings") as mock_settings:
-            mock_settings.return_value.google_service_account_json = _fake_sa_json()
+        with patch("satt.routes.postproduction.get_settings", return_value=_fake_settings()):
             with patch("satt.routes.postproduction.get_slots_for_scan", new=AsyncMock(return_value=slots)):
                 with patch("satt.routes.postproduction.build_asset_inventory", new=AsyncMock(return_value=fake_inventory)):
                     with patch("satt.routes.postproduction.set_asset_inventory", new=AsyncMock()):
@@ -267,8 +272,7 @@ async def test_scan_all_captures_per_slot_errors(client: AsyncClient):
         raise RuntimeError("Drive API unreachable")
 
     with patch("satt.routes.postproduction.get_config", new=AsyncMock(return_value=_full_config())):
-        with patch("satt.routes.postproduction.get_settings") as mock_settings:
-            mock_settings.return_value.google_service_account_json = _fake_sa_json()
+        with patch("satt.routes.postproduction.get_settings", return_value=_fake_settings()):
             with patch("satt.routes.postproduction.get_slots_for_scan", new=AsyncMock(return_value=slots)):
                 with patch("satt.routes.postproduction.build_asset_inventory", new=AsyncMock(side_effect=boom)):
                     with patch("satt.routes.postproduction.set_asset_inventory", new=AsyncMock()):
@@ -283,7 +287,7 @@ async def test_scan_all_captures_per_slot_errors(client: AsyncClient):
 
 
 # ---------------------------------------------------------------------------
-# Route: POST /api/postproduction/scan — auth required
+# Route: auth required
 # ---------------------------------------------------------------------------
 
 
@@ -293,28 +297,17 @@ async def test_scan_all_requires_auth(client: AsyncClient):
     assert resp.status_code == 401
 
 
-# ---------------------------------------------------------------------------
-# Route: POST /api/postproduction/{slot_id}/scan — auth required
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_scan_single_requires_auth(client: AsyncClient):
     resp = await client.post("/api/postproduction/slot123/scan")
     assert resp.status_code == 401
 
 
-# ---------------------------------------------------------------------------
-# Route: POST /api/postproduction/{slot_id}/scan — 400 when not configured
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_scan_single_returns_400_when_not_configured(client: AsyncClient):
     app.dependency_overrides[get_db] = _override_get_db
     with patch("satt.routes.postproduction.get_config", new=AsyncMock(return_value={})):
-        with patch("satt.routes.postproduction.get_settings") as mock_settings:
-            mock_settings.return_value.google_service_account_json = ""
+        with patch("satt.routes.postproduction.get_settings", return_value=_empty_settings()):
             resp = await client.post("/api/postproduction/slot123/scan", headers=_headers())
     app.dependency_overrides.clear()
     assert resp.status_code == 400
@@ -349,6 +342,5 @@ async def test_list_folder_files_parses_response():
     assert len(result) == 2
     assert result[0]["id"] == "fileid1"
     assert result[1]["name"] == "EP002_Other.wav"
-
     call_kwargs = mock_client.get.call_args
     assert "folder_id_123" in call_kwargs[1]["params"]["q"]
