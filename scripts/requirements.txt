@@ -1,0 +1,5 @@
+# Python dependencies for local scripts (recording PC only).
+# Install with: pip install -r scripts/requirements.txt
+#
+# WhisperX itself is installed separately — see transcribe.bat for setup notes.
+watchdog>=4.0

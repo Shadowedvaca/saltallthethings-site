@@ -12,6 +12,7 @@ Thumbs.db
 
 # Scripts secrets
 scripts/secrets.bat
+scripts/secrets.py
 
 # Sensitive data
 settings-backup/

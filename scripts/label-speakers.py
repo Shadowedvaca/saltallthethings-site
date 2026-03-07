@@ -136,6 +136,11 @@ def main():
         metavar="NAME",
         help=f"Default host names to suggest (default: {' '.join(DEFAULT_HOSTS)})"
     )
+    parser.add_argument(
+        "--auto",
+        action="store_true",
+        help="Skip interactive prompts; assign speakers in order of first appearance"
+    )
     args = parser.parse_args()
 
     if not os.path.isfile(args.input_json):
@@ -163,6 +168,25 @@ def main():
         print("No diarized speakers detected. Writing plain transcript.")
         lines = [seg.get("text", "").strip() for seg in segments if seg.get("text", "").strip()]
         transcript = "\n\n".join(lines)
+    elif args.auto:
+        # Auto mode: assign speakers in order of first appearance
+        speaker_ids = sorted(
+            samples.keys(),
+            key=lambda sid: next(
+                (i for i, seg in enumerate(segments) if seg.get("speaker") == sid),
+                float("inf"),
+            ),
+        )
+        mapping = {
+            speaker_ids[i]: (args.hosts[i] if i < len(args.hosts) else "Unknown")
+            for i in range(len(speaker_ids))
+        }
+        print()
+        print("Auto speaker assignment (--auto mode):")
+        for speaker_id, name in mapping.items():
+            print(f"  {speaker_id} -> {name}")
+        print()
+        transcript = build_transcript(segments, mapping)
     else:
         mapping = prompt_speaker_labels(samples, args.hosts)
         transcript = build_transcript(segments, mapping)
