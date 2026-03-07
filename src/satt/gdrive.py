@@ -55,6 +55,8 @@ async def list_folder_files(access_token: str, folder_id: str) -> list[dict]:
                 "q": f"'{folder_id}' in parents and trashed = false",
                 "fields": "files(id,name,modifiedTime)",
                 "pageSize": 1000,
+                "supportsAllDrives": "true",
+                "includeItemsFromAllDrives": "true",
             },
             headers={"Authorization": f"Bearer {access_token}"},
         )
