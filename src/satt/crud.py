@@ -280,6 +280,17 @@ async def set_asset_inventory(db: AsyncSession, slot_id: str, inventory: dict) -
     await db.flush()
 
 
+async def get_slots_for_scan(db: AsyncSession) -> list[dict]:
+    """Return slots with a past record_date and a non-null production_file_key."""
+    today = datetime.now(_PST).date()
+    result = await db.execute(
+        select(ShowSlot.id, ShowSlot.production_file_key)
+        .where(ShowSlot.record_date <= today)
+        .where(ShowSlot.production_file_key.is_not(None))
+    )
+    return [{"slot_id": row.id, "production_file_key": row.production_file_key} for row in result]
+
+
 # ---------------------------------------------------------------------------
 # Public: released episodes
 # ---------------------------------------------------------------------------

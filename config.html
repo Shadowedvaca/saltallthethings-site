@@ -110,6 +110,31 @@
         </div>
       </div>
 
+      <!-- Google Drive Integration -->
+      <div class="card card-elevated mb-lg">
+        <h2 class="mb-md">Google Drive Integration</h2>
+        <p class="text-sm text-secondary mb-md">Enter the Google Drive folder IDs for each asset type. The folder ID is the long string in the folder's URL after <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">folders/</code>.</p>
+        <div class="form-group">
+          <label>Raw Audio Folder ID <span class="label-hint">— .wav recordings</span></label>
+          <input type="text" id="gdriveFolderRawAudio" placeholder="e.g., 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms">
+        </div>
+        <div class="form-group">
+          <label>Finished Audio Folder ID <span class="label-hint">— .mp3 edited episodes</span></label>
+          <input type="text" id="gdriveFolderFinishedAudio" placeholder="e.g., 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms">
+        </div>
+        <div class="form-group">
+          <label>Transcripts Folder ID <span class="label-hint">— .txt and .json transcript files</span></label>
+          <input type="text" id="gdriveFolderTranscripts" placeholder="e.g., 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms">
+        </div>
+        <div class="form-group">
+          <label>Cover Art Folder ID <span class="label-hint">— .png album art</span></label>
+          <input type="text" id="gdriveFolderCoverArt" placeholder="e.g., 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms">
+        </div>
+        <div class="text-sm text-secondary mt-md" style="background: var(--bg-surface); padding: 12px; border-radius: 6px; border-left: 3px solid var(--gold-dim);">
+          <strong>Service Account:</strong> The Google service account JSON key is set server-side in <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">/opt/satt-platform/.env</code> as <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">GOOGLE_SERVICE_ACCOUNT_JSON</code>. It cannot be entered here. Contact Trog to configure it on the server.
+        </div>
+      </div>
+
       <!-- Show Context Prompt -->
       <div class="card card-elevated mb-lg">
         <h2 class="mb-md">Show Context Prompt</h2>
@@ -227,6 +252,10 @@
       document.getElementById('youtubeVideo1').value = config.youtubeVideo1 || '';
       document.getElementById('youtubeVideo2').value = config.youtubeVideo2 || '';
       document.getElementById('youtubeVideo3').value = config.youtubeVideo3 || '';
+      document.getElementById('gdriveFolderRawAudio').value = config.gdriveFolderRawAudio || '';
+      document.getElementById('gdriveFolderFinishedAudio').value = config.gdriveFolderFinishedAudio || '';
+      document.getElementById('gdriveFolderTranscripts').value = config.gdriveFolderTranscripts || '';
+      document.getElementById('gdriveFolderCoverArt').value = config.gdriveFolderCoverArt || '';
       document.getElementById('showContext').value = config.showContext || '';
       document.getElementById('jokeContext').value = config.jokeContext || '';
       renderSegments(config.segments || []);
@@ -245,6 +274,10 @@
         youtubeVideo1: document.getElementById('youtubeVideo1').value,
         youtubeVideo2: document.getElementById('youtubeVideo2').value,
         youtubeVideo3: document.getElementById('youtubeVideo3').value,
+        gdriveFolderRawAudio: document.getElementById('gdriveFolderRawAudio').value,
+        gdriveFolderFinishedAudio: document.getElementById('gdriveFolderFinishedAudio').value,
+        gdriveFolderTranscripts: document.getElementById('gdriveFolderTranscripts').value,
+        gdriveFolderCoverArt: document.getElementById('gdriveFolderCoverArt').value,
         showContext: document.getElementById('showContext').value,
         jokeContext: document.getElementById('jokeContext').value,
         segments: getSegmentsFromDOM()

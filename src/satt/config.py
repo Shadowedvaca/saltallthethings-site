@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     site_url: str = "https://saltallthethings.com"
     cors_origins: str = "https://saltallthethings.com,https://salt.shadowedvaca.com"
     ai_request_timeout: int = 60
+    google_service_account_json: str = ""
 
     # JWT settings
     jwt_algorithm: str = "HS256"
