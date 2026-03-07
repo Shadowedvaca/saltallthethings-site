@@ -991,14 +991,8 @@
       
       <div class="hero-divider"></div>
 
-      <!-- Pre-launch (shown before launch date) -->
-      <div class="launch-info" id="preLaunch">
-        <p class="launch-label">Launching</p>
-        <p class="launch-date">March 3, 2026</p>
-      </div>
-
-      <!-- Post-launch (shown after launch date) -->
-      <div class="listen-buttons" id="postLaunch" style="display: none;"></div>
+      <!-- Platform listen buttons -->
+      <div class="listen-buttons" id="postLaunch"></div>
 
       <p class="hero-subtitle">A little salt for your day</p>
     </div>
@@ -1025,7 +1019,6 @@
       <div class="episodes-grid" id="episodesGrid">
         <div class="episodes-empty">
           <p>No episodes yet — we're cooking something salty.</p>
-          <p class="coming-date">Coming March 3, 2026</p>
         </div>
       </div>
     </div>
@@ -1196,34 +1189,22 @@
     })();
 
     // ============================================
-    // Launch state detection
+    // Platform listen buttons
     // ============================================
     (function() {
-      const launchDate = new Date(SiteConfig.show.launchDate + 'T00:00:00');
-      const now = new Date();
-      const isLaunched = now >= launchDate;
+      const postLaunch = document.getElementById('postLaunch');
+      const platforms = SiteConfig.getActivePlatforms();
+      if (platforms.length > 0) {
+        postLaunch.innerHTML = platforms.map(function(p) {
+          return '<a href="' + p.url + '" class="listen-btn" target="_blank" rel="noopener">'
+            + '<span class="platform-icon">' + p.icon + '</span>'
+            + '<span>' + p.name + '</span></a>';
+        }).join('');
 
-      if (isLaunched) {
-        document.getElementById('preLaunch').style.display = 'none';
-        const postLaunch = document.getElementById('postLaunch');
-        postLaunch.style.display = 'flex';
-
-        const platforms = SiteConfig.getActivePlatforms();
-        if (platforms.length > 0) {
-          postLaunch.innerHTML = platforms.map(function(p) {
-            return '<a href="' + p.url + '" class="listen-btn" target="_blank" rel="noopener">'
-              + '<span class="platform-icon">' + p.icon + '</span>'
-              + '<span>' + p.name + '</span></a>';
-          }).join('');
-
-          // Show nav CTA linking to first platform
-          var navBtn = document.getElementById('navListenBtn');
-          navBtn.style.display = 'inline-flex';
-          navBtn.href = platforms[0].url;
-          navBtn.target = '_blank';
-        } else {
-          postLaunch.innerHTML = '<p style="color: var(--text-muted); font-size: 0.9rem;">Episodes available now — platform links coming soon!</p>';
-        }
+        var navBtn = document.getElementById('navListenBtn');
+        navBtn.style.display = 'inline-flex';
+        navBtn.href = platforms[0].url;
+        navBtn.target = '_blank';
       }
     })();
 
@@ -1248,12 +1229,16 @@
           .then(function(r) { return r.json(); })
           .then(function(data) {
             if (!data || !data.episodes || data.episodes.length === 0) return;
-            
+
             var grid = document.getElementById('episodesGrid');
-            var pagination = data.pagination;
+            var pagination = {
+              page: data.page,
+              totalPages: Math.ceil(data.total / data.limit),
+              hasMore: data.page * data.limit < data.total
+            };
             currentPage = pagination.page;
             totalPages = pagination.totalPages;
-            
+
             // Render episodes
             grid.innerHTML = data.episodes.map(function(ep) {
               var row = '<div class="episode-row">'
