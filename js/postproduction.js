@@ -112,6 +112,15 @@ const PostProd = {
     return inv.transcript_txt;
   },
 
+  _autoKey(row) {
+    if (!row.episodeNumber || !row.selectedTitle || !row.recordDate) return '';
+    var slug = row.selectedTitle
+      .replace(/[^a-zA-Z0-9\s]/g, '')
+      .trim()
+      .replace(/\s+/g, '-');
+    return row.episodeNumber + '_' + slug + '_' + row.recordDate;
+  },
+
   _nextStepLabel(nextStep) {
     return {
       set_key: 'Set file key',
@@ -194,6 +203,11 @@ const PostProd = {
     if (!row) return;
     row.querySelector('.pp-key-display').style.display = 'none';
     var input = row.querySelector('.pp-key-input');
+    // Pre-fill with auto-generated key if not yet set
+    if (!input.value) {
+      var queueRow = this._queue.find(function(r) { return r.slotId === slotId; });
+      if (queueRow) input.value = this._autoKey(queueRow);
+    }
     input.style.display = 'block';
     input.focus();
     input.select();
