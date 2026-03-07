@@ -10,7 +10,7 @@ Thumbs.db
 *.bak
 *.tmp
 
-# Scripts secrets
+# Scripts secrets (local only — copy from secrets.py.example)
 scripts/secrets.bat
 scripts/secrets.py
 

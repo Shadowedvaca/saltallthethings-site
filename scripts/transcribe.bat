@@ -15,16 +15,16 @@ set "PATH=C:\ffmpeg\bin;%PATH%"
 set "HOST1=Rocket"
 set "HOST2=Trog"
 set "LABEL_SCRIPT=%~dp0label-speakers.py"
-set "SECRETS_FILE=%~dp0secrets.bat"
+set "SECRETS_FILE=%~dp0secrets.py"
 
 if not exist "%SECRETS_FILE%" (
-    echo ERROR: secrets.bat not found at %SECRETS_FILE%
-    echo Please create it with:  set "HF_TOKEN=your_token_here"
+    echo ERROR: secrets.py not found at %SECRETS_FILE%
+    echo Please copy scripts\secrets.py.example to scripts\secrets.py and fill it in.
     echo.
     pause
     exit /b 1
 )
-call "%SECRETS_FILE%"
+for /f "usebackq delims=" %%t in (`python -c "import sys; sys.path.insert(0, r'%~dp0'); import secrets as s; print(s.HF_TOKEN)"`) do set "HF_TOKEN=%%t"
 
 if not exist "%OUTPUT_DIR%" mkdir "%OUTPUT_DIR%"
 
