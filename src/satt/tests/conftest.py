@@ -45,22 +45,48 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
 # ---------------------------------------------------------------------------
 
 _settings = get_settings()
-TEST_DATABASE_URL = os.environ.get(
-    "TEST_DATABASE_URL",
-    _settings.database_url,
-)
+
+# TEST_DATABASE_URL must be set explicitly — never fall back to production.
+# DB-backed tests will be skipped if this is not set.
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
+if TEST_DATABASE_URL is None:
+    import warnings
+    warnings.warn(
+        "TEST_DATABASE_URL is not set — DB-backed tests will be skipped. "
+        "Set TEST_DATABASE_URL to a test database to run them.",
+        stacklevel=1,
+    )
+
+# Hard guard: refuse to run destructive fixtures against the production DB.
+_PROD_URL = _settings.database_url
+if TEST_DATABASE_URL and TEST_DATABASE_URL.rstrip("/") == _PROD_URL.rstrip("/"):
+    raise RuntimeError(
+        "TEST_DATABASE_URL matches the production DATABASE_URL. "
+        "Refusing to run tests against production. "
+        "Set TEST_DATABASE_URL to a dedicated test database."
+    )
 
 
 def _make_engine():
     """Create a NullPool async engine. NullPool means no connection reuse,
     so every execute() opens a fresh asyncpg connection in the current event
     loop — safe across session- and function-scoped fixtures."""
+    if not TEST_DATABASE_URL:
+        raise RuntimeError("TEST_DATABASE_URL is not set")
     return create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
+
+
+_requires_test_db = pytest.mark.skipif(
+    TEST_DATABASE_URL is None,
+    reason="TEST_DATABASE_URL not set — skipping DB test",
+)
 
 
 @pytest_asyncio.fixture(scope="session")
 async def test_schema():
     """Create satt schema and tables in the test DB. Session-scoped."""
+    if not TEST_DATABASE_URL:
+        pytest.skip("TEST_DATABASE_URL not set")
     engine = _make_engine()
     async with engine.begin() as conn:
         await conn.execute(text("CREATE SCHEMA IF NOT EXISTS satt"))

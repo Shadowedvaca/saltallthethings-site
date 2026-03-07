@@ -251,16 +251,27 @@ and managed through the Config page UI.
 
 ## Testing
 
+**`TEST_DATABASE_URL` must be set explicitly** — the test suite will refuse to
+run DB-backed tests if it is not set, and will hard-fail if it matches
+`DATABASE_URL` (production). Never point `TEST_DATABASE_URL` at the production
+database.
+
 ```bash
-# Run all tests
-PYTHONPATH=src pytest src/satt/tests/ -v
+# Run all tests (requires TEST_DATABASE_URL)
+TEST_DATABASE_URL=postgresql+asyncpg://satt_user:...@localhost/satt_test_db \
+  PYTHONPATH=src pytest src/satt/tests/ -v
 
 # Run with coverage
-PYTHONPATH=src pytest src/satt/tests/ --cov=satt --cov-report=term-missing
+TEST_DATABASE_URL=... PYTHONPATH=src pytest src/satt/tests/ --cov=satt --cov-report=term-missing
 ```
 
-Tests use a separate `satt_test` Postgres schema. Never run tests against
-the production schema.
+On the server, run tests like this:
+```bash
+cd /opt/satt-platform
+TEST_DATABASE_URL=postgresql+asyncpg://satt_user:SaltSalty7x@localhost:5432/satt_test_db \
+  PYTHONPATH=src venv/bin/pytest src/satt/tests/ -v
+```
+(Create `satt_test_db` first if it doesn't exist: `sudo -u postgres createdb satt_test_db && sudo -u postgres psql -c "GRANT ALL ON DATABASE satt_test_db TO satt_user;"`)
 
 AI proxy tests mock upstream calls with `respx` or `pytest-httpx` — no real
 API calls in tests.
@@ -280,6 +291,24 @@ API calls in tests.
 2. Generate migration: `PYTHONPATH=src alembic revision --autogenerate -m "description"`
 3. Review generated migration in `src/satt/migrations/versions/`
 4. Apply: `PYTHONPATH=src alembic upgrade head`
+
+### Database backups
+
+Automated nightly backup runs at 03:00 UTC via `/etc/cron.d/satt-backup`:
+- Script: `/usr/local/bin/satt-backup.sh`
+- Output: `/opt/backups/satt-db/satt_db_YYYY-MM-DD_HHMM.sql.gz`
+- Retention: 14 days
+
+**To restore from backup:**
+```bash
+# List available backups
+ls /opt/backups/satt-db/
+
+# Restore (drops and recreates satt schema)
+sudo -u postgres dropdb satt_db && sudo -u postgres createdb satt_db
+zcat /opt/backups/satt-db/satt_db_YYYY-MM-DD_HHMM.sql.gz | psql "postgresql://satt_user:...@localhost/satt_db"
+sudo systemctl restart satt
+```
 
 ### Restart the service
 ```bash
@@ -312,4 +341,5 @@ curl -s -o /dev/null -w "%{http_code}" https://saltallthethings.com
 - **Do not store AI keys in `.env`** — they live in `satt.config` in Postgres
 - **Do not use the Anthropic or OpenAI Python SDKs** — use raw httpx calls
 - **Do not add a build step** — the frontend is plain HTML/CSS/JS, no bundler
-- **Do not run tests against the production schema** — use `satt_test`
+- **Do not run tests against the production schema** — always set `TEST_DATABASE_URL` to a dedicated test DB; the conftest hard-fails if `TEST_DATABASE_URL` matches production `DATABASE_URL`
+- **Do not run `pytest` on the server without `TEST_DATABASE_URL` set** — the test teardown drops the `satt` schema; running against production destroys all data
