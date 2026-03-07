@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Post-Production — Salt All The Things</title>
+  <link rel="icon" type="image/jpeg" href="images/256x256.jpeg">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .postprod-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .postprod-table th,
+    .postprod-table td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-subtle);
+      vertical-align: middle;
+    }
+    .postprod-table th {
+      color: var(--text-muted);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      background: var(--bg-surface);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .postprod-table tbody tr:last-child td { border-bottom: none; }
+    .postprod-table tbody tr:hover td { background: rgba(255,255,255,0.015); }
+
+    .col-ep    { width: 70px; }
+    .col-title { min-width: 180px; }
+    .col-date  { width: 110px; white-space: nowrap; font-size: 0.85rem; color: var(--text-secondary); }
+    .col-key   { min-width: 240px; }
+    .col-asset { width: 80px; text-align: center; }
+    .col-next  { width: 155px; font-size: 0.85rem; }
+
+    .col-ep { font-weight: 700; color: var(--gold); font-size: 0.88rem; }
+    .col-title { font-size: 0.9rem; }
+
+    /* File key cell */
+    .pp-key-display {
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-family: 'JetBrains Mono', monospace;
+      padding: 5px 7px;
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
+      transition: border-color 0.15s, background 0.15s;
+      min-height: 30px;
+      display: flex;
+      align-items: center;
+    }
+    .pp-key-display:hover {
+      border-color: var(--border-default);
+      background: var(--bg-surface);
+    }
+    .pp-key-text { color: var(--text-primary); word-break: break-all; }
+    .pp-key-placeholder { color: var(--text-muted); font-style: italic; font-family: inherit; }
+    .pp-no-title { color: var(--text-muted); }
+
+    .pp-key-input {
+      width: 100%;
+      font-size: 0.8rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Asset badges */
+    .pp-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .pp-ok       { background: rgba(80,200,120,0.14); color: #50c878; }
+    .pp-stale    { background: rgba(200,160,50,0.18); color: #c8a032; }
+    .pp-conflict { background: rgba(220,110,50,0.2);  color: #dc6e32; }
+    .pp-missing  { background: rgba(90,87,80,0.15);   color: var(--text-muted); }
+    .pp-na       { background: rgba(90,87,80,0.08);   color: var(--text-muted); opacity: 0.55; }
+
+    /* Next step column states */
+    .pp-complete { color: #50c878; }
+    .pp-urgent   { color: var(--gold); }
+
+    .pp-empty {
+      text-align: center;
+      padding: 2.5rem 1rem;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ===== LOADING OVERLAY ===== -->
+  <div id="loadingOverlay" style="display: none; position: fixed; inset: 0; z-index: 99998; background: #08080f; align-items: center; justify-content: center; flex-direction: column; gap: 16px;">
+    <svg viewBox="0 0 50 50" style="width:48px;height:48px;"><circle cx="25" cy="25" r="20" fill="none" stroke="#c8a84e" stroke-width="3" stroke-dasharray="80 40" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" values="0 25 25;360 25 25" dur="0.8s" repeatCount="indefinite"/></circle></svg>
+    <span style="color: #c8a84e; font-family: 'Cinzel', serif; font-size: 0.9rem;">Loading...</span>
+  </div>
+
+  <!-- ===== PROTECTED CONTENT ===== -->
+  <div id="protectedContent" style="display: none;">
+
+    <nav class="site-nav">
+      <img src="images/256x256.jpeg" alt="SATT" class="nav-logo">
+      <span class="nav-title">Salt All The Things</span>
+      <div class="nav-spacer"></div>
+      <a href="index.html">Home</a>
+      <a href="show_management.html">Show Management</a>
+      <a href="jokes.html">Joke Bank</a>
+      <a href="postproduction.html" class="active">Post-Production</a>
+      <a href="config.html">Config</a>
+      <button class="btn btn-ghost btn-sm" onclick="Auth.logout()" style="color: var(--text-muted);">🔒 Logout</button>
+    </nav>
+
+    <div class="page-container">
+      <div class="page-header" style="display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+        <div>
+          <h1>Post-Production</h1>
+          <p class="subtitle">Asset status for recorded episodes — raw audio, transcripts, art, and finished files</p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; flex-shrink: 0; padding-top: 4px;">
+          <button class="btn btn-ghost btn-sm" id="showCompleteBtn" onclick="PostProd.toggleShowComplete()">Show complete</button>
+          <button class="btn btn-secondary" id="refreshBtn" onclick="PostProd.scanAll()">Refresh Assets</button>
+        </div>
+      </div>
+
+      <div class="card card-elevated" style="padding: 0; overflow: hidden;">
+        <div style="overflow-x: auto;">
+          <table class="postprod-table">
+            <thead>
+              <tr>
+                <th class="col-ep">Ep</th>
+                <th class="col-title">Title</th>
+                <th class="col-date">Record Date</th>
+                <th class="col-key">File Key</th>
+                <th class="col-asset">Raw</th>
+                <th class="col-asset">Transcript</th>
+                <th class="col-asset">Art</th>
+                <th class="col-asset">Finished</th>
+                <th class="col-next">Next Step</th>
+              </tr>
+            </thead>
+            <tbody id="queueBody">
+              <tr>
+                <td colspan="9" class="pp-empty">Loading queue...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <p class="text-sm" style="color: var(--text-muted); margin-top: var(--space-md); padding: 0 4px;">
+        Only episodes with a past record date appear here. Asset data reflects the last Drive scan.
+        Use <strong>Refresh Assets</strong> to re-scan, or click a file key to set it.
+      </p>
+    </div>
+
+  </div><!-- /protectedContent -->
+
+  <script src="js/auth.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/toast.js"></script>
+  <script src="js/postproduction.js"></script>
+  <script>
+    Auth.init();
+
+    function onStorageReady() {
+      PostProd.loadQueue();
+    }
+  </script>
+</body>
+</html>
