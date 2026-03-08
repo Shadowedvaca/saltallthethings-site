@@ -15,7 +15,7 @@ import urllib.parse
 import urllib.request
 
 REDIRECT_URI = "http://localhost:8080"
-SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+SCOPE = "https://www.googleapis.com/auth/drive"
 
 print("=== Google Drive OAuth2 Token Setup ===\n")
 print("You'll need the Client ID and Client Secret from your OAuth2 Desktop app.")
