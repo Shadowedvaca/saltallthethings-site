@@ -164,6 +164,11 @@ const PostProd = {
       const result = await resp.json();
       this._artDirection[slotId] = result;
       Toast.success('Art direction generated.');
+      if (result.referenceImageWarnings && result.referenceImageWarnings.length > 0) {
+        Toast.error('Reference image warnings: ' + result.referenceImageWarnings.join('; '));
+      }
+      // Reload so Dir badge updates immediately
+      await this.loadQueue();
     } catch (err) {
       Toast.error('Art direction failed: ' + err.message);
     } finally {
@@ -265,7 +270,7 @@ const PostProd = {
     const propsText = art.props.join(', ');
 
     return '<tr class="pp-art-row">'
-      + '<td colspan="10" class="pp-art-cell">'
+      + '<td colspan="11" class="pp-art-cell">'
       + '<div class="pp-art-panel">'
       + '<div class="pp-art-meta">'
       + '<span class="pp-art-archetype">' + escHtml(art.archetype.name) + '</span>'
@@ -304,7 +309,7 @@ const PostProd = {
       const msg = this._queue.length === 0
         ? 'No recorded episodes in the queue yet.'
         : 'All episodes complete. Use "Show complete" to see them.';
-      tbody.innerHTML = '<tr><td colspan="10" class="pp-empty">' + escHtml(msg) + '</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" class="pp-empty">' + escHtml(msg) + '</td></tr>';
       return;
     }
 
@@ -314,6 +319,7 @@ const PostProd = {
       const rawBadge = this._badgeHtml(inv ? inv.raw_audio : null, hasKey);
       const transcriptBadge = this._badgeHtml(this._transcriptAsset(inv), hasKey);
       const artBadge = this._badgeHtml(inv ? inv.album_art : null, hasKey);
+      const artDirBadge = this._badgeHtml(inv ? inv.art_direction : null, hasKey);
       const finishedBadge = this._badgeHtml(inv ? inv.finished_audio : null, hasKey);
 
       const title = row.selectedTitle
@@ -350,6 +356,7 @@ const PostProd = {
         + '<td class="col-asset">' + rawBadge + '</td>'
         + '<td class="col-asset">' + transcriptBadge + '</td>'
         + '<td class="col-asset">' + artBadge + '</td>'
+        + '<td class="col-asset">' + artDirBadge + '</td>'
         + '<td class="col-asset">' + finishedBadge + '</td>'
         + '<td class="col-next' + nextClass + '">' + escHtml(this._nextStepLabel(row.nextStep)) + '</td>'
         + actionCell

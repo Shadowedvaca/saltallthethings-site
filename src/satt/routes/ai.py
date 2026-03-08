@@ -406,32 +406,33 @@ async def generate_art_direction(
 
     # Fetch visual reference images from Drive if configured (best-effort)
     reference_images: list[dict] = []
+    ref_image_errors: list[str] = []
     ref_folder_ids = config.get("referenceImageFolderIds") or []
     ref_file_ids = config.get("referenceImageFileIds") or []
     if ref_folder_ids or ref_file_ids:
-        try:
-            image_extensions = {"jpg", "jpeg", "png"}
-            for folder_id in ref_folder_ids[:3]:
-                try:
-                    files = await list_folder_files(access_token, folder_id)
-                    img_files = [
-                        f for f in files
-                        if f["name"].rsplit(".", 1)[-1].lower() in image_extensions
-                    ]
-                    for f in img_files[:3]:
+        image_extensions = {"jpg", "jpeg", "png"}
+        for folder_id in ref_folder_ids[:3]:
+            try:
+                files = await list_folder_files(access_token, folder_id)
+                img_files = [
+                    f for f in files
+                    if f["name"].rsplit(".", 1)[-1].lower() in image_extensions
+                ]
+                for f in img_files[:3]:
+                    try:
                         b64, mime = await fetch_image_as_base64(access_token, f["id"])
                         reference_images.append({"data": b64, "mime_type": mime})
-                except Exception:
-                    pass
-            for file_id in ref_file_ids[:4]:
-                try:
-                    b64, mime = await fetch_image_as_base64(access_token, file_id)
-                    reference_images.append({"data": b64, "mime_type": mime})
-                except Exception:
-                    pass
-            reference_images = reference_images[:8]
-        except Exception:
-            reference_images = []
+                    except Exception as e:
+                        ref_image_errors.append(f"image {f['name']}: {e}")
+            except Exception as e:
+                ref_image_errors.append(f"folder {folder_id}: {e}")
+        for file_id in ref_file_ids[:4]:
+            try:
+                b64, mime = await fetch_image_as_base64(access_token, file_id)
+                reference_images.append({"data": b64, "mime_type": mime})
+            except Exception as e:
+                ref_image_errors.append(f"file {file_id}: {e}")
+        reference_images = reference_images[:8]
 
     system_prompt, user_prompt = build_generate_art_direction_prompts(
         config, episode_data, has_reference_images=bool(reference_images)
@@ -471,7 +472,43 @@ async def generate_art_direction(
     config["artLog"] = art_log
     await save_config(db, config)
 
-    return JSONResponse(content=result)
+    # Upload art direction JSON to Cover Art Drive folder (best-effort)
+    cover_art_folder_id = config.get("gdriveFolderCoverArt")
+    if slot and slot.production_file_key and cover_art_folder_id:
+        try:
+            art_json_filename = f"{slot.production_file_key}_artdirection.json"
+            art_json_bytes = json.dumps(result, indent=2).encode()
+
+            # Delete old art direction JSON if present
+            inv = (slot.asset_inventory or {})
+            old_art_dir = inv.get("art_direction", {})
+            if old_art_dir.get("drive_file_id"):
+                try:
+                    await delete_file(access_token, old_art_dir["drive_file_id"])
+                except Exception:
+                    pass
+
+            new_art_dir_id = await upload_file_to_folder(
+                access_token, cover_art_folder_id, art_json_filename,
+                art_json_bytes, mime_type="application/json",
+            )
+
+            # Patch asset inventory with new art_direction entry
+            inv["art_direction"] = {
+                "present": True,
+                "drive_file_id": new_art_dir_id,
+                "modified": datetime.now(timezone.utc).isoformat(),
+            }
+            await set_asset_inventory(db, slot.id, inv)
+        except Exception:
+            pass  # best-effort — art direction itself succeeded
+
+    response_data = dict(result)
+    if ref_image_errors:
+        response_data["referenceImageWarnings"] = ref_image_errors
+    response_data["referenceImagesLoaded"] = len(reference_images)
+
+    return JSONResponse(content=response_data)
 
 
 # ---------------------------------------------------------------------------

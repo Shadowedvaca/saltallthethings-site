@@ -194,4 +194,5 @@ async def build_asset_inventory(
         "transcript_txt": _asset_entry(_match_files(transcript_files, key, "txt")),
         "transcript_json": _asset_entry(_match_files(transcript_files, key, "json")),
         "album_art": _asset_entry(_match_files(art_files, key, "png")),
+        "art_direction": _asset_entry(_match_files(art_files, key + "_artdirection", "json")),
     }
