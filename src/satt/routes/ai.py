@@ -191,50 +191,60 @@ async def generate_jokes(
 # Art direction defaults (seeded into satt.config on first use)
 # ---------------------------------------------------------------------------
 
-_ART_STYLE_BIBLE_VERSION = 2
+_ART_STYLE_BIBLE_VERSION = 3
 
 _DEFAULT_ART_STYLE_BIBLE: dict = {
     "version": _ART_STYLE_BIBLE_VERSION,
     "format": "square 1024x1024",
     "artStyle": (
-        "World of Warcraft inspired fantasy digital painting, painterly, cinematic. "
-        "Think Blizzard cinematic concept art crossed with illustrated podcast branding — "
-        "rich saturated colors, high detail, dramatic lighting."
+        "3D rendered digital illustration with hand-painted texture detail. "
+        "Stylized fantasy-game aesthetic — think polished indie game art with cinematic lighting. "
+        "NOT painterly or 2D. Characters are dimensional, faceted, and physically solid."
     ),
     "characters": {
         "bigElemental": (
-            "LARGE crystalline salt elemental — the main mascot. Imposing and broad-shouldered. "
-            "Body made of jagged icy-blue salt crystals with glowing cyan eyes. "
-            "Wears bronze and gold armor bands and pauldrons. Radiates authority and gravitas."
+            "LARGE crystalline salt elemental — compact, squat, chibi-proportioned (large head relative to body). "
+            "Body made of geometric, faceted icy-blue salt crystals — angular planes and beveled edges, "
+            "semi-translucent in places with light catching on crystal surfaces. "
+            "Bright cyan/electric blue glowing eyes (almond-shaped). "
+            "Jagged crystalline crown of 3–5 spikes on top of head. "
+            "Large mischievous grin with prominent teeth — evil but playful expression. "
+            "Chunky blocky limbs with segmented armor plating. "
+            "Gold/bronze spiked shoulder pauldrons and waist belt. "
+            "Dark blue-gray scale-like chest armor contrasting with icy body. "
+            "NOT a human, bear, or animal — a crystal salt creature."
         ),
         "babyElementals": (
-            "SMALL chibi salt elementals — mischievous sidekicks. Same crystal material as the "
-            "big elemental but tiny, chibi-proportioned, with oversized expressive faces. "
-            "Always doing something funny or chaotic related to the episode topic."
+            "SMALL chibi salt elementals — identical crystal material and design as the big elemental "
+            "but tiny (roughly 1/3 the height). Same faceted icy-blue crystal body, same evil grin, "
+            "same glowing cyan eyes, same gold armor accents. Oversized expressive faces. "
+            "NOT humans, bears, or animals — miniature crystal salt creatures matching the big elemental's style exactly."
         ),
     },
     "props": [
-        "vintage bronze podcast microphone",
-        "glass salt shakers with metal lids",
-        "tipped-over salt shakers pouring glowing magical salt",
-        "glowing spilled salt (treat as magical particles)",
+        "tall chrome/stainless steel salt shaker with domed perforated top and brass/gold detailing",
+        "vintage art-deco podcast microphone — brass/gold ribbed body, large spherical mesh top, weighted stand base",
+        "spilled salt granules and glowing cyan salt particle trails",
     ],
     "lighting": (
-        "dark moody background, cool blue character highlights from crystal glow, "
-        "warm orange torch or fire accents for contrast, high contrast cinematic rim light"
+        "warm orange/amber rim lighting from torches or fire behind characters for contrast, "
+        "cool cyan fill light from the characters' own crystal glow, "
+        "sharp specular highlights on faceted crystal edges, deep shadow in backgrounds"
     ),
     "palette": [
-        "icy blue and white (elementals)",
-        "deep navy and purple/black (backgrounds)",
-        "bronze and gold (armor accents)",
-        "warm orange torchlight (accent lighting)",
+        "icy blue (#5B9FD9 to #7FBAE0) — character bodies",
+        "electric cyan (#00D4FF to #00E5FF) — eye glow and magic effects",
+        "gold/bronze (#D4A574 to #C97A3D) — armor, props, microphone",
+        "deep navy/purple-black (#1A1A2E, #16213E) — backgrounds",
+        "warm amber/orange (#D4794C) — environmental torch lighting",
     ],
     "rules": [
         "NO text, words, letters, or numbers anywhere in the image",
-        "no real people or recognizable WoW characters by name",
+        "characters must be crystalline salt creatures — NOT humans, NOT bears, NOT animals",
+        "3D rendered style — dimensional, faceted, not flat or painted",
         "square composition readable at thumbnail size",
         "dark moody background always present",
-        "always feature salt elementals as the characters",
+        "baby elementals must look like miniature versions of the big elemental",
     ],
 }
 
@@ -346,17 +356,13 @@ async def generate_art_direction(
     if changed:
         await save_config(db, config)
 
-    ai_model = config.get("aiModel", "claude")
-    if ai_model == "claude" and not config.get("claudeApiKey"):
+    # Art direction always uses OpenAI (GPT-4o) — it feeds DALL-E and vision works best in-ecosystem
+    if not config.get("openaiApiKey"):
         return JSONResponse(
             status_code=400,
-            content={"error": "No API key configured for claude"},
+            content={"error": "No API key configured — art direction requires an OpenAI key (GPT-4o)"},
         )
-    if ai_model == "openai" and not config.get("openaiApiKey"):
-        return JSONResponse(
-            status_code=400,
-            content={"error": "No API key configured for openai"},
-        )
+    art_config = {**config, "aiModel": "openai"}
 
     idea, slot = await get_idea_and_slot(db, body.ideaId)
     if idea is None:
@@ -440,7 +446,7 @@ async def generate_art_direction(
 
     try:
         text = await call_ai(
-            system_prompt, user_prompt, config,
+            system_prompt, user_prompt, art_config,
             images=reference_images if reference_images else None,
         )
     except (httpx.HTTPStatusError, httpx.RequestError, ValueError) as e:

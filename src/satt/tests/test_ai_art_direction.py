@@ -35,9 +35,9 @@ def _token() -> str:
 def _fake_config(ai_model: str = "claude") -> dict:
     return {
         "aiModel": ai_model,
-        "claudeApiKey": "sk-ant-test" if ai_model == "claude" else "",
+        "claudeApiKey": "sk-ant-test",
         "claudeModelId": "claude-sonnet-4-5-20250929",
-        "openaiApiKey": "sk-openai-test" if ai_model == "openai" else "",
+        "openaiApiKey": "sk-openai-test",  # always present — art direction always uses OpenAI
         "openaiModelId": "gpt-4o",
         "artStyleBible": {
             "format": "square 1024x1024",
@@ -274,28 +274,10 @@ async def test_generate_art_direction_no_transcript_returns_400(client: AsyncCli
 
 
 @pytest.mark.asyncio
-async def test_generate_art_direction_missing_api_key_returns_400(client: AsyncClient):
+async def test_generate_art_direction_missing_openai_key_returns_400(client: AsyncClient):
+    """Art direction always requires an OpenAI key (GPT-4o), regardless of aiModel setting."""
     app.dependency_overrides[get_db] = _override_get_db
     config = _fake_config("claude")
-    config["claudeApiKey"] = ""
-
-    with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=config)):
-        with patch("satt.routes.ai.save_config", new=AsyncMock()):
-            resp = await client.post(
-                "/api/ai/generate-art-direction",
-                json={"ideaId": "idea-1"},
-                headers={"Authorization": f"Bearer {_token()}"},
-            )
-
-    app.dependency_overrides.clear()
-    assert resp.status_code == 400
-    assert "No API key" in resp.json()["error"]
-
-
-@pytest.mark.asyncio
-async def test_generate_art_direction_missing_openai_key_returns_400(client: AsyncClient):
-    app.dependency_overrides[get_db] = _override_get_db
-    config = _fake_config("openai")
     config["openaiApiKey"] = ""
 
     with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=config)):
