@@ -474,7 +474,7 @@ async def generate_art_direction(
 
     # Upload art direction JSON to Cover Art Drive folder (best-effort)
     cover_art_folder_id = config.get("gdriveFolderCoverArt")
-    if slot and slot.production_file_key and cover_art_folder_id:
+    if cover_art_folder_id and slot and slot.production_file_key:
         try:
             art_json_filename = f"{slot.production_file_key}_artdirection.json"
             art_json_bytes = json.dumps(result, indent=2).encode()
