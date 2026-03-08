@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +19,7 @@ from satt.crud import (
     set_production_file_key,
 )
 from satt.database import get_db
-from satt.gdrive import build_asset_inventory
+from satt.gdrive import build_asset_inventory, fetch_file_content, get_drive_access_token
 
 router = APIRouter()
 
@@ -46,6 +49,46 @@ async def put_production_key(
         if row["slotId"] == slot_id:
             return row
     raise HTTPException(status_code=404, detail=f"Slot {slot_id!r} not found in post-production queue")
+
+
+@router.get("/postproduction/{slot_id}/art-direction")
+async def get_slot_art_direction(
+    slot_id: str,
+    _user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Fetch the stored art direction JSON from Drive for a slot."""
+    queue = await get_postproduction_queue(db)
+    row = next((r for r in queue if r["slotId"] == slot_id), None)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Slot not found")
+
+    inv = row.get("assetInventory") or {}
+    art_dir = inv.get("art_direction", {})
+    file_id = art_dir.get("drive_file_id")
+    if not file_id:
+        raise HTTPException(status_code=404, detail="No art direction file found for this slot")
+
+    settings = get_settings()
+    if not all([
+        settings.google_oauth_client_id,
+        settings.google_oauth_client_secret,
+        settings.google_oauth_refresh_token,
+    ]):
+        raise HTTPException(status_code=400, detail="Google Drive OAuth not configured")
+
+    try:
+        access_token = await get_drive_access_token(
+            settings.google_oauth_client_id,
+            settings.google_oauth_client_secret,
+            settings.google_oauth_refresh_token,
+        )
+        content = await fetch_file_content(access_token, file_id)
+        return json.loads(content)
+    except (httpx.HTTPStatusError, httpx.RequestError) as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch art direction from Drive: {e}")
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"Art direction file is not valid JSON: {e}")
 
 
 def _build_scan_config(settings, db_config: dict) -> dict:

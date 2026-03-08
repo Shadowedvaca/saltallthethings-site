@@ -182,6 +182,26 @@ const PostProd = {
     this.renderTable();
   },
 
+  async openArtDirection(slotId) {
+    this._artDirectionLoading[slotId] = true;
+    this.renderTable();
+    try {
+      const resp = await fetch(this._apiBase + '/postproduction/' + slotId + '/art-direction', {
+        headers: this._headers()
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || ('API error: ' + resp.status));
+      }
+      this._artDirection[slotId] = await resp.json();
+    } catch (err) {
+      Toast.error('Failed to load art direction: ' + err.message);
+    } finally {
+      this._artDirectionLoading[slotId] = false;
+      this.renderTable();
+    }
+  },
+
   async generateEpisodeArt(slotId) {
     const row = this._queue.find(r => r.slotId === slotId);
     if (!row || !row.ideaId) return;
@@ -288,6 +308,7 @@ const PostProd = {
       + '<div class="pp-art-actions">'
       + '<button class="btn btn-secondary btn-sm" onclick="PostProd.copyPrompt(\'' + escHtml(slotId) + '\')">Copy Prompt</button>'
       + this._generateArtButtonHtml(slotId)
+      + '<button class="btn btn-ghost btn-sm" onclick="PostProd.generateArtDirection(\'' + escHtml(slotId) + '\')">Regenerate</button>'
       + '<button class="btn btn-ghost btn-sm pp-art-dismiss" onclick="PostProd.dismissArtDirection(\'' + escHtml(slotId) + '\')">&#x2715; Dismiss</button>'
       + '</div>'
       + '</div>'
@@ -333,15 +354,19 @@ const PostProd = {
 
       const nextClass = row.nextStep === 'complete' ? ' pp-complete' : (row.nextStep === 'set_key' ? ' pp-urgent' : '');
 
-      // Actions cell — show Generate Art Direction when transcript is present with drive_file_id
+      // Actions cell — show Open/Generate Art Direction based on state
       const hasTranscript = inv && inv.transcript_txt && inv.transcript_txt.present && inv.transcript_txt.drive_file_id;
       const canGenerateArt = hasKey && hasTranscript && row.ideaId;
+      const hasSavedDir = inv && inv.art_direction && inv.art_direction.present && inv.art_direction.drive_file_id;
       let actionCell = '<td class="col-actions">';
       if (this._artDirectionLoading[row.slotId]) {
         actionCell += '<span class="pp-art-loading"><svg viewBox="0 0 50 50" style="width:12px;height:12px;display:inline-block;vertical-align:middle;margin-right:4px;"><circle cx="25" cy="25" r="20" fill="none" stroke="currentColor" stroke-width="5" stroke-dasharray="80 40" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" values="0 25 25;360 25 25" dur="0.8s" repeatCount="indefinite"/></circle></svg>Generating...</span>';
+      } else if (this._artDirection[row.slotId]) {
+        // Panel is open — no button needed (Dismiss is in the panel)
+      } else if (hasSavedDir) {
+        actionCell += '<button class="btn btn-ghost btn-sm pp-art-btn" onclick="PostProd.openArtDirection(\'' + escHtml(row.slotId) + '\')">Open Art Direction</button>';
       } else if (canGenerateArt) {
-        const btnLabel = this._artDirection[row.slotId] ? 'Regenerate' : 'Generate Art Direction';
-        actionCell += '<button class="btn btn-ghost btn-sm pp-art-btn" onclick="PostProd.generateArtDirection(\'' + escHtml(row.slotId) + '\')">' + btnLabel + '</button>';
+        actionCell += '<button class="btn btn-ghost btn-sm pp-art-btn" onclick="PostProd.generateArtDirection(\'' + escHtml(row.slotId) + '\')">Generate Art Direction</button>';
       }
       actionCell += '</td>';
 
@@ -355,8 +380,8 @@ const PostProd = {
         + '</td>'
         + '<td class="col-asset">' + rawBadge + '</td>'
         + '<td class="col-asset">' + transcriptBadge + '</td>'
-        + '<td class="col-asset">' + artBadge + '</td>'
         + '<td class="col-asset">' + artDirBadge + '</td>'
+        + '<td class="col-asset">' + artBadge + '</td>'
         + '<td class="col-asset">' + finishedBadge + '</td>'
         + '<td class="col-next' + nextClass + '">' + escHtml(this._nextStepLabel(row.nextStep)) + '</td>'
         + actionCell
