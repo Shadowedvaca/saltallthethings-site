@@ -367,7 +367,7 @@ async def test_generate_art_direction_no_continuity_when_artlog_empty(client: As
     app.dependency_overrides[get_db] = _override_get_db
     captured: list[dict] = []
 
-    async def mock_call_ai(system_prompt, user_prompt, config):
+    async def mock_call_ai(system_prompt, user_prompt, config, images=None):
         captured.append({"system": system_prompt})
         return json.dumps(_VALID_ART_DIRECTION)
 
