@@ -89,7 +89,7 @@ def build_generate_jokes_prompts(
 
 
 def build_generate_art_direction_prompts(
-    config: dict, episode_data: dict
+    config: dict, episode_data: dict, has_reference_images: bool = False
 ) -> tuple[str, str]:
     """Returns (system_prompt, user_prompt) for the generate-art-direction endpoint."""
     style_bible = config.get("artStyleBible") or {}
@@ -111,13 +111,25 @@ def build_generate_art_direction_prompts(
             "- Do NOT repeat the same baby gag as any of the last 3 episodes.\n"
         )
 
+    reference_images_section = ""
+    if has_reference_images:
+        reference_images_section = (
+            "\n\nREFERENCE IMAGES: Visual brand reference images have been attached to this "
+            "request. Study them carefully BEFORE writing the finalImagePrompt. Your "
+            "finalImagePrompt must faithfully capture the specific visual style, character "
+            "designs, color palette, and aesthetic shown in those images. These are the actual "
+            "characters and art style for this podcast — match them precisely. The images "
+            "override any text description when there is a conflict."
+        )
+
     system_prompt = (
         "You are an art director for the Salt All The Things World of Warcraft podcast.\n\n"
         "STYLE BIBLE:\n"
         f"{style_bible_text}\n\n"
         "VISUAL ARCHETYPES:\n"
         f"{archetypes_text}"
-        f"{continuity_section}\n\n"
+        f"{continuity_section}"
+        f"{reference_images_section}\n\n"
         "YOUR TASK:\n"
         "Analyze the episode and produce a complete art direction plan. "
         "Return ONLY valid JSON with EXACTLY this structure (no markdown, no backticks, just pure JSON):\n\n"

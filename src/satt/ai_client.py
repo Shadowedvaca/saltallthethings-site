@@ -12,9 +12,33 @@ import httpx
 from satt.config import get_settings
 
 
-async def call_claude(system_prompt: str, user_prompt: str, config: dict) -> str:
-    """Call Anthropic API. Returns raw text response."""
+async def call_claude(
+    system_prompt: str,
+    user_prompt: str,
+    config: dict,
+    images: list[dict] | None = None,
+) -> str:
+    """Call Anthropic API. Returns raw text response.
+
+    images: optional list of {"data": "<base64>", "mime_type": "image/jpeg"}
+    """
     settings = get_settings()
+
+    if images:
+        content: list | str = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": img["mime_type"],
+                    "data": img["data"],
+                },
+            }
+            for img in images
+        ] + [{"type": "text", "text": user_prompt}]
+    else:
+        content = user_prompt
+
     async with httpx.AsyncClient(timeout=settings.ai_request_timeout) as client:
         resp = await client.post(
             "https://api.anthropic.com/v1/messages",
@@ -27,7 +51,7 @@ async def call_claude(system_prompt: str, user_prompt: str, config: dict) -> str
                 "model": config.get("claudeModelId") or "claude-sonnet-4-5-20250929",
                 "max_tokens": 4096,
                 "system": system_prompt,
-                "messages": [{"role": "user", "content": user_prompt}],
+                "messages": [{"role": "user", "content": content}],
             },
         )
     resp.raise_for_status()
@@ -37,9 +61,32 @@ async def call_claude(system_prompt: str, user_prompt: str, config: dict) -> str
     )
 
 
-async def call_openai(system_prompt: str, user_prompt: str, config: dict) -> str:
-    """Call OpenAI API. Returns raw text response."""
+async def call_openai(
+    system_prompt: str,
+    user_prompt: str,
+    config: dict,
+    images: list[dict] | None = None,
+) -> str:
+    """Call OpenAI API. Returns raw text response.
+
+    images: optional list of {"data": "<base64>", "mime_type": "image/jpeg"}
+    """
     settings = get_settings()
+
+    if images:
+        user_content: list | str = [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{img['mime_type']};base64,{img['data']}",
+                    "detail": "low",
+                },
+            }
+            for img in images
+        ] + [{"type": "text", "text": user_prompt}]
+    else:
+        user_content = user_prompt
+
     async with httpx.AsyncClient(timeout=settings.ai_request_timeout) as client:
         resp = await client.post(
             "https://api.openai.com/v1/chat/completions",
@@ -52,7 +99,7 @@ async def call_openai(system_prompt: str, user_prompt: str, config: dict) -> str
                 "max_tokens": 4096,
                 "messages": [
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
+                    {"role": "user", "content": user_content},
                 ],
                 "temperature": 0.7,
             },
@@ -62,13 +109,18 @@ async def call_openai(system_prompt: str, user_prompt: str, config: dict) -> str
     return data["choices"][0]["message"]["content"] or ""
 
 
-async def call_ai(system_prompt: str, user_prompt: str, config: dict) -> str:
+async def call_ai(
+    system_prompt: str,
+    user_prompt: str,
+    config: dict,
+    images: list[dict] | None = None,
+) -> str:
     """Dispatch to call_claude or call_openai based on config.aiModel."""
     ai_model = config.get("aiModel", "claude")
     if ai_model == "claude":
-        return await call_claude(system_prompt, user_prompt, config)
+        return await call_claude(system_prompt, user_prompt, config, images)
     if ai_model == "openai":
-        return await call_openai(system_prompt, user_prompt, config)
+        return await call_openai(system_prompt, user_prompt, config, images)
     raise ValueError(f"Unknown AI model: {ai_model!r}")
 
 

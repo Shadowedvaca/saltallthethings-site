@@ -16,7 +16,15 @@ from satt.auth import require_auth
 from satt.config import get_settings
 from satt.crud import get_config, get_idea_and_slot, get_jokes, save_config, set_asset_inventory, set_idea_image_file_id
 from satt.database import get_db
-from satt.gdrive import build_asset_inventory, delete_file, fetch_file_content, get_drive_access_token, upload_file_to_folder
+from satt.gdrive import (
+    build_asset_inventory,
+    delete_file,
+    fetch_file_content,
+    fetch_image_as_base64,
+    get_drive_access_token,
+    list_folder_files,
+    upload_file_to_folder,
+)
 from satt.prompts import (
     build_generate_art_direction_prompts,
     build_generate_jokes_prompts,
@@ -183,30 +191,50 @@ async def generate_jokes(
 # Art direction defaults (seeded into satt.config on first use)
 # ---------------------------------------------------------------------------
 
+_ART_STYLE_BIBLE_VERSION = 2
+
 _DEFAULT_ART_STYLE_BIBLE: dict = {
+    "version": _ART_STYLE_BIBLE_VERSION,
     "format": "square 1024x1024",
-    "artStyle": "World of Warcraft inspired fantasy digital painting, painterly, cinematic",
+    "artStyle": (
+        "World of Warcraft inspired fantasy digital painting, painterly, cinematic. "
+        "Think Blizzard cinematic concept art crossed with illustrated podcast branding — "
+        "rich saturated colors, high detail, dramatic lighting."
+    ),
     "characters": {
         "bigElemental": (
-            "large crystalline salt elemental, broad-shouldered and imposing, glowing cyan eyes, "
-            "bronze and gold armor accents, icy blue crystal body with jagged spikes"
+            "LARGE crystalline salt elemental — the main mascot. Imposing and broad-shouldered. "
+            "Body made of jagged icy-blue salt crystals with glowing cyan eyes. "
+            "Wears bronze and gold armor bands and pauldrons. Radiates authority and gravitas."
         ),
         "babyElementals": (
-            "small chibi salt elementals, mischievous and expressive, same material language as "
-            "the big elemental but tiny and comedic"
+            "SMALL chibi salt elementals — mischievous sidekicks. Same crystal material as the "
+            "big elemental but tiny, chibi-proportioned, with oversized expressive faces. "
+            "Always doing something funny or chaotic related to the episode topic."
         ),
     },
-    "props": ["vintage bronze microphone", "salt shaker", "glowing spilled salt"],
+    "props": [
+        "vintage bronze podcast microphone",
+        "glass salt shakers with metal lids",
+        "tipped-over salt shakers pouring glowing magical salt",
+        "glowing spilled salt (treat as magical particles)",
+    ],
     "lighting": (
-        "dark moody background, cool blue character highlights, warm orange torch or fire accents, "
-        "high contrast cinematic rim light"
+        "dark moody background, cool blue character highlights from crystal glow, "
+        "warm orange torch or fire accents for contrast, high contrast cinematic rim light"
     ),
-    "palette": ["icy blue", "navy", "deep purple", "bronze", "gold", "warm orange torchlight"],
+    "palette": [
+        "icy blue and white (elementals)",
+        "deep navy and purple/black (backgrounds)",
+        "bronze and gold (armor accents)",
+        "warm orange torchlight (accent lighting)",
+    ],
     "rules": [
-        "no text or words in image",
-        "no real people",
+        "NO text, words, letters, or numbers anywhere in the image",
+        "no real people or recognizable WoW characters by name",
         "square composition readable at thumbnail size",
         "dark moody background always present",
+        "always feature salt elementals as the characters",
     ],
 }
 
@@ -306,9 +334,10 @@ async def generate_art_direction(
 ) -> JSONResponse:
     config = await get_config(db)
 
-    # Seed art defaults into config on first use
+    # Seed art defaults (or upgrade if version is outdated)
     changed = False
-    if not config.get("artStyleBible"):
+    existing_version = (config.get("artStyleBible") or {}).get("version", 0)
+    if not config.get("artStyleBible") or existing_version < _ART_STYLE_BIBLE_VERSION:
         config["artStyleBible"] = _DEFAULT_ART_STYLE_BIBLE
         changed = True
     if not config.get("artArchetypes"):
@@ -375,10 +404,44 @@ async def generate_art_direction(
         "transcript": transcript_text,
     }
 
-    system_prompt, user_prompt = build_generate_art_direction_prompts(config, episode_data)
+    # Fetch visual reference images from Drive if configured (best-effort)
+    reference_images: list[dict] = []
+    ref_folder_ids = config.get("referenceImageFolderIds") or []
+    ref_file_ids = config.get("referenceImageFileIds") or []
+    if ref_folder_ids or ref_file_ids:
+        try:
+            image_extensions = {"jpg", "jpeg", "png"}
+            for folder_id in ref_folder_ids[:3]:
+                try:
+                    files = await list_folder_files(access_token, folder_id)
+                    img_files = [
+                        f for f in files
+                        if f["name"].rsplit(".", 1)[-1].lower() in image_extensions
+                    ]
+                    for f in img_files[:3]:
+                        b64, mime = await fetch_image_as_base64(access_token, f["id"])
+                        reference_images.append({"data": b64, "mime_type": mime})
+                except Exception:
+                    pass
+            for file_id in ref_file_ids[:4]:
+                try:
+                    b64, mime = await fetch_image_as_base64(access_token, file_id)
+                    reference_images.append({"data": b64, "mime_type": mime})
+                except Exception:
+                    pass
+            reference_images = reference_images[:8]
+        except Exception:
+            reference_images = []
+
+    system_prompt, user_prompt = build_generate_art_direction_prompts(
+        config, episode_data, has_reference_images=bool(reference_images)
+    )
 
     try:
-        text = await call_ai(system_prompt, user_prompt, config)
+        text = await call_ai(
+            system_prompt, user_prompt, config,
+            images=reference_images if reference_images else None,
+        )
     except (httpx.HTTPStatusError, httpx.RequestError, ValueError) as e:
         return JSONResponse(
             status_code=500, content={"error": f"AI API error: {e}"}

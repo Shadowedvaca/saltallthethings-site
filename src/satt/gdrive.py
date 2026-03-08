@@ -8,6 +8,7 @@ expires (or is within 60 seconds of expiry).
 from __future__ import annotations
 
 import asyncio
+import base64
 import json as _json
 import time
 from datetime import datetime, timezone
@@ -94,6 +95,26 @@ def _asset_entry(matches: list[dict]) -> dict:
         "drive_file_id": m["id"],
         "modified": m.get("modifiedTime"),
     }
+
+
+async def fetch_image_as_base64(access_token: str, file_id: str) -> tuple[str, str]:
+    """Download a Drive image file. Returns (base64_data, mime_type)."""
+    async with httpx.AsyncClient(timeout=60) as client:
+        meta = await client.get(
+            f"{_DRIVE_FILES_URL}/{file_id}",
+            params={"fields": "mimeType", "supportsAllDrives": "true"},
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        meta.raise_for_status()
+        mime_type = meta.json().get("mimeType", "image/jpeg")
+
+        resp = await client.get(
+            f"{_DRIVE_FILES_URL}/{file_id}",
+            params={"alt": "media", "supportsAllDrives": "true"},
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        resp.raise_for_status()
+        return base64.b64encode(resp.content).decode(), mime_type
 
 
 async def upload_file_to_folder(

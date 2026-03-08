@@ -131,6 +131,23 @@
           <label>Cover Art Folder ID <span class="label-hint">— .png album art</span></label>
           <input type="text" id="gdriveFolderCoverArt" placeholder="e.g., 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms">
         </div>
+
+        <div style="margin-top: var(--space-lg); padding-top: var(--space-lg); border-top: 1px solid var(--border-subtle);">
+          <h3 style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 6px;">Art Reference Images</h3>
+          <p class="text-sm text-secondary mb-md">When generating art direction, the AI will fetch these images from Drive and study them before writing the DALL-E prompt. This ensures the output matches your brand. Add one folder/file ID per line.</p>
+          <div class="form-group">
+            <label>Reference Image Folder IDs <span class="label-hint">— one per line (Concept Images, Scenes, etc.)</span></label>
+            <textarea id="referenceImageFolderIds" rows="4" placeholder="Paste folder IDs here, one per line&#10;e.g., 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms" style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem;"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Reference Image File IDs <span class="label-hint">— one per line (specific logos, key reference files)</span></label>
+            <textarea id="referenceImageFileIds" rows="3" placeholder="Paste file IDs here, one per line" style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem;"></textarea>
+          </div>
+          <div class="text-sm text-secondary" style="background: var(--bg-surface); padding: 12px; border-radius: 6px; border-left: 3px solid var(--gold-dim);">
+            <strong>How to find a folder or file ID:</strong> Open the folder or file in Google Drive on the web. The ID is the long string in the URL after <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">folders/</code> or <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">file/d/</code>. Up to 3 images per folder and 4 specific files are fetched (8 total max).
+          </div>
+        </div>
+
         <div class="text-sm text-secondary mt-md" style="background: var(--bg-surface); padding: 12px; border-radius: 6px; border-left: 3px solid var(--gold-dim);">
           <strong>OAuth2 credentials</strong> are set server-side in <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">/opt/satt-platform/.env</code> as <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">GOOGLE_OAUTH_CLIENT_ID</code>, <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">GOOGLE_OAUTH_CLIENT_SECRET</code>, and <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">GOOGLE_OAUTH_REFRESH_TOKEN</code>. Run <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">python3 scripts/get_gdrive_token.py</code> locally to generate these values.
         </div>
@@ -257,6 +274,8 @@
       document.getElementById('gdriveFolderFinishedAudio').value = config.gdriveFolderFinishedAudio || '';
       document.getElementById('gdriveFolderTranscripts').value = config.gdriveFolderTranscripts || '';
       document.getElementById('gdriveFolderCoverArt').value = config.gdriveFolderCoverArt || '';
+      document.getElementById('referenceImageFolderIds').value = (config.referenceImageFolderIds || []).join('\n');
+      document.getElementById('referenceImageFileIds').value = (config.referenceImageFileIds || []).join('\n');
       document.getElementById('showContext').value = config.showContext || '';
       document.getElementById('jokeContext').value = config.jokeContext || '';
       renderSegments(config.segments || []);
@@ -264,7 +283,10 @@
     }
 
     function saveConfig() {
-      const config = {
+      // Merge with existing config to preserve server-managed fields
+      // (artStyleBible, artArchetypes, artLog, imageFileId, etc.)
+      const existing = Storage.getConfig();
+      const config = Object.assign({}, existing, {
         aiModel: document.getElementById('aiModel').value,
         claudeApiKey: document.getElementById('claudeApiKey').value,
         claudeModelId: document.getElementById('claudeModelId').value,
@@ -279,10 +301,14 @@
         gdriveFolderFinishedAudio: document.getElementById('gdriveFolderFinishedAudio').value,
         gdriveFolderTranscripts: document.getElementById('gdriveFolderTranscripts').value,
         gdriveFolderCoverArt: document.getElementById('gdriveFolderCoverArt').value,
+        referenceImageFolderIds: document.getElementById('referenceImageFolderIds').value
+          .split('\n').map(function(s) { return s.trim(); }).filter(Boolean),
+        referenceImageFileIds: document.getElementById('referenceImageFileIds').value
+          .split('\n').map(function(s) { return s.trim(); }).filter(Boolean),
         showContext: document.getElementById('showContext').value,
         jokeContext: document.getElementById('jokeContext').value,
         segments: getSegmentsFromDOM()
-      };
+      });
       Storage.saveConfig(config);
       Toast.success('Configuration saved!');
       document.getElementById('saveStatus').textContent = 'Saved ' + new Date().toLocaleTimeString();
