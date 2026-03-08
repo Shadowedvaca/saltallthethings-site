@@ -11,12 +11,12 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from satt.ai_client import call_ai
+from satt.ai_client import call_ai, call_dalle
 from satt.auth import require_auth
 from satt.config import get_settings
-from satt.crud import get_config, get_idea_and_slot, get_jokes, save_config
+from satt.crud import get_config, get_idea_and_slot, get_jokes, save_config, set_asset_inventory, set_idea_image_file_id
 from satt.database import get_db
-from satt.gdrive import fetch_file_content, get_drive_access_token
+from satt.gdrive import build_asset_inventory, delete_file, fetch_file_content, get_drive_access_token, upload_file_to_folder
 from satt.prompts import (
     build_generate_art_direction_prompts,
     build_generate_jokes_prompts,
@@ -409,3 +409,126 @@ async def generate_art_direction(
     await save_config(db, config)
 
     return JSONResponse(content=result)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/ai/generate-episode-art
+# ---------------------------------------------------------------------------
+
+
+class GenerateEpisodeArtRequest(BaseModel):
+    ideaId: str
+    imagePrompt: str
+
+
+@router.post("/ai/generate-episode-art")
+async def generate_episode_art(
+    body: GenerateEpisodeArtRequest,
+    _user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    config = await get_config(db)
+
+    if not config.get("openaiApiKey"):
+        return JSONResponse(
+            status_code=400,
+            content={"error": "No OpenAI API key configured — DALL-E requires an OpenAI key"},
+        )
+
+    idea, slot = await get_idea_and_slot(db, body.ideaId)
+    if idea is None:
+        return JSONResponse(status_code=404, content={"error": "Idea not found"})
+    if not slot or not slot.production_file_key:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "No production file key set on slot — cannot name the art file"},
+        )
+
+    filename = f"{slot.production_file_key}.png"
+
+    # Generate image via DALL-E 3
+    try:
+        png_bytes = await call_dalle(body.imagePrompt, config)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 400:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "OpenAI rejected the prompt — try editing it"},
+            )
+        return JSONResponse(
+            status_code=500, content={"error": f"DALL-E API error: {e}"}
+        )
+    except (httpx.RequestError, ValueError) as e:
+        return JSONResponse(
+            status_code=500, content={"error": f"DALL-E API error: {e}"}
+        )
+
+    # Get Drive access token
+    settings = get_settings()
+    if not all([
+        settings.google_oauth_client_id,
+        settings.google_oauth_client_secret,
+        settings.google_oauth_refresh_token,
+    ]):
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Google Drive OAuth not configured on server."},
+        )
+
+    cover_art_folder_id = config.get("gdriveFolderCoverArt")
+    if not cover_art_folder_id:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Cover art folder not configured — set gdriveFolderCoverArt in Config"},
+        )
+
+    try:
+        access_token = await get_drive_access_token(
+            settings.google_oauth_client_id,
+            settings.google_oauth_client_secret,
+            settings.google_oauth_refresh_token,
+        )
+    except (httpx.HTTPStatusError, httpx.RequestError) as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Failed to get Drive access token: {e}"},
+        )
+
+    # Delete old art file if it exists in asset inventory (regeneration case)
+    inv = (slot.asset_inventory or {}) if slot else {}
+    old_art = inv.get("album_art", {})
+    if old_art.get("drive_file_id"):
+        try:
+            await delete_file(access_token, old_art["drive_file_id"])
+        except (httpx.HTTPStatusError, httpx.RequestError):
+            pass  # best-effort — old file may already be gone
+
+    # Upload new PNG to Cover Art folder
+    try:
+        new_file_id = await upload_file_to_folder(
+            access_token, cover_art_folder_id, filename, png_bytes
+        )
+    except (httpx.HTTPStatusError, httpx.RequestError) as e:
+        return JSONResponse(
+            status_code=500, content={"error": f"Failed to upload to Drive: {e}"}
+        )
+
+    # Persist Drive file ID on the idea
+    await set_idea_image_file_id(db, body.ideaId, new_file_id)
+
+    # Refresh asset inventory for this slot (best-effort)
+    try:
+        scan_config = {
+            **config,
+            "clientId": settings.google_oauth_client_id,
+            "clientSecret": settings.google_oauth_client_secret,
+            "refreshToken": settings.google_oauth_refresh_token,
+        }
+        new_inventory = await build_asset_inventory(
+            slot.id, slot.production_file_key, scan_config
+        )
+        await set_asset_inventory(db, slot.id, new_inventory)
+    except Exception:
+        pass  # inventory refresh is best-effort; the upload succeeded
+
+    return JSONResponse(content={"imageFileId": new_file_id, "filename": filename})

@@ -296,6 +296,15 @@ async def set_asset_inventory(db: AsyncSession, slot_id: str, inventory: dict) -
     await db.flush()
 
 
+async def set_idea_image_file_id(db: AsyncSession, idea_id: str, file_id: str) -> None:
+    await db.execute(
+        update(Idea)
+        .where(Idea.id == idea_id)
+        .values(image_file_id=file_id)
+    )
+    await db.flush()
+
+
 async def get_slots_for_scan(db: AsyncSession) -> list[dict]:
     """Return slots with a past record_date and a non-null production_file_key."""
     today = datetime.now(_PST).date()
@@ -326,6 +335,7 @@ async def get_released_episodes(
             ShowSlot.episode_number,
             Idea.selected_title,
             Idea.summary,
+            Idea.image_file_id,
             effective_date,
         )
         .join(Assignment, Assignment.slot_id == ShowSlot.id)
@@ -351,6 +361,7 @@ async def get_released_episodes(
             "episodeNumber": row.episode_number,
             "title": row.selected_title,
             "summary": row.summary,
+            "imageFileId": row.image_file_id,
             "releaseDate": row.effective_release_date.isoformat(),
         }
         for row in rows

@@ -6,6 +6,7 @@ dependency footprint minimal and consistent with the original JS approach.
 
 from __future__ import annotations
 
+import base64
 import httpx
 
 from satt.config import get_settings
@@ -69,3 +70,28 @@ async def call_ai(system_prompt: str, user_prompt: str, config: dict) -> str:
     if ai_model == "openai":
         return await call_openai(system_prompt, user_prompt, config)
     raise ValueError(f"Unknown AI model: {ai_model!r}")
+
+
+async def call_dalle(prompt: str, config: dict) -> bytes:
+    """Call DALL-E 3 image generation. Returns raw PNG bytes."""
+    settings = get_settings()
+    async with httpx.AsyncClient(timeout=settings.ai_request_timeout) as client:
+        resp = await client.post(
+            "https://api.openai.com/v1/images/generations",
+            headers={
+                "Authorization": f"Bearer {config['openaiApiKey']}",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "dall-e-3",
+                "prompt": prompt,
+                "n": 1,
+                "size": "1024x1024",
+                "quality": "standard",
+                "response_format": "b64_json",
+            },
+        )
+    resp.raise_for_status()
+    data = resp.json()
+    b64 = data["data"][0]["b64_json"]
+    return base64.b64decode(b64)

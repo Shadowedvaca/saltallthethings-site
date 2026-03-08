@@ -11,6 +11,8 @@ const PostProd = {
   _showComplete: false,
   _artDirection: {},
   _artDirectionLoading: {},
+  _imageFileIds: {},
+  _imageLoading: {},
 
   _headers() {
     return {
@@ -26,6 +28,10 @@ const PostProd = {
       });
       if (!resp.ok) throw new Error('API error: ' + resp.status);
       this._queue = await resp.json();
+      // Pre-populate image file IDs from DB so art panels show existing images
+      this._queue.forEach(r => {
+        if (r.imageFileId) this._imageFileIds[r.slotId] = r.imageFileId;
+      });
       this.renderTable();
     } catch (err) {
       Toast.error('Failed to load queue: ' + err.message);
@@ -171,6 +177,48 @@ const PostProd = {
     this.renderTable();
   },
 
+  async generateEpisodeArt(slotId) {
+    const row = this._queue.find(r => r.slotId === slotId);
+    if (!row || !row.ideaId) return;
+
+    const textarea = document.getElementById('pp-prompt-' + slotId);
+    const prompt = textarea ? textarea.value.trim() : '';
+    if (!prompt) { Toast.error('Image prompt is empty — fill in the prompt first.'); return; }
+
+    this._imageLoading[slotId] = true;
+    this.renderTable();
+
+    try {
+      const resp = await fetch(this._apiBase + '/ai/generate-episode-art', {
+        method: 'POST',
+        headers: this._headers(),
+        body: JSON.stringify({ ideaId: row.ideaId, imagePrompt: prompt })
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        const msg = data.error || ('API error: ' + resp.status);
+        if (msg.toLowerCase().includes('rejected')) {
+          Toast.error('OpenAI rejected the prompt — try editing it');
+        } else {
+          Toast.error('Art generation failed: ' + msg);
+        }
+        return;
+      }
+      this._imageFileIds[slotId] = data.imageFileId;
+      // Update queue row imageFileId so badge reflects new state after reload
+      const idx = this._queue.findIndex(r => r.slotId === slotId);
+      if (idx !== -1) this._queue[idx].imageFileId = data.imageFileId;
+      Toast.success('Album art generated and uploaded to Drive.');
+      // Reload queue to refresh asset inventory (Art badge → ok)
+      await this.loadQueue();
+    } catch (err) {
+      Toast.error('Art generation failed: ' + err.message);
+    } finally {
+      this._imageLoading[slotId] = false;
+      this.renderTable();
+    }
+  },
+
   copyPrompt(slotId) {
     const textarea = document.getElementById('pp-prompt-' + slotId);
     if (!textarea) return;
@@ -184,6 +232,28 @@ const PostProd = {
       document.execCommand('copy');
       Toast.success('Prompt copied.');
     }
+  },
+
+  _generateArtButtonHtml(slotId) {
+    if (this._imageLoading[slotId]) {
+      return '<span class="pp-art-gen-loading">'
+        + '<svg viewBox="0 0 50 50" style="width:13px;height:13px;display:inline-block;vertical-align:middle;margin-right:5px;">'
+        + '<circle cx="25" cy="25" r="20" fill="none" stroke="currentColor" stroke-width="5" stroke-dasharray="80 40" stroke-linecap="round">'
+        + '<animateTransform attributeName="transform" type="rotate" values="0 25 25;360 25 25" dur="0.8s" repeatCount="indefinite"/>'
+        + '</circle></svg>Generating...</span>';
+    }
+    const label = this._imageFileIds[slotId] ? 'Regenerate Art' : 'Generate Art';
+    return '<button class="btn btn-primary btn-sm" onclick="PostProd.generateEpisodeArt(\'' + escHtml(slotId) + '\')">' + label + '</button>';
+  },
+
+  _artImagePreviewHtml(slotId) {
+    const fileId = this._imageFileIds[slotId];
+    if (!fileId) return '';
+    const url = 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(fileId) + '&sz=w400';
+    return '<div class="pp-art-preview">'
+      + '<span class="pp-art-label">Generated Album Art</span>'
+      + '<img src="' + url + '" alt="Album art preview" class="pp-art-img" loading="lazy">'
+      + '</div>';
   },
 
   _artDirectionRowHtml(slotId) {
@@ -212,10 +282,11 @@ const PostProd = {
       + '<textarea id="pp-prompt-' + escHtml(slotId) + '" class="pp-art-textarea">' + escHtml(art.finalImagePrompt) + '</textarea>'
       + '<div class="pp-art-actions">'
       + '<button class="btn btn-secondary btn-sm" onclick="PostProd.copyPrompt(\'' + escHtml(slotId) + '\')">Copy Prompt</button>'
-      + '<button class="btn btn-ghost btn-sm" disabled title="Coming in Phase 6">Generate Art</button>'
+      + this._generateArtButtonHtml(slotId)
       + '<button class="btn btn-ghost btn-sm pp-art-dismiss" onclick="PostProd.dismissArtDirection(\'' + escHtml(slotId) + '\')">&#x2715; Dismiss</button>'
       + '</div>'
       + '</div>'
+      + this._artImagePreviewHtml(slotId)
       + '</div>'
       + '</td>'
       + '</tr>';

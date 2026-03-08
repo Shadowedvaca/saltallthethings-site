@@ -8,6 +8,7 @@ expires (or is within 60 seconds of expiry).
 from __future__ import annotations
 
 import asyncio
+import json as _json
 import time
 from datetime import datetime, timezone
 
@@ -93,6 +94,50 @@ def _asset_entry(matches: list[dict]) -> dict:
         "drive_file_id": m["id"],
         "modified": m.get("modifiedTime"),
     }
+
+
+async def upload_file_to_folder(
+    access_token: str,
+    folder_id: str,
+    filename: str,
+    content: bytes,
+    mime_type: str = "image/png",
+) -> str:
+    """Upload a file to a Drive folder using multipart upload. Returns the new file ID."""
+    boundary = "SattDriveBoundary42"
+    metadata = _json.dumps({"name": filename, "parents": [folder_id]}).encode()
+
+    body = (
+        f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n".encode()
+        + metadata
+        + f"\r\n--{boundary}\r\nContent-Type: {mime_type}\r\n\r\n".encode()
+        + content
+        + f"\r\n--{boundary}--".encode()
+    )
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.post(
+            "https://www.googleapis.com/upload/drive/v3/files",
+            params={"uploadType": "multipart", "supportsAllDrives": "true"},
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": f"multipart/related; boundary={boundary}",
+            },
+            content=body,
+        )
+    resp.raise_for_status()
+    return resp.json()["id"]
+
+
+async def delete_file(access_token: str, file_id: str) -> None:
+    """Delete a file from Google Drive."""
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.delete(
+            f"{_DRIVE_FILES_URL}/{file_id}",
+            params={"supportsAllDrives": "true"},
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+    resp.raise_for_status()
 
 
 async def build_asset_inventory(

@@ -14,7 +14,7 @@ from httpx import AsyncClient
 
 from satt.config import get_settings
 from satt.database import get_db
-from satt.gdrive import _asset_entry, _match_files, build_asset_inventory
+from satt.gdrive import _asset_entry, _match_files, build_asset_inventory, delete_file, upload_file_to_folder
 from satt.main import app
 
 
@@ -344,3 +344,87 @@ async def test_list_folder_files_parses_response():
     assert result[1]["name"] == "EP002_Other.wav"
     call_kwargs = mock_client.get.call_args
     assert "folder_id_123" in call_kwargs[1]["params"]["q"]
+
+
+# ---------------------------------------------------------------------------
+# upload_file_to_folder: mocked httpx
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_upload_file_to_folder_sends_multipart_request():
+    fake_file_id = "uploaded-file-id-xyz"
+    png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 20
+
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json = MagicMock(return_value={"id": fake_file_id})
+
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=mock_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("satt.gdrive.httpx.AsyncClient", return_value=mock_client):
+        result = await upload_file_to_folder(
+            access_token="fake-token",
+            folder_id="folder-cover-art",
+            filename="EP042_Test_2026-03-06.png",
+            content=png_bytes,
+        )
+
+    assert result == fake_file_id
+    call_kwargs = mock_client.post.call_args
+    # Verify correct upload endpoint and params
+    assert "upload/drive/v3/files" in call_kwargs[0][0]
+    assert call_kwargs[1]["params"]["uploadType"] == "multipart"
+    assert call_kwargs[1]["params"]["supportsAllDrives"] == "true"
+    # Verify multipart/related content-type header
+    assert "multipart/related" in call_kwargs[1]["headers"]["Content-Type"]
+    # Verify body contains metadata and image bytes
+    body = call_kwargs[1]["content"]
+    assert b"EP042_Test_2026-03-06.png" in body
+    assert b"folder-cover-art" in body
+    assert png_bytes in body
+
+
+@pytest.mark.asyncio
+async def test_upload_file_to_folder_returns_file_id():
+    """Verify the Drive file ID from the response JSON is returned."""
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json = MagicMock(return_value={"id": "specific-id-123", "name": "test.png"})
+
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=mock_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("satt.gdrive.httpx.AsyncClient", return_value=mock_client):
+        result = await upload_file_to_folder("tok", "folder", "file.png", b"data")
+
+    assert result == "specific-id-123"
+
+
+# ---------------------------------------------------------------------------
+# delete_file: mocked httpx
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_delete_file_sends_delete_request():
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.delete = AsyncMock(return_value=mock_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("satt.gdrive.httpx.AsyncClient", return_value=mock_client):
+        await delete_file("fake-token", "file-id-to-delete")
+
+    call_args = mock_client.delete.call_args
+    assert "file-id-to-delete" in call_args[0][0]
+    assert call_args[1]["params"]["supportsAllDrives"] == "true"
+    assert "fake-token" in call_args[1]["headers"]["Authorization"]
