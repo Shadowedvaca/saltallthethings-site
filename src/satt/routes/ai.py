@@ -662,9 +662,22 @@ async def generate_episode_art(
 
     filename = f"{slot.production_file_key}.png"
 
-    # DALL-E 3 has a 4000-character prompt limit — reject clearly rather than truncate
+    # Prepend the saved style description so DALL-E receives the full visual context.
+    # The textarea holds the scene-specific part; the style description is the constant prefix.
     _DALLE_PROMPT_LIMIT = 4000
-    image_prompt = body.imagePrompt
+    scene_prompt = body.imagePrompt
+    style_desc = (config.get("referenceStyleDescription") or "").strip()
+    if style_desc:
+        # Reserve at least 1000 chars for the scene prompt; truncate style if needed
+        max_style = _DALLE_PROMPT_LIMIT - max(len(scene_prompt), 1000)
+        if max_style > 200:
+            style_prefix = style_desc[:max_style].rstrip() + "\n\n"
+        else:
+            style_prefix = ""
+        image_prompt = style_prefix + scene_prompt
+    else:
+        image_prompt = scene_prompt
+
     if len(image_prompt) > _DALLE_PROMPT_LIMIT:
         return JSONResponse(
             status_code=400,
