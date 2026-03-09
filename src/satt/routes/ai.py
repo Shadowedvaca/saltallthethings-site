@@ -597,22 +597,20 @@ async def analyze_reference_style(
         )
 
     system_prompt = (
-        "You are a visual analyst helping calibrate an AI image generation system. "
-        "Describe what you see in these reference images with extreme precision. "
-        "Focus only on visual properties that a text-to-image model needs to reproduce the style."
+        "You are describing a visual brand for an image generation system. "
+        "Write in plain, dense prose — no headers, no bullet points, no markdown. "
+        "Every sentence should be something that directly helps an image model reproduce this style."
     )
     user_prompt = (
-        "These images are the brand art reference for a podcast called Salt All The Things. "
-        "Describe the visual style precisely so a text-to-image model (DALL-E 3) can reproduce it:\n\n"
-        "1. Rendering style (3D render, painterly, cartoon, etc.) — be specific\n"
-        "2. Main characters: exact body shape, material, texture, proportions, face details, colors\n"
-        "3. What the characters are NOT (rule out common misinterpretations)\n"
-        "4. Color palette with specifics\n"
-        "5. Lighting approach\n"
-        "6. Recurring props and how they look\n"
-        "7. Key phrases a DALL-E prompt should always include to get this style right\n\n"
-        "Write this as a dense, practical reference description — not a review. "
-        "Every sentence should help DALL-E produce the right output."
+        "These are reference images for the podcast 'Salt All The Things.' "
+        "Study them carefully and write a single paragraph (no headers, no lists) that captures:\n\n"
+        "- What the characters are made of, how they look, what makes them instantly recognizable\n"
+        "- The exact art style — rendering technique, level of detail, finish\n"
+        "- Color palette and lighting approach\n"
+        "- Recurring props and how they appear\n"
+        "- Anything a model must know to NOT get wrong (common misinterpretations to rule out)\n\n"
+        "Write it the way you'd brief a freelance illustrator in one paragraph — "
+        "specific, practical, zero fluff. This will be injected directly into an AI art direction prompt."
     )
 
     art_config = {**config, "aiModel": "openai"}
