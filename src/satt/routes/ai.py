@@ -22,7 +22,6 @@ from satt.gdrive import (
     fetch_file_content,
     fetch_image_as_base64,
     get_drive_access_token,
-    list_folder_files,
     upload_file_to_folder,
 )
 from satt.prompts import (
@@ -410,35 +409,17 @@ async def generate_art_direction(
         "transcript": transcript_text,
     }
 
-    # Fetch visual reference images from Drive if configured (best-effort)
+    # Fetch reference images in configured order — up to 8 file IDs, sent to the
+    # AI in exactly the order listed in config (best-effort, errors collected)
     reference_images: list[dict] = []
     ref_image_errors: list[str] = []
-    ref_folder_ids = config.get("referenceImageFolderIds") or []
-    ref_file_ids = config.get("referenceImageFileIds") or []
-    if ref_folder_ids or ref_file_ids:
-        image_extensions = {"jpg", "jpeg", "png"}
-        for folder_id in ref_folder_ids[:3]:
-            try:
-                files = await list_folder_files(access_token, folder_id)
-                img_files = [
-                    f for f in files
-                    if f["name"].rsplit(".", 1)[-1].lower() in image_extensions
-                ]
-                for f in img_files[:3]:
-                    try:
-                        b64, mime = await fetch_image_as_base64(access_token, f["id"])
-                        reference_images.append({"data": b64, "mime_type": mime})
-                    except Exception as e:
-                        ref_image_errors.append(f"image {f['name']}: {e}")
-            except Exception as e:
-                ref_image_errors.append(f"folder {folder_id}: {e}")
-        for file_id in ref_file_ids[:4]:
-            try:
-                b64, mime = await fetch_image_as_base64(access_token, file_id)
-                reference_images.append({"data": b64, "mime_type": mime})
-            except Exception as e:
-                ref_image_errors.append(f"file {file_id}: {e}")
-        reference_images = reference_images[:8]
+    ref_file_ids = (config.get("referenceImageFileIds") or [])[:8]
+    for file_id in ref_file_ids:
+        try:
+            b64, mime = await fetch_image_as_base64(access_token, file_id)
+            reference_images.append({"data": b64, "mime_type": mime})
+        except Exception as e:
+            ref_image_errors.append(f"file {file_id}: {e}")
 
     system_prompt, user_prompt = build_generate_art_direction_prompts(
         config, episode_data, has_reference_images=bool(reference_images)
@@ -540,12 +521,11 @@ async def analyze_reference_style(
             content={"error": "No OpenAI API key configured"},
         )
 
-    ref_folder_ids = config.get("referenceImageFolderIds") or []
     ref_file_ids = config.get("referenceImageFileIds") or []
-    if not ref_folder_ids and not ref_file_ids:
+    if not ref_file_ids:
         return JSONResponse(
             status_code=400,
-            content={"error": "No reference image folder or file IDs configured"},
+            content={"error": "No reference image file IDs configured"},
         )
 
     settings = get_settings()
@@ -568,27 +548,14 @@ async def analyze_reference_style(
     except (httpx.HTTPStatusError, httpx.RequestError) as e:
         return JSONResponse(status_code=500, content={"error": f"Failed to get Drive token: {e}"})
 
+    # Fetch reference images in configured order — up to 8, sent in list order
     reference_images: list[dict] = []
-    image_extensions = {"jpg", "jpeg", "png"}
-    for folder_id in ref_folder_ids[:3]:
-        try:
-            files = await list_folder_files(access_token, folder_id)
-            img_files = [f for f in files if f["name"].rsplit(".", 1)[-1].lower() in image_extensions]
-            for f in img_files[:3]:
-                try:
-                    b64, mime = await fetch_image_as_base64(access_token, f["id"])
-                    reference_images.append({"data": b64, "mime_type": mime})
-                except Exception:
-                    pass
-        except Exception:
-            pass
-    for file_id in ref_file_ids[:4]:
+    for file_id in ref_file_ids[:8]:
         try:
             b64, mime = await fetch_image_as_base64(access_token, file_id)
             reference_images.append({"data": b64, "mime_type": mime})
         except Exception:
             pass
-    reference_images = reference_images[:8]
 
     if not reference_images:
         return JSONResponse(
@@ -691,34 +658,16 @@ async def generate_episode_art(
             content={"error": f"Failed to get Drive access token: {e}"},
         )
 
-    # Fetch reference images for style conditioning (best-effort)
+    # Fetch reference images in configured order — up to 8 file IDs, sent to
+    # gpt-image-1 edits endpoint in exactly the order listed in config (best-effort)
     reference_images: list[dict] = []
-    ref_folder_ids = config.get("referenceImageFolderIds") or []
-    ref_file_ids = config.get("referenceImageFileIds") or []
-    if ref_folder_ids or ref_file_ids:
-        image_extensions = {"jpg", "jpeg", "png"}
-        for folder_id in ref_folder_ids[:3]:
-            try:
-                ref_files = await list_folder_files(access_token, folder_id)
-                img_files = [
-                    f for f in ref_files
-                    if f["name"].rsplit(".", 1)[-1].lower() in image_extensions
-                ]
-                for f in img_files[:3]:
-                    try:
-                        b64, mime = await fetch_image_as_base64(access_token, f["id"])
-                        reference_images.append({"data": b64, "mime_type": mime})
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-        for file_id in ref_file_ids[:4]:
-            try:
-                b64, mime = await fetch_image_as_base64(access_token, file_id)
-                reference_images.append({"data": b64, "mime_type": mime})
-            except Exception:
-                pass
-        reference_images = reference_images[:8]
+    ref_file_ids = (config.get("referenceImageFileIds") or [])[:8]
+    for file_id in ref_file_ids:
+        try:
+            b64, mime = await fetch_image_as_base64(access_token, file_id)
+            reference_images.append({"data": b64, "mime_type": mime})
+        except Exception:
+            pass
 
     # Generate image — use edits endpoint with reference conditioning if images available,
     # fall back to generations if not

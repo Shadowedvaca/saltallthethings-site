@@ -134,17 +134,13 @@
 
         <div style="margin-top: var(--space-lg); padding-top: var(--space-lg); border-top: 1px solid var(--border-subtle);">
           <h3 style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 6px;">Art Reference Images</h3>
-          <p class="text-sm text-secondary mb-md">When generating art direction, the AI will fetch these images from Drive and study them before writing the DALL-E prompt. This ensures the output matches your brand. Add one folder/file ID per line.</p>
+          <p class="text-sm text-secondary mb-md">These images are sent to the AI every time art is generated. The model conditions on them to match your visual style — the better your reference set, the more consistent the output. Images are sent in exactly the order listed here, top to bottom. Maximum 8.</p>
           <div class="form-group">
-            <label>Reference Image Folder IDs <span class="label-hint">— one per line (Concept Images, Scenes, etc.)</span></label>
-            <textarea id="referenceImageFolderIds" rows="4" placeholder="Paste folder IDs here, one per line&#10;e.g., 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms" style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem;"></textarea>
-          </div>
-          <div class="form-group">
-            <label>Reference Image File IDs <span class="label-hint">— one per line (specific logos, key reference files)</span></label>
-            <textarea id="referenceImageFileIds" rows="3" placeholder="Paste file IDs here, one per line" style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem;"></textarea>
+            <label>Reference Image File IDs <span class="label-hint">— one per line, sent in this order (max 8)</span></label>
+            <textarea id="referenceImageFileIds" rows="8" placeholder="Paste Drive file IDs here, one per line&#10;Images are sent to the model in this exact order&#10;&#10;e.g., 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms" style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem;"></textarea>
           </div>
           <div class="text-sm text-secondary" style="background: var(--bg-surface); padding: 12px; border-radius: 6px; border-left: 3px solid var(--gold-dim);">
-            <strong>How to find a folder or file ID:</strong> Open the folder or file in Google Drive on the web. The ID is the long string in the URL after <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">folders/</code> or <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">file/d/</code>. Up to 3 images per folder and 4 specific files are fetched (8 total max).
+            <strong>How to find a file ID:</strong> Open the file in Google Drive on the web. The ID is the long string in the URL after <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">file/d/</code>. Put your strongest style anchors first (logo, sprite sheet, best scene examples).
           </div>
 
           <div style="margin-top: var(--space-lg); padding-top: var(--space-lg); border-top: 1px solid var(--border-subtle);">
@@ -292,7 +288,6 @@
       document.getElementById('gdriveFolderFinishedAudio').value = config.gdriveFolderFinishedAudio || '';
       document.getElementById('gdriveFolderTranscripts').value = config.gdriveFolderTranscripts || '';
       document.getElementById('gdriveFolderCoverArt').value = config.gdriveFolderCoverArt || '';
-      document.getElementById('referenceImageFolderIds').value = (config.referenceImageFolderIds || []).join('\n');
       document.getElementById('referenceImageFileIds').value = (config.referenceImageFileIds || []).join('\n');
       document.getElementById('imageGenerationPrefix').value = config.imageGenerationPrefix !== undefined
         ? config.imageGenerationPrefix
@@ -327,8 +322,6 @@
         gdriveFolderFinishedAudio: document.getElementById('gdriveFolderFinishedAudio').value,
         gdriveFolderTranscripts: document.getElementById('gdriveFolderTranscripts').value,
         gdriveFolderCoverArt: document.getElementById('gdriveFolderCoverArt').value,
-        referenceImageFolderIds: document.getElementById('referenceImageFolderIds').value
-          .split('\n').map(function(s) { return s.trim(); }).filter(Boolean),
         referenceImageFileIds: document.getElementById('referenceImageFileIds').value
           .split('\n').map(function(s) { return s.trim(); }).filter(Boolean),
         imageGenerationPrefix: document.getElementById('imageGenerationPrefix').value,
