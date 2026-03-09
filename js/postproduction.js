@@ -209,6 +209,7 @@ const PostProd = {
     const textarea = document.getElementById('pp-prompt-' + slotId);
     const prompt = textarea ? textarea.value.trim() : '';
     if (!prompt) { Toast.error('Image prompt is empty — fill in the prompt first.'); return; }
+    if (prompt.length > 4000) { Toast.error('Prompt is ' + prompt.length + ' chars — trim it under 4000 before generating.'); return; }
 
     this._imageLoading[slotId] = true;
     this.renderTable();
@@ -248,8 +249,9 @@ const PostProd = {
     const ta = document.getElementById('pp-prompt-' + slotId);
     const counter = document.getElementById('pp-prompt-count-' + slotId);
     if (!ta || !counter) return;
-    counter.textContent = ta.value.length + ' chars';
-    counter.style.color = 'var(--text-muted)';
+    const len = ta.value.length;
+    counter.textContent = len + ' / 4000';
+    counter.style.color = len > 4000 ? '#e05c5c' : 'var(--text-muted)';
   },
 
   copyPrompt(slotId) {
@@ -297,6 +299,9 @@ const PostProd = {
     const topicsText = art.topics.join(', ');
     const propsText = art.props.join(', ');
 
+    const styleDesc = (Storage.getConfig().referenceStyleDescription || '').trim();
+    const fullPrompt = styleDesc ? styleDesc + '\n\n' + art.finalImagePrompt : art.finalImagePrompt;
+
     return '<tr class="pp-art-row">'
       + '<td colspan="11" class="pp-art-cell">'
       + '<div class="pp-art-panel">'
@@ -312,10 +317,10 @@ const PostProd = {
       + '</div>'
       + '<div class="pp-art-prompt-wrap">'
       + '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;">'
-      + '<span class="pp-art-label" style="margin-bottom:0">Scene Prompt <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-muted);font-size:0.72rem;">(editable — style description prepended automatically by server)</span></span>'
-      + '<span id="pp-prompt-count-' + escHtml(slotId) + '" style="font-size:0.72rem;color:var(--text-muted);">' + art.finalImagePrompt.length + ' chars</span>'
+      + '<span class="pp-art-label" style="margin-bottom:0">Final Image Prompt (editable)</span>'
+      + '<span id="pp-prompt-count-' + escHtml(slotId) + '" style="font-size:0.72rem;color:var(--text-muted);">' + fullPrompt.length + ' / 4000</span>'
       + '</div>'
-      + '<textarea id="pp-prompt-' + escHtml(slotId) + '" class="pp-art-textarea" oninput="PostProd._updatePromptCount(\'' + escHtml(slotId) + '\')">' + escHtml(art.finalImagePrompt) + '</textarea>'
+      + '<textarea id="pp-prompt-' + escHtml(slotId) + '" class="pp-art-textarea" oninput="PostProd._updatePromptCount(\'' + escHtml(slotId) + '\')">' + escHtml(fullPrompt) + '</textarea>'
       + '<div class="pp-art-actions">'
       + '<button class="btn btn-secondary btn-sm" onclick="PostProd.copyPrompt(\'' + escHtml(slotId) + '\')">Copy Prompt</button>'
       + this._generateArtButtonHtml(slotId)
