@@ -1,6 +1,6 @@
 """Tests for POST /api/ai/generate-episode-art.
 
-All httpx, DALL-E, and Drive calls are mocked — no real network calls.
+All httpx, gpt-image-1, and Drive calls are mocked — no real network calls.
 """
 
 from __future__ import annotations
@@ -108,7 +108,7 @@ async def test_generate_episode_art_success(client: AsyncClient):
 
     with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=_fake_config())):
         with patch("satt.routes.ai.get_idea_and_slot", new=AsyncMock(return_value=(_FakeIdea(), _FakeSlot()))):
-            with patch("satt.routes.ai.call_dalle", new=AsyncMock(return_value=_FAKE_PNG)):
+            with patch("satt.routes.ai.call_gpt_image_1", new=AsyncMock(return_value=_FAKE_PNG)):
                 with patch("satt.routes.ai.get_settings", return_value=_fake_settings()):
                     with patch("satt.routes.ai.get_drive_access_token", new=AsyncMock(return_value="fake-token")):
                         with patch("satt.routes.ai.delete_file", new=AsyncMock()):
@@ -142,7 +142,7 @@ async def test_generate_episode_art_saves_image_file_id(client: AsyncClient):
 
     with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=_fake_config())):
         with patch("satt.routes.ai.get_idea_and_slot", new=AsyncMock(return_value=(_FakeIdea(), _FakeSlot()))):
-            with patch("satt.routes.ai.call_dalle", new=AsyncMock(return_value=_FAKE_PNG)):
+            with patch("satt.routes.ai.call_gpt_image_1", new=AsyncMock(return_value=_FAKE_PNG)):
                 with patch("satt.routes.ai.get_settings", return_value=_fake_settings()):
                     with patch("satt.routes.ai.get_drive_access_token", new=AsyncMock(return_value="fake-token")):
                         with patch("satt.routes.ai.delete_file", new=AsyncMock()):
@@ -173,7 +173,7 @@ async def test_generate_episode_art_deletes_old_file_on_regeneration(client: Asy
 
     with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=_fake_config())):
         with patch("satt.routes.ai.get_idea_and_slot", new=AsyncMock(return_value=(_FakeIdea(), _FakeSlotWithExistingArt()))):
-            with patch("satt.routes.ai.call_dalle", new=AsyncMock(return_value=_FAKE_PNG)):
+            with patch("satt.routes.ai.call_gpt_image_1", new=AsyncMock(return_value=_FAKE_PNG)):
                 with patch("satt.routes.ai.get_settings", return_value=_fake_settings()):
                     with patch("satt.routes.ai.get_drive_access_token", new=AsyncMock(return_value="fake-token")):
                         with patch("satt.routes.ai.delete_file", new=capture_delete):
@@ -203,7 +203,7 @@ async def test_generate_episode_art_asset_inventory_updated(client: AsyncClient)
 
     with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=_fake_config())):
         with patch("satt.routes.ai.get_idea_and_slot", new=AsyncMock(return_value=(_FakeIdea(), _FakeSlot()))):
-            with patch("satt.routes.ai.call_dalle", new=AsyncMock(return_value=_FAKE_PNG)):
+            with patch("satt.routes.ai.call_gpt_image_1", new=AsyncMock(return_value=_FAKE_PNG)):
                 with patch("satt.routes.ai.get_settings", return_value=_fake_settings()):
                     with patch("satt.routes.ai.get_drive_access_token", new=AsyncMock(return_value="fake-token")):
                         with patch("satt.routes.ai.delete_file", new=AsyncMock()):
@@ -265,21 +265,26 @@ async def test_generate_episode_art_no_production_key_returns_400(client: AsyncC
 
 @pytest.mark.asyncio
 async def test_generate_episode_art_content_policy_returns_400(client: AsyncClient):
-    """DALL-E 400 (content policy) should surface as a specific 400 with clear message."""
+    """gpt-image-1 400 (content policy) should surface as a 400 with clear message."""
     app.dependency_overrides[get_db] = _override_get_db
 
     policy_response = MagicMock()
     policy_response.status_code = 400
+    policy_response.json.return_value = {
+        "error": {"message": "Your request was rejected due to content policy violations."}
+    }
     policy_error = httpx.HTTPStatusError("content policy", request=MagicMock(), response=policy_response)
 
     with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=_fake_config())):
         with patch("satt.routes.ai.get_idea_and_slot", new=AsyncMock(return_value=(_FakeIdea(), _FakeSlot()))):
-            with patch("satt.routes.ai.call_dalle", new=AsyncMock(side_effect=policy_error)):
-                resp = await client.post(
-                    "/api/ai/generate-episode-art",
-                    json={"ideaId": "idea-1", "imagePrompt": "Offensive prompt."},
-                    headers=_auth_headers(),
-                )
+            with patch("satt.routes.ai.call_gpt_image_1", new=AsyncMock(side_effect=policy_error)):
+                with patch("satt.routes.ai.get_settings", return_value=_fake_settings()):
+                    with patch("satt.routes.ai.get_drive_access_token", new=AsyncMock(return_value="fake-token")):
+                        resp = await client.post(
+                            "/api/ai/generate-episode-art",
+                            json={"ideaId": "idea-1", "imagePrompt": "Offensive prompt."},
+                            headers=_auth_headers(),
+                        )
 
     app.dependency_overrides.clear()
     assert resp.status_code == 400
