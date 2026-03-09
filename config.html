@@ -151,6 +151,10 @@
             <h3 style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 6px;">Visual Style Analysis</h3>
             <p class="text-sm text-secondary mb-md">Run this once after adding your reference images. GPT-4o will study them and save a detailed style description that gets injected into every future art direction prompt — more reliable than re-analyzing images each time.</p>
             <button class="btn btn-secondary" id="analyzeStyleBtn" onclick="analyzeReferenceStyle()">Analyze Reference Images</button>
+            <div style="margin-top: var(--space-md);">
+              <label class="form-label">Image Generation Prefix <span class="label-hint">— prepended to every image prompt</span></label>
+              <input type="text" id="imageGenerationPrefix" value="Same art style and characters as previous Salt All The Things artwork." style="font-family: 'JetBrains Mono', monospace; font-size: 0.78rem;">
+            </div>
             <div id="styleDescriptionWrap" style="display:none; margin-top: var(--space-md);">
               <label class="form-label">Saved Style Description <span class="label-hint">— auto-injected into art direction prompts</span></label>
               <textarea id="referenceStyleDescription" rows="12" style="font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; line-height: 1.5;"></textarea>
@@ -290,6 +294,9 @@
       document.getElementById('gdriveFolderCoverArt').value = config.gdriveFolderCoverArt || '';
       document.getElementById('referenceImageFolderIds').value = (config.referenceImageFolderIds || []).join('\n');
       document.getElementById('referenceImageFileIds').value = (config.referenceImageFileIds || []).join('\n');
+      document.getElementById('imageGenerationPrefix').value = config.imageGenerationPrefix !== undefined
+        ? config.imageGenerationPrefix
+        : 'Same art style and characters as previous Salt All The Things artwork.';
       const savedDesc = config.referenceStyleDescription || '';
       if (savedDesc) {
         document.getElementById('referenceStyleDescription').value = savedDesc;
@@ -324,6 +331,7 @@
           .split('\n').map(function(s) { return s.trim(); }).filter(Boolean),
         referenceImageFileIds: document.getElementById('referenceImageFileIds').value
           .split('\n').map(function(s) { return s.trim(); }).filter(Boolean),
+        imageGenerationPrefix: document.getElementById('imageGenerationPrefix').value,
         showContext: document.getElementById('showContext').value,
         jokeContext: document.getElementById('jokeContext').value,
         segments: getSegmentsFromDOM()
