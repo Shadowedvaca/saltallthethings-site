@@ -345,7 +345,7 @@
         document.getElementById('referenceStyleDescription').value = data.description;
         document.getElementById('styleDescriptionWrap').style.display = 'block';
         // Reload config from server so the saved description is in Storage
-        await Storage.loadFromServer();
+        await Storage.init();
         Toast.success('Style analysis saved — ' + data.imagesAnalyzed + ' image(s) analyzed.');
       } catch (err) {
         Toast.error('Analysis failed: ' + err.message);
@@ -360,7 +360,7 @@
       const existing = Storage.getConfig();
       delete existing.referenceStyleDescription;
       Storage.saveConfig(existing);
-      await Storage.loadFromServer();
+      await Storage.init();
       document.getElementById('referenceStyleDescription').value = '';
       document.getElementById('styleDescriptionWrap').style.display = 'none';
       Toast.success('Style description cleared.');
