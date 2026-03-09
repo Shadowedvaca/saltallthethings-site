@@ -145,6 +145,7 @@ async def call_gpt_image_1(prompt: str, config: dict) -> bytes:
                 "n": 1,
                 "size": "1024x1024",
                 "quality": "medium",
+                "response_format": "b64_json",
             },
         )
     resp.raise_for_status()
