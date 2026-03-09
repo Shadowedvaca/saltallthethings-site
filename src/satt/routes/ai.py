@@ -692,8 +692,10 @@ async def generate_episode_art(
         )
 
     # Generate image via gpt-image-1
+    continuity_prefix = "Same art style and characters as previous Salt All The Things artwork. "
+    final_prompt = continuity_prefix + body.imagePrompt
     try:
-        png_bytes = await call_gpt_image_1(body.imagePrompt, config)
+        png_bytes = await call_gpt_image_1(final_prompt, config)
     except httpx.HTTPStatusError as e:
         try:
             openai_error = e.response.json()
