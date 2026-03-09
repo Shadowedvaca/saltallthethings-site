@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from satt.ai_client import call_ai, call_dalle
+from satt.ai_client import call_ai, call_dalle, call_gpt_image_1
 from satt.auth import require_auth
 from satt.config import get_settings
 from satt.crud import get_config, get_idea_and_slot, get_jokes, save_config, set_asset_inventory, set_idea_image_file_id
@@ -662,49 +662,7 @@ async def generate_episode_art(
 
     filename = f"{slot.production_file_key}.png"
 
-    # The textarea contains the full prompt (style description + scene), send it as-is
-    _DALLE_PROMPT_LIMIT = 4000
-    image_prompt = body.imagePrompt
-    if len(image_prompt) > _DALLE_PROMPT_LIMIT:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error": (
-                    f"Image prompt is {len(image_prompt)} characters — "
-                    f"DALL-E 3 limit is {_DALLE_PROMPT_LIMIT}. "
-                    "Edit the prompt down before generating."
-                )
-            },
-        )
-
-    # Generate image via DALL-E 3 (retry once on transient 500)
-    png_bytes: bytes | None = None
-    last_error: Exception | None = None
-    for attempt in range(2):
-        try:
-            png_bytes = await call_dalle(image_prompt, config)
-            break
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 400:
-                return JSONResponse(
-                    status_code=400,
-                    content={"error": "OpenAI rejected the prompt — try editing it"},
-                )
-            last_error = e
-            if attempt == 0:
-                continue  # retry once on 5xx
-            return JSONResponse(
-                status_code=500,
-                content={"error": f"DALL-E API error after retry: {e}"},
-            )
-        except (httpx.RequestError, ValueError) as e:
-            return JSONResponse(
-                status_code=500, content={"error": f"DALL-E API error: {e}"}
-            )
-    if png_bytes is None:
-        return JSONResponse(status_code=500, content={"error": f"DALL-E API error: {last_error}"})
-
-    # Get Drive access token
+    # Get Drive access token (needed for both reference images and upload)
     settings = get_settings()
     if not all([
         settings.google_oauth_client_id,
@@ -734,6 +692,48 @@ async def generate_episode_art(
             status_code=500,
             content={"error": f"Failed to get Drive access token: {e}"},
         )
+
+    # Fetch reference images from Drive (best-effort — generation still proceeds without them)
+    reference_images: list[dict] = []
+    ref_folder_ids = config.get("referenceImageFolderIds") or []
+    ref_file_ids = config.get("referenceImageFileIds") or []
+    image_extensions = {"jpg", "jpeg", "png"}
+    for folder_id in ref_folder_ids[:3]:
+        try:
+            files = await list_folder_files(access_token, folder_id)
+            img_files = [f for f in files if f["name"].rsplit(".", 1)[-1].lower() in image_extensions]
+            for f in img_files[:3]:
+                try:
+                    b64, mime = await fetch_image_as_base64(access_token, f["id"])
+                    reference_images.append({"data": b64, "mime_type": mime})
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    for file_id in ref_file_ids[:4]:
+        try:
+            b64, mime = await fetch_image_as_base64(access_token, file_id)
+            reference_images.append({"data": b64, "mime_type": mime})
+        except Exception:
+            pass
+    reference_images = reference_images[:8]
+
+    # Generate image via gpt-image-1 (reference images + scene prompt)
+    try:
+        png_bytes = await call_gpt_image_1(
+            body.imagePrompt,
+            config,
+            images=reference_images if reference_images else None,
+        )
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 400:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "OpenAI rejected the prompt — try editing it"},
+            )
+        return JSONResponse(status_code=500, content={"error": f"Image generation error: {e}"})
+    except (httpx.RequestError, ValueError) as e:
+        return JSONResponse(status_code=500, content={"error": f"Image generation error: {e}"})
 
     # Delete old art file if it exists in asset inventory (regeneration case)
     inv = (slot.asset_inventory or {}) if slot else {}

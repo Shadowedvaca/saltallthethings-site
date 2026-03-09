@@ -124,6 +124,52 @@ async def call_ai(
     raise ValueError(f"Unknown AI model: {ai_model!r}")
 
 
+async def call_gpt_image_1(
+    prompt: str,
+    config: dict,
+    images: list[dict] | None = None,
+) -> bytes:
+    """Call gpt-image-1 via the Responses API. Accepts optional reference images.
+
+    images: optional list of {"data": "<base64>", "mime_type": "image/jpeg"}
+    Returns raw PNG bytes.
+    """
+    settings = get_settings()
+
+    content: list = []
+    if images:
+        for img in images:
+            content.append({
+                "type": "input_image",
+                "image_url": f"data:{img['mime_type']};base64,{img['data']}",
+            })
+    content.append({"type": "input_text", "text": prompt})
+
+    async with httpx.AsyncClient(timeout=settings.ai_request_timeout) as client:
+        resp = await client.post(
+            "https://api.openai.com/v1/responses",
+            headers={
+                "Authorization": f"Bearer {config['openaiApiKey']}",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "gpt-image-1",
+                "input": [{"role": "user", "content": content}],
+                "output": [{"type": "image_generation_call", "size": "1024x1024", "quality": "medium"}],
+            },
+        )
+    resp.raise_for_status()
+    data = resp.json()
+
+    for output_item in data.get("output", []):
+        if output_item.get("type") == "image_generation_call":
+            b64 = output_item.get("result") or output_item.get("image", {}).get("data", "")
+            if b64:
+                return base64.b64decode(b64)
+
+    raise ValueError(f"No image found in gpt-image-1 response: {data}")
+
+
 async def call_dalle(prompt: str, config: dict) -> bytes:
     """Call DALL-E 3 image generation. Returns raw PNG bytes."""
     settings = get_settings()
