@@ -209,6 +209,7 @@ const PostProd = {
     const textarea = document.getElementById('pp-prompt-' + slotId);
     const prompt = textarea ? textarea.value.trim() : '';
     if (!prompt) { Toast.error('Image prompt is empty — fill in the prompt first.'); return; }
+    if (prompt.length > 4000) { Toast.error('Prompt is ' + prompt.length + ' chars — trim it under 4000 before generating.'); return; }
 
     this._imageLoading[slotId] = true;
     this.renderTable();

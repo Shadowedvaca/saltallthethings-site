@@ -161,6 +161,8 @@ def build_generate_art_direction_prompts(
         "6. Environment details\n"
         "7. Lighting from style bible\n"
         "8. All rules from style bible (no text in image, no real people, etc.)\n\n"
+        "CRITICAL: finalImagePrompt MUST be under 3800 characters. Be concise — "
+        "dense specific description beats verbose repetition. Summarize rules rather than quoting them verbatim.\n\n"
         "Return ONLY valid JSON. No explanation, no markdown fences, no preamble."
     )
 

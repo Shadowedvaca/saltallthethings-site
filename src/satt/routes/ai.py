@@ -552,11 +552,20 @@ async def generate_episode_art(
 
     filename = f"{slot.production_file_key}.png"
 
-    # DALL-E 3 has a 4000-character prompt limit — enforce it before sending
+    # DALL-E 3 has a 4000-character prompt limit — reject clearly rather than truncate
     _DALLE_PROMPT_LIMIT = 4000
     image_prompt = body.imagePrompt
     if len(image_prompt) > _DALLE_PROMPT_LIMIT:
-        image_prompt = image_prompt[:_DALLE_PROMPT_LIMIT]
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": (
+                    f"Image prompt is {len(image_prompt)} characters — "
+                    f"DALL-E 3 limit is {_DALLE_PROMPT_LIMIT}. "
+                    "Edit the prompt down before generating."
+                )
+            },
+        )
 
     # Generate image via DALL-E 3 (retry once on transient 500)
     png_bytes: bytes | None = None
