@@ -146,6 +146,17 @@
           <div class="text-sm text-secondary" style="background: var(--bg-surface); padding: 12px; border-radius: 6px; border-left: 3px solid var(--gold-dim);">
             <strong>How to find a folder or file ID:</strong> Open the folder or file in Google Drive on the web. The ID is the long string in the URL after <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">folders/</code> or <code style="background: var(--bg-deep); padding: 2px 6px; border-radius: 3px;">file/d/</code>. Up to 3 images per folder and 4 specific files are fetched (8 total max).
           </div>
+
+          <div style="margin-top: var(--space-lg); padding-top: var(--space-lg); border-top: 1px solid var(--border-subtle);">
+            <h3 style="font-size: 0.95rem; color: var(--text-secondary); margin-bottom: 6px;">Visual Style Analysis</h3>
+            <p class="text-sm text-secondary mb-md">Run this once after adding your reference images. GPT-4o will study them and save a detailed style description that gets injected into every future art direction prompt — more reliable than re-analyzing images each time.</p>
+            <button class="btn btn-secondary" id="analyzeStyleBtn" onclick="analyzeReferenceStyle()">Analyze Reference Images</button>
+            <div id="styleDescriptionWrap" style="display:none; margin-top: var(--space-md);">
+              <label class="form-label">Saved Style Description <span class="label-hint">— auto-injected into art direction prompts</span></label>
+              <textarea id="referenceStyleDescription" rows="12" readonly style="font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; line-height: 1.5; background: var(--bg-base); color: var(--text-secondary);"></textarea>
+              <button class="btn btn-ghost btn-sm" style="margin-top: 6px;" onclick="clearStyleDescription()">Clear Saved Description</button>
+            </div>
+          </div>
         </div>
 
         <div class="text-sm text-secondary mt-md" style="background: var(--bg-surface); padding: 12px; border-radius: 6px; border-left: 3px solid var(--gold-dim);">
@@ -276,6 +287,11 @@
       document.getElementById('gdriveFolderCoverArt').value = config.gdriveFolderCoverArt || '';
       document.getElementById('referenceImageFolderIds').value = (config.referenceImageFolderIds || []).join('\n');
       document.getElementById('referenceImageFileIds').value = (config.referenceImageFileIds || []).join('\n');
+      const savedDesc = config.referenceStyleDescription || '';
+      if (savedDesc) {
+        document.getElementById('referenceStyleDescription').value = savedDesc;
+        document.getElementById('styleDescriptionWrap').style.display = 'block';
+      }
       document.getElementById('showContext').value = config.showContext || '';
       document.getElementById('jokeContext').value = config.jokeContext || '';
       renderSegments(config.segments || []);
@@ -312,6 +328,42 @@
       Storage.saveConfig(config);
       Toast.success('Configuration saved!');
       document.getElementById('saveStatus').textContent = 'Saved ' + new Date().toLocaleTimeString();
+    }
+
+    async function analyzeReferenceStyle() {
+      const btn = document.getElementById('analyzeStyleBtn');
+      btn.disabled = true;
+      btn.textContent = 'Analyzing...';
+      try {
+        const token = Auth.getToken();
+        const resp = await fetch('https://saltallthethings.com/api/ai/analyze-reference-style', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }
+        });
+        const data = await resp.json();
+        if (!resp.ok) { Toast.error(data.error || 'Analysis failed'); return; }
+        document.getElementById('referenceStyleDescription').value = data.description;
+        document.getElementById('styleDescriptionWrap').style.display = 'block';
+        // Reload config from server so the saved description is in Storage
+        await Storage.loadFromServer();
+        Toast.success('Style analysis saved — ' + data.imagesAnalyzed + ' image(s) analyzed.');
+      } catch (err) {
+        Toast.error('Analysis failed: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Analyze Reference Images';
+      }
+    }
+
+    async function clearStyleDescription() {
+      if (!confirm('Clear the saved style description? Art direction will fall back to the style bible text only.')) return;
+      const existing = Storage.getConfig();
+      delete existing.referenceStyleDescription;
+      Storage.saveConfig(existing);
+      await Storage.loadFromServer();
+      document.getElementById('referenceStyleDescription').value = '';
+      document.getElementById('styleDescriptionWrap').style.display = 'none';
+      Toast.success('Style description cleared.');
     }
 
     function toggleProviderSettings() {

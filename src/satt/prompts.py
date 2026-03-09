@@ -111,15 +111,23 @@ def build_generate_art_direction_prompts(
             "- Do NOT repeat the same baby gag as any of the last 3 episodes.\n"
         )
 
+    reference_style_desc = config.get("referenceStyleDescription") or ""
+
     reference_images_section = ""
     if has_reference_images:
         reference_images_section = (
-            "\n\nREFERENCE IMAGES: Visual brand reference images have been attached to this "
-            "request. Study them carefully BEFORE writing the finalImagePrompt. Your "
-            "finalImagePrompt must faithfully capture the specific visual style, character "
-            "designs, color palette, and aesthetic shown in those images. These are the actual "
-            "characters and art style for this podcast — match them precisely. The images "
-            "override any text description when there is a conflict."
+            "\n\nREFERENCE IMAGES: Visual brand reference images have been attached. "
+            "Study them carefully. The images show the EXACT character designs, rendering style, "
+            "and aesthetic that ALL generated art must match. These override any text description. "
+            "Your finalImagePrompt must describe what you see in these images precisely enough "
+            "for DALL-E to reproduce the same style."
+        )
+
+    reference_style_section = ""
+    if reference_style_desc:
+        reference_style_section = (
+            "\n\nVISUAL STYLE ANALYSIS (from reference images — treat as ground truth):\n"
+            f"{reference_style_desc}"
         )
 
     system_prompt = (
@@ -128,6 +136,7 @@ def build_generate_art_direction_prompts(
         f"{style_bible_text}\n\n"
         "VISUAL ARCHETYPES:\n"
         f"{archetypes_text}"
+        f"{reference_style_section}"
         f"{continuity_section}"
         f"{reference_images_section}\n\n"
         "YOUR TASK:\n"

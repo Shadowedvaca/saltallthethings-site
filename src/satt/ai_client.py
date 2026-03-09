@@ -79,7 +79,7 @@ async def call_openai(
                 "type": "image_url",
                 "image_url": {
                     "url": f"data:{img['mime_type']};base64,{img['data']}",
-                    "detail": "low",
+                    "detail": "high",
                 },
             }
             for img in images

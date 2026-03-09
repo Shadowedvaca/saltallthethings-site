@@ -518,6 +518,116 @@ async def generate_art_direction(
 
 
 # ---------------------------------------------------------------------------
+# POST /api/ai/analyze-reference-style
+# ---------------------------------------------------------------------------
+
+
+@router.post("/ai/analyze-reference-style")
+async def analyze_reference_style(
+    _user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Ask GPT-4o to describe the visual style of the reference images and save to config.
+
+    The saved description is injected into every future art direction prompt as ground truth,
+    so GPT-4o doesn't have to rediscover the style from images each time.
+    """
+    config = await get_config(db)
+
+    if not config.get("openaiApiKey"):
+        return JSONResponse(
+            status_code=400,
+            content={"error": "No OpenAI API key configured"},
+        )
+
+    ref_folder_ids = config.get("referenceImageFolderIds") or []
+    ref_file_ids = config.get("referenceImageFileIds") or []
+    if not ref_folder_ids and not ref_file_ids:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "No reference image folder or file IDs configured"},
+        )
+
+    settings = get_settings()
+    if not all([
+        settings.google_oauth_client_id,
+        settings.google_oauth_client_secret,
+        settings.google_oauth_refresh_token,
+    ]):
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Google Drive OAuth not configured on server."},
+        )
+
+    try:
+        access_token = await get_drive_access_token(
+            settings.google_oauth_client_id,
+            settings.google_oauth_client_secret,
+            settings.google_oauth_refresh_token,
+        )
+    except (httpx.HTTPStatusError, httpx.RequestError) as e:
+        return JSONResponse(status_code=500, content={"error": f"Failed to get Drive token: {e}"})
+
+    reference_images: list[dict] = []
+    image_extensions = {"jpg", "jpeg", "png"}
+    for folder_id in ref_folder_ids[:3]:
+        try:
+            files = await list_folder_files(access_token, folder_id)
+            img_files = [f for f in files if f["name"].rsplit(".", 1)[-1].lower() in image_extensions]
+            for f in img_files[:3]:
+                try:
+                    b64, mime = await fetch_image_as_base64(access_token, f["id"])
+                    reference_images.append({"data": b64, "mime_type": mime})
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    for file_id in ref_file_ids[:4]:
+        try:
+            b64, mime = await fetch_image_as_base64(access_token, file_id)
+            reference_images.append({"data": b64, "mime_type": mime})
+        except Exception:
+            pass
+    reference_images = reference_images[:8]
+
+    if not reference_images:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "No reference images could be loaded from the configured IDs"},
+        )
+
+    system_prompt = (
+        "You are a visual analyst helping calibrate an AI image generation system. "
+        "Describe what you see in these reference images with extreme precision. "
+        "Focus only on visual properties that a text-to-image model needs to reproduce the style."
+    )
+    user_prompt = (
+        "These images are the brand art reference for a podcast called Salt All The Things. "
+        "Describe the visual style precisely so a text-to-image model (DALL-E 3) can reproduce it:\n\n"
+        "1. Rendering style (3D render, painterly, cartoon, etc.) — be specific\n"
+        "2. Main characters: exact body shape, material, texture, proportions, face details, colors\n"
+        "3. What the characters are NOT (rule out common misinterpretations)\n"
+        "4. Color palette with specifics\n"
+        "5. Lighting approach\n"
+        "6. Recurring props and how they look\n"
+        "7. Key phrases a DALL-E prompt should always include to get this style right\n\n"
+        "Write this as a dense, practical reference description — not a review. "
+        "Every sentence should help DALL-E produce the right output."
+    )
+
+    art_config = {**config, "aiModel": "openai"}
+    try:
+        description = await call_ai(system_prompt, user_prompt, art_config, images=reference_images)
+    except (httpx.HTTPStatusError, httpx.RequestError, ValueError) as e:
+        return JSONResponse(status_code=500, content={"error": f"AI API error: {e}"})
+
+    config["referenceStyleDescription"] = description
+    await save_config(db, config)
+
+    return JSONResponse(content={"description": description, "imagesAnalyzed": len(reference_images)})
+
+
+# ---------------------------------------------------------------------------
 # POST /api/ai/generate-episode-art
 # ---------------------------------------------------------------------------
 
