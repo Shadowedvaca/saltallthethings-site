@@ -144,7 +144,7 @@ async def call_gpt_image_1_edits(
         img_bytes = base64.b64decode(img["data"])
         mime = img["mime_type"]
         ext = mime.split("/")[-1] if "/" in mime else "png"
-        files.append(("image", (f"reference_{i}.{ext}", img_bytes, mime)))
+        files.append(("image[]", (f"reference_{i}.{ext}", img_bytes, mime)))
 
     form_data = {
         "model": "gpt-image-1",
