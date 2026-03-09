@@ -480,10 +480,9 @@
     }
 
     .episode-row {
-      display: grid;
-      grid-template-columns: 80px 1fr auto;
+      display: flex;
       gap: 1.5rem;
-      align-items: center;
+      align-items: flex-start;
       padding: 1.25rem 1.5rem;
       background: var(--bg-card);
       transition: background 0.2s;
@@ -495,15 +494,34 @@
       background: var(--bg-surface);
     }
 
+    .ep-left {
+      flex-shrink: 0;
+      width: 100px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .ep-cover-img {
+      width: 100px;
+      height: 100px;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid var(--border-dim);
+    }
+
     .ep-number {
       font-family: 'Cinzel', serif;
       font-size: 0.75rem;
       font-weight: 700;
       color: var(--gold);
       letter-spacing: 1px;
+      text-align: center;
     }
 
     .ep-info {
+      flex: 1;
       min-width: 0;
     }
 
@@ -512,20 +530,14 @@
       font-size: 0.95rem;
       font-weight: 600;
       color: var(--text-primary);
-      margin-bottom: 4px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      margin-bottom: 6px;
     }
 
     .ep-summary {
-      font-size: 0.8rem;
-      color: var(--text-muted);
-      line-height: 1.4;
-      display: -webkit-box;
-      -webkit-line-clamp: 1;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      margin-bottom: 8px;
     }
 
     .ep-date {
@@ -936,7 +948,9 @@
       .section-title { font-size: 1.4rem; }
       .community-card { grid-template-columns: 1fr; padding: 2rem; }
       .community-visual { display: none; }
-      .episode-row { grid-template-columns: 60px 1fr; gap: 1rem; }
+      .episode-row { gap: 1rem; }
+      .ep-left { width: 64px; }
+      .ep-cover-img { width: 64px; height: 64px; }
       .ep-date { display: none; }
       .footer-top { flex-direction: column; }
       .footer-bottom { flex-direction: column; text-align: center; }
@@ -1241,15 +1255,24 @@
 
             // Render episodes
             grid.innerHTML = data.episodes.map(function(ep) {
-              var row = '<div class="episode-row">'
-                + '<span class="ep-number">' + esc(ep.episodeNumber) + '</span>'
+              var leftCol;
+              if (ep.imageFileId) {
+                var imgUrl = 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(ep.imageFileId) + '&sz=w200';
+                leftCol = '<div class="ep-left">'
+                  + '<img src="' + imgUrl + '" alt="" class="ep-cover-img" loading="lazy">'
+                  + '<span class="ep-number">' + esc(ep.episodeNumber) + '</span>'
+                  + '</div>';
+              } else {
+                leftCol = '<div class="ep-left"><span class="ep-number">' + esc(ep.episodeNumber) + '</span></div>';
+              }
+              return '<div class="episode-row">'
+                + leftCol
                 + '<div class="ep-info">'
                 + '<div class="ep-title">' + esc(ep.title) + '</div>'
                 + '<div class="ep-summary">' + esc(ep.summary || '') + '</div>'
-                + '</div>'
                 + '<span class="ep-date">' + formatDate(ep.releaseDate) + '</span>'
+                + '</div>'
                 + '</div>';
-              return row;
             }).join('');
 
             // Render pagination controls
