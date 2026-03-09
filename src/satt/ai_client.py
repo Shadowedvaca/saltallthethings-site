@@ -124,13 +124,62 @@ async def call_ai(
     raise ValueError(f"Unknown AI model: {ai_model!r}")
 
 
-async def call_gpt_image_1(prompt: str, config: dict) -> bytes:
-    """Call gpt-image-1 via /v1/images/generations. Returns raw PNG bytes.
+async def call_gpt_image_1_edits(
+    prompt: str,
+    reference_images: list[dict],
+    config: dict,
+) -> bytes:
+    """Call gpt-image-1 via /v1/images/edits with reference image conditioning.
 
-    Note: the public images API does not support image reference inputs —
-    that capability is ChatGPT-interface-only. Style context is handled via
-    the GPT-4o art direction step instead.
+    Sends reference images as multipart form data so the model conditions on
+    the actual visual style rather than interpreting style from text alone.
+
+    reference_images: list of {"data": "<base64>", "mime_type": "image/png"}
     """
+    settings = get_settings()
+
+    # Build multipart files — repeated "image" fields for each reference
+    files = []
+    for i, img in enumerate(reference_images):
+        img_bytes = base64.b64decode(img["data"])
+        mime = img["mime_type"]
+        ext = mime.split("/")[-1] if "/" in mime else "png"
+        files.append(("image", (f"reference_{i}.{ext}", img_bytes, mime)))
+
+    form_data = {
+        "model": "gpt-image-1",
+        "prompt": prompt,
+        "n": "1",
+        "size": "1024x1024",
+        "quality": "medium",
+    }
+
+    async with httpx.AsyncClient(timeout=settings.ai_request_timeout) as client:
+        resp = await client.post(
+            "https://api.openai.com/v1/images/edits",
+            headers={"Authorization": f"Bearer {config['openaiApiKey']}"},
+            files=files,
+            data=form_data,
+        )
+    resp.raise_for_status()
+    data = resp.json()
+    item = data["data"][0]
+
+    if item.get("b64_json"):
+        return base64.b64decode(item["b64_json"])
+
+    url = item.get("url")
+    if url:
+        async with httpx.AsyncClient(timeout=settings.ai_request_timeout) as client:
+            img_resp = await client.get(url)
+            img_resp.raise_for_status()
+            return img_resp.content
+
+    raise ValueError(f"No image data in gpt-image-1 edits response: {data}")
+
+
+async def call_gpt_image_1(prompt: str, config: dict) -> bytes:
+    """Call gpt-image-1 via /v1/images/generations. Returns raw PNG bytes."""
     settings = get_settings()
     async with httpx.AsyncClient(timeout=settings.ai_request_timeout) as client:
         resp = await client.post(

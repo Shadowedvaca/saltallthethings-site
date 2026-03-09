@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from satt.ai_client import call_ai, call_dalle, call_gpt_image_1
+from satt.ai_client import call_ai, call_dalle, call_gpt_image_1, call_gpt_image_1_edits
 from satt.auth import require_auth
 from satt.config import get_settings
 from satt.crud import get_config, get_idea_and_slot, get_jokes, save_config, set_asset_inventory, set_idea_image_file_id
@@ -691,11 +691,44 @@ async def generate_episode_art(
             content={"error": f"Failed to get Drive access token: {e}"},
         )
 
-    # Generate image via gpt-image-1
+    # Fetch reference images for style conditioning (best-effort)
+    reference_images: list[dict] = []
+    ref_folder_ids = config.get("referenceImageFolderIds") or []
+    ref_file_ids = config.get("referenceImageFileIds") or []
+    if ref_folder_ids or ref_file_ids:
+        image_extensions = {"jpg", "jpeg", "png"}
+        for folder_id in ref_folder_ids[:3]:
+            try:
+                ref_files = await list_folder_files(access_token, folder_id)
+                img_files = [
+                    f for f in ref_files
+                    if f["name"].rsplit(".", 1)[-1].lower() in image_extensions
+                ]
+                for f in img_files[:3]:
+                    try:
+                        b64, mime = await fetch_image_as_base64(access_token, f["id"])
+                        reference_images.append({"data": b64, "mime_type": mime})
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        for file_id in ref_file_ids[:4]:
+            try:
+                b64, mime = await fetch_image_as_base64(access_token, file_id)
+                reference_images.append({"data": b64, "mime_type": mime})
+            except Exception:
+                pass
+        reference_images = reference_images[:8]
+
+    # Generate image — use edits endpoint with reference conditioning if images available,
+    # fall back to generations if not
     prefix = config.get("imageGenerationPrefix", "Same art style and characters as previous Salt All The Things artwork.")
     final_prompt = (prefix.strip() + " " + body.imagePrompt).strip() if prefix.strip() else body.imagePrompt
     try:
-        png_bytes = await call_gpt_image_1(final_prompt, config)
+        if reference_images:
+            png_bytes = await call_gpt_image_1_edits(final_prompt, reference_images, config)
+        else:
+            png_bytes = await call_gpt_image_1(final_prompt, config)
     except httpx.HTTPStatusError as e:
         try:
             openai_error = e.response.json()
@@ -750,4 +783,8 @@ async def generate_episode_art(
     except Exception:
         pass  # inventory refresh is best-effort; the upload succeeded
 
-    return JSONResponse(content={"imageFileId": new_file_id, "filename": filename})
+    return JSONResponse(content={
+        "imageFileId": new_file_id,
+        "filename": filename,
+        "referenceImagesUsed": len(reference_images),
+    })
