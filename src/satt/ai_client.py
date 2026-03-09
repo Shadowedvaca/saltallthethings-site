@@ -155,19 +155,20 @@ async def call_gpt_image_1(
             json={
                 "model": "gpt-image-1",
                 "input": [{"role": "user", "content": content}],
-                "output": [{"type": "image_generation_call", "size": "1024x1024", "quality": "medium"}],
             },
         )
     resp.raise_for_status()
     data = resp.json()
 
+    # Walk the output array looking for the generated image
     for output_item in data.get("output", []):
-        if output_item.get("type") == "image_generation_call":
+        item_type = output_item.get("type", "")
+        if item_type == "image_generation_call":
             b64 = output_item.get("result") or output_item.get("image", {}).get("data", "")
             if b64:
                 return base64.b64decode(b64)
 
-    raise ValueError(f"No image found in gpt-image-1 response: {data}")
+    raise ValueError(f"No image in gpt-image-1 response. Keys returned: {list(data.keys())}. Output types: {[o.get('type') for o in data.get('output', [])]}")
 
 
 async def call_dalle(prompt: str, config: dict) -> bytes:
