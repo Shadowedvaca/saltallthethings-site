@@ -153,8 +153,11 @@
             <button class="btn btn-secondary" id="analyzeStyleBtn" onclick="analyzeReferenceStyle()">Analyze Reference Images</button>
             <div id="styleDescriptionWrap" style="display:none; margin-top: var(--space-md);">
               <label class="form-label">Saved Style Description <span class="label-hint">— auto-injected into art direction prompts</span></label>
-              <textarea id="referenceStyleDescription" rows="12" readonly style="font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; line-height: 1.5; background: var(--bg-base); color: var(--text-secondary);"></textarea>
-              <button class="btn btn-ghost btn-sm" style="margin-top: 6px;" onclick="clearStyleDescription()">Clear Saved Description</button>
+              <textarea id="referenceStyleDescription" rows="12" style="font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; line-height: 1.5;"></textarea>
+              <div style="margin-top: 6px; display: flex; gap: 8px;">
+                <button class="btn btn-primary btn-sm" onclick="saveStyleDescription()">Save Description</button>
+                <button class="btn btn-ghost btn-sm" onclick="clearStyleDescription()">Clear</button>
+              </div>
             </div>
           </div>
         </div>
@@ -353,6 +356,15 @@
         btn.disabled = false;
         btn.textContent = 'Analyze Reference Images';
       }
+    }
+
+    async function saveStyleDescription() {
+      const desc = document.getElementById('referenceStyleDescription').value.trim();
+      const existing = Storage.getConfig();
+      existing.referenceStyleDescription = desc;
+      Storage.saveConfig(existing);
+      await Storage.init();
+      Toast.success('Style description saved.');
     }
 
     async function clearStyleDescription() {
