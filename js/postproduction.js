@@ -244,6 +244,15 @@ const PostProd = {
     }
   },
 
+  _updatePromptCount(slotId) {
+    const ta = document.getElementById('pp-prompt-' + slotId);
+    const counter = document.getElementById('pp-prompt-count-' + slotId);
+    if (!ta || !counter) return;
+    const len = ta.value.length;
+    counter.textContent = len + ' / 4000';
+    counter.style.color = len > 4000 ? '#e05c5c' : 'var(--text-muted)';
+  },
+
   copyPrompt(slotId) {
     const textarea = document.getElementById('pp-prompt-' + slotId);
     if (!textarea) return;
@@ -303,8 +312,11 @@ const PostProd = {
       + '<div><span class="pp-art-label">Tone &amp; Props</span><p><em>' + escHtml(art.tone) + '</em><br>' + escHtml(propsText) + '</p></div>'
       + '</div>'
       + '<div class="pp-art-prompt-wrap">'
-      + '<span class="pp-art-label">Final Image Prompt (editable)</span>'
-      + '<textarea id="pp-prompt-' + escHtml(slotId) + '" class="pp-art-textarea">' + escHtml(art.finalImagePrompt) + '</textarea>'
+      + '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;">'
+      + '<span class="pp-art-label" style="margin-bottom:0">Final Image Prompt (editable)</span>'
+      + '<span id="pp-prompt-count-' + escHtml(slotId) + '" style="font-size:0.72rem;color:var(--text-muted);">' + art.finalImagePrompt.length + ' / 4000</span>'
+      + '</div>'
+      + '<textarea id="pp-prompt-' + escHtml(slotId) + '" class="pp-art-textarea" oninput="PostProd._updatePromptCount(\'' + escHtml(slotId) + '\')">' + escHtml(art.finalImagePrompt) + '</textarea>'
       + '<div class="pp-art-actions">'
       + '<button class="btn btn-secondary btn-sm" onclick="PostProd.copyPrompt(\'' + escHtml(slotId) + '\')">Copy Prompt</button>'
       + this._generateArtButtonHtml(slotId)

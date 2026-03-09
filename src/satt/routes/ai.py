@@ -552,22 +552,38 @@ async def generate_episode_art(
 
     filename = f"{slot.production_file_key}.png"
 
-    # Generate image via DALL-E 3
-    try:
-        png_bytes = await call_dalle(body.imagePrompt, config)
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 400:
+    # DALL-E 3 has a 4000-character prompt limit — enforce it before sending
+    _DALLE_PROMPT_LIMIT = 4000
+    image_prompt = body.imagePrompt
+    if len(image_prompt) > _DALLE_PROMPT_LIMIT:
+        image_prompt = image_prompt[:_DALLE_PROMPT_LIMIT]
+
+    # Generate image via DALL-E 3 (retry once on transient 500)
+    png_bytes: bytes | None = None
+    last_error: Exception | None = None
+    for attempt in range(2):
+        try:
+            png_bytes = await call_dalle(image_prompt, config)
+            break
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 400:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "OpenAI rejected the prompt — try editing it"},
+                )
+            last_error = e
+            if attempt == 0:
+                continue  # retry once on 5xx
             return JSONResponse(
-                status_code=400,
-                content={"error": "OpenAI rejected the prompt — try editing it"},
+                status_code=500,
+                content={"error": f"DALL-E API error after retry: {e}"},
             )
-        return JSONResponse(
-            status_code=500, content={"error": f"DALL-E API error: {e}"}
-        )
-    except (httpx.RequestError, ValueError) as e:
-        return JSONResponse(
-            status_code=500, content={"error": f"DALL-E API error: {e}"}
-        )
+        except (httpx.RequestError, ValueError) as e:
+            return JSONResponse(
+                status_code=500, content={"error": f"DALL-E API error: {e}"}
+            )
+    if png_bytes is None:
+        return JSONResponse(status_code=500, content={"error": f"DALL-E API error: {last_error}"})
 
     # Get Drive access token
     settings = get_settings()
