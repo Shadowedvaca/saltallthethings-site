@@ -80,3 +80,39 @@ async def change_password(
     )
     await db.flush()
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# POST /api/users/{user_id}/reset-password  (admin only)
+# ---------------------------------------------------------------------------
+
+
+class ResetPasswordRequest(BaseModel):
+    newPassword: str
+
+
+@router.post("/users/{user_id}/reset-password")
+async def reset_user_password(
+    user_id: str,
+    body: ResetPasswordRequest,
+    current_user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    if len(body.newPassword) < 8:
+        raise HTTPException(status_code=422, detail="New password must be at least 8 characters")
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    await db.execute(
+        update(User)
+        .where(User.id == user_id)
+        .values(password_hash=hash_password(body.newPassword))
+    )
+    await db.flush()
+    return {"ok": True}

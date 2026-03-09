@@ -515,17 +515,67 @@
         var users = await resp.json();
         container.innerHTML = '';
         users.forEach(function(u) {
+          var wrapper = document.createElement('div');
+          wrapper.style.cssText = 'display: flex; flex-direction: column; gap: 6px;';
+
           var row = document.createElement('div');
           row.style.cssText = 'display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--bg-surface); border-radius: var(--radius-md); border: 1px solid var(--border-subtle);';
           var badges = '';
           if (u.isAdmin) badges += '<span style="font-size: 0.7rem; padding: 2px 6px; background: rgba(200,168,78,0.15); color: var(--gold); border-radius: 4px;">admin</span>';
           if (!u.isActive) badges += '<span style="font-size: 0.7rem; padding: 2px 6px; background: rgba(204,68,68,0.15); color: var(--danger); border-radius: 4px;">inactive</span>';
-          row.innerHTML = '<span style="flex: 1; font-weight: 500;">' + u.username + '</span>' + badges + '<span class="text-muted text-sm">joined ' + new Date(u.createdAt).toLocaleDateString() + '</span>';
-          container.appendChild(row);
+          row.innerHTML = '<span style="flex: 1; font-weight: 500;">' + u.username + '</span>' + badges +
+            '<span class="text-muted text-sm">joined ' + new Date(u.createdAt).toLocaleDateString() + '</span>' +
+            '<button class="btn btn-ghost btn-sm" onclick="toggleResetForm(\'' + u.id + '\')">Reset Password</button>';
+
+          var resetForm = document.createElement('div');
+          resetForm.id = 'reset-form-' + u.id;
+          resetForm.style.cssText = 'display: none; padding: 10px 12px; background: var(--bg-deep); border-radius: var(--radius-md); border: 1px solid var(--border-subtle);';
+          resetForm.innerHTML =
+            '<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">' +
+            '<span class="text-sm" style="min-width: 120px;">New password for <strong>' + u.username + '</strong>:</span>' +
+            '<input type="password" id="reset-pw-' + u.id + '" placeholder="Min 8 characters" style="flex: 1; min-width: 180px;">' +
+            '<button class="btn btn-secondary btn-sm" onclick="submitResetPassword(\'' + u.id + '\', \'' + u.username + '\')">Set Password</button>' +
+            '<button class="btn btn-ghost btn-sm" onclick="toggleResetForm(\'' + u.id + '\')">Cancel</button>' +
+            '</div>';
+
+          wrapper.appendChild(row);
+          wrapper.appendChild(resetForm);
+          container.appendChild(wrapper);
         });
         if (users.length === 0) container.innerHTML = '<span class="text-muted text-sm">No users found.</span>';
       } catch (err) {
         container.innerHTML = '<span class="text-muted text-sm">Failed to load users.</span>';
+      }
+    }
+
+    function toggleResetForm(userId) {
+      var form = document.getElementById('reset-form-' + userId);
+      var visible = form.style.display !== 'none';
+      form.style.display = visible ? 'none' : 'flex';
+      if (!visible) {
+        document.getElementById('reset-pw-' + userId).focus();
+      }
+    }
+
+    async function submitResetPassword(userId, username) {
+      var input = document.getElementById('reset-pw-' + userId);
+      var newPw = input.value;
+      if (!newPw || newPw.length < 8) { Toast.error('Password must be at least 8 characters'); return; }
+      if (!confirm('Reset password for ' + username + '?')) return;
+
+      try {
+        var resp = await fetch('https://salt.shadowedvaca.com/api/users/' + userId + '/reset-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + Auth.getToken() },
+          body: JSON.stringify({ newPassword: newPw })
+        });
+        var data = await resp.json();
+        if (!resp.ok) { Toast.error(data.detail || 'Failed to reset password'); return; }
+        Toast.success('Password reset for ' + username);
+        input.value = '';
+        document.getElementById('reset-form-' + userId).style.display = 'none';
+      } catch (err) {
+        Toast.error('Connection error: ' + err.message);
       }
     }
 
