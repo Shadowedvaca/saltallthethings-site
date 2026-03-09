@@ -93,7 +93,7 @@ class ResetPasswordRequest(BaseModel):
 
 @router.post("/users/{user_id}/reset-password")
 async def reset_user_password(
-    user_id: str,
+    user_id: int,
     body: ResetPasswordRequest,
     current_user: dict = Depends(require_auth),
     db: AsyncSession = Depends(get_db),
