@@ -691,38 +691,9 @@ async def generate_episode_art(
             content={"error": f"Failed to get Drive access token: {e}"},
         )
 
-    # Fetch reference images from Drive (best-effort — generation still proceeds without them)
-    reference_images: list[dict] = []
-    ref_folder_ids = config.get("referenceImageFolderIds") or []
-    ref_file_ids = config.get("referenceImageFileIds") or []
-    image_extensions = {"jpg", "jpeg", "png"}
-    for folder_id in ref_folder_ids[:3]:
-        try:
-            files = await list_folder_files(access_token, folder_id)
-            img_files = [f for f in files if f["name"].rsplit(".", 1)[-1].lower() in image_extensions]
-            for f in img_files[:3]:
-                try:
-                    b64, mime = await fetch_image_as_base64(access_token, f["id"])
-                    reference_images.append({"data": b64, "mime_type": mime})
-                except Exception:
-                    pass
-        except Exception:
-            pass
-    for file_id in ref_file_ids[:4]:
-        try:
-            b64, mime = await fetch_image_as_base64(access_token, file_id)
-            reference_images.append({"data": b64, "mime_type": mime})
-        except Exception:
-            pass
-    reference_images = reference_images[:8]
-
-    # Generate image via gpt-image-1 (reference images + scene prompt)
+    # Generate image via gpt-image-1
     try:
-        png_bytes = await call_gpt_image_1(
-            body.imagePrompt,
-            config,
-            images=reference_images if reference_images else None,
-        )
+        png_bytes = await call_gpt_image_1(body.imagePrompt, config)
     except httpx.HTTPStatusError as e:
         try:
             openai_error = e.response.json()

@@ -124,51 +124,35 @@ async def call_ai(
     raise ValueError(f"Unknown AI model: {ai_model!r}")
 
 
-async def call_gpt_image_1(
-    prompt: str,
-    config: dict,
-    images: list[dict] | None = None,
-) -> bytes:
-    """Call gpt-image-1 via the Responses API. Accepts optional reference images.
+async def call_gpt_image_1(prompt: str, config: dict) -> bytes:
+    """Call gpt-image-1 via /v1/images/generations. Returns raw PNG bytes.
 
-    images: optional list of {"data": "<base64>", "mime_type": "image/jpeg"}
-    Returns raw PNG bytes.
+    Note: the public images API does not support image reference inputs —
+    that capability is ChatGPT-interface-only. Style context is handled via
+    the GPT-4o art direction step instead.
     """
     settings = get_settings()
-
-    content: list = []
-    if images:
-        for img in images:
-            content.append({
-                "type": "input_image",
-                "image_url": f"data:{img['mime_type']};base64,{img['data']}",
-            })
-    content.append({"type": "input_text", "text": prompt})
-
     async with httpx.AsyncClient(timeout=settings.ai_request_timeout) as client:
         resp = await client.post(
-            "https://api.openai.com/v1/responses",
+            "https://api.openai.com/v1/images/generations",
             headers={
                 "Authorization": f"Bearer {config['openaiApiKey']}",
                 "content-type": "application/json",
             },
             json={
                 "model": "gpt-image-1",
-                "input": [{"role": "user", "content": content}],
+                "prompt": prompt,
+                "n": 1,
+                "size": "1024x1024",
+                "quality": "medium",
             },
         )
     resp.raise_for_status()
     data = resp.json()
-
-    # Walk the output array looking for the generated image
-    for output_item in data.get("output", []):
-        item_type = output_item.get("type", "")
-        if item_type == "image_generation_call":
-            b64 = output_item.get("result") or output_item.get("image", {}).get("data", "")
-            if b64:
-                return base64.b64decode(b64)
-
-    raise ValueError(f"No image in gpt-image-1 response. Keys returned: {list(data.keys())}. Output types: {[o.get('type') for o in data.get('output', [])]}")
+    b64 = data["data"][0].get("b64_json") or data["data"][0].get("url")
+    if not b64:
+        raise ValueError(f"No image data in gpt-image-1 response: {data}")
+    return base64.b64decode(b64)
 
 
 async def call_dalle(prompt: str, config: dict) -> bytes:
