@@ -145,15 +145,23 @@ async def call_gpt_image_1(prompt: str, config: dict) -> bytes:
                 "n": 1,
                 "size": "1024x1024",
                 "quality": "medium",
-                "response_format": "b64_json",
             },
         )
-    resp.raise_for_status()
-    data = resp.json()
-    b64 = data["data"][0].get("b64_json") or data["data"][0].get("url")
-    if not b64:
+        resp.raise_for_status()
+        data = resp.json()
+        item = data["data"][0]
+
+        if item.get("b64_json"):
+            return base64.b64decode(item["b64_json"])
+
+        # Some models return a URL — fetch it
+        url = item.get("url")
+        if url:
+            img_resp = await client.get(url)
+            img_resp.raise_for_status()
+            return img_resp.content
+
         raise ValueError(f"No image data in gpt-image-1 response: {data}")
-    return base64.b64decode(b64)
 
 
 async def call_dalle(prompt: str, config: dict) -> bytes:
