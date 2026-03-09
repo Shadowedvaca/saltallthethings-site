@@ -724,12 +724,19 @@ async def generate_episode_art(
             images=reference_images if reference_images else None,
         )
     except httpx.HTTPStatusError as e:
-        if e.response.status_code == 400:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "OpenAI rejected the prompt — try editing it"},
+        try:
+            openai_error = e.response.json()
+            openai_msg = (
+                openai_error.get("error", {}).get("message")
+                or openai_error.get("message")
+                or str(e)
             )
-        return JSONResponse(status_code=500, content={"error": f"Image generation error: {e}"})
+        except Exception:
+            openai_msg = str(e)
+        return JSONResponse(
+            status_code=e.response.status_code,
+            content={"error": f"OpenAI error: {openai_msg}"},
+        )
     except (httpx.RequestError, ValueError) as e:
         return JSONResponse(status_code=500, content={"error": f"Image generation error: {e}"})
 
