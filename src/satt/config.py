@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     google_oauth_client_secret: str = ""
     google_oauth_refresh_token: str = ""
 
+    # sv-tools server-to-server export key
+    sv_export_key: str = ""
+
     # JWT settings
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 480  # 8 hours
