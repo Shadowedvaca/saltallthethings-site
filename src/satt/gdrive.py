@@ -194,6 +194,82 @@ async def delete_file(access_token: str, file_id: str) -> None:
     resp.raise_for_status()
 
 
+async def find_or_create_folder(
+    access_token: str, parent_id: str, folder_name: str
+) -> str:
+    """Find a subfolder by name within parent, creating it if absent. Returns folder ID."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            _DRIVE_FILES_URL,
+            params={
+                "q": (
+                    f"'{parent_id}' in parents"
+                    " and mimeType = 'application/vnd.google-apps.folder'"
+                    f" and name = '{folder_name}'"
+                    " and trashed = false"
+                ),
+                "fields": "files(id)",
+                "supportsAllDrives": "true",
+                "includeItemsFromAllDrives": "true",
+            },
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        resp.raise_for_status()
+        files = resp.json().get("files", [])
+
+    if files:
+        return files[0]["id"]
+
+    # Create it
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            _DRIVE_FILES_URL,
+            params={"supportsAllDrives": "true"},
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            },
+            content=_json.dumps({
+                "name": folder_name,
+                "mimeType": "application/vnd.google-apps.folder",
+                "parents": [parent_id],
+            }).encode(),
+        )
+        resp.raise_for_status()
+        return resp.json()["id"]
+
+
+async def move_file(
+    access_token: str,
+    file_id: str,
+    new_parent_id: str,
+    old_parent_id: str,
+    new_name: str | None = None,
+) -> None:
+    """Move a file to a new folder, optionally renaming it."""
+    params = {
+        "addParents": new_parent_id,
+        "removeParents": old_parent_id,
+        "supportsAllDrives": "true",
+        "fields": "id",
+    }
+    body: dict = {}
+    if new_name:
+        body["name"] = new_name
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.patch(
+            f"{_DRIVE_FILES_URL}/{file_id}",
+            params=params,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            },
+            content=_json.dumps(body).encode(),
+        )
+        resp.raise_for_status()
+
+
 async def build_asset_inventory(
     slot_id: str, production_file_key: str, config: dict
 ) -> dict:

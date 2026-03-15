@@ -22,7 +22,9 @@ from satt.gdrive import (
     fetch_file_content,
     fetch_image_as_base64,
     find_episode_folder,
+    find_or_create_folder,
     get_drive_access_token,
+    move_file,
     upload_file_to_folder,
 )
 from satt.prompts import (
@@ -716,13 +718,24 @@ async def generate_episode_art(
     except (httpx.RequestError, ValueError) as e:
         return JSONResponse(status_code=500, content={"error": f"Image generation error: {e}"})
 
-    # Delete old art file if it exists in asset inventory (regeneration case)
+    # Archive old art file into an 'archive' subfolder (regeneration case)
     old_art = inv.get("album_art", {})
     if old_art.get("drive_file_id"):
         try:
-            await delete_file(access_token, old_art["drive_file_id"])
+            archive_folder_id = await find_or_create_folder(
+                access_token, episode_folder_id, "archive"
+            )
+            ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
+            archived_name = f"Cover_Art_{slot.production_file_key}_{ts}.png"
+            await move_file(
+                access_token,
+                old_art["drive_file_id"],
+                archive_folder_id,
+                episode_folder_id,
+                archived_name,
+            )
         except (httpx.HTTPStatusError, httpx.RequestError):
-            pass  # best-effort — old file may already be gone
+            pass  # best-effort — proceed with upload regardless
 
     # Upload new PNG to episode folder
     try:
