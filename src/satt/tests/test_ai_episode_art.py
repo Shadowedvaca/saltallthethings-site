@@ -37,10 +37,7 @@ def _auth_headers() -> dict:
 def _fake_config() -> dict:
     return {
         "openaiApiKey": "sk-openai-test",
-        "gdriveFolderCoverArt": "folder-cover-art-id",
-        "gdriveFolderRawAudio": "folder-raw-id",
-        "gdriveFolderFinishedAudio": "folder-finished-id",
-        "gdriveFolderTranscripts": "folder-transcripts-id",
+        "gdriveFolderShowRecordings": "folder-show-recordings-id",
     }
 
 
@@ -57,6 +54,7 @@ class _FakeSlot:
     episode_num = 42
     production_file_key = "EP042_War-Within-Seasons-Ranked_2026-03-06"
     asset_inventory = {
+        "episode_folder_id": "fake-episode-folder-id",
         "album_art": {"present": False},
         "raw_audio": {"present": True},
     }
@@ -68,6 +66,7 @@ class _FakeSlotWithExistingArt:
     episode_num = 42
     production_file_key = "EP042_War-Within-Seasons-Ranked_2026-03-06"
     asset_inventory = {
+        "episode_folder_id": "fake-episode-folder-id",
         "album_art": {"present": True, "drive_file_id": "old-art-file-id"},
     }
 
@@ -126,7 +125,7 @@ async def test_generate_episode_art_success(client: AsyncClient):
     assert resp.status_code == 200
     data = resp.json()
     assert data["imageFileId"] == _NEW_FILE_ID
-    assert data["filename"] == "EP042_War-Within-Seasons-Ranked_2026-03-06.png"
+    assert data["filename"] == "Cover_Art_EP042_War-Within-Seasons-Ranked_2026-03-06.png"
 
 
 @pytest.mark.asyncio
