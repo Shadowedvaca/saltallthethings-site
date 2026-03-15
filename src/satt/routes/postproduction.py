@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -19,7 +20,14 @@ from satt.crud import (
     set_production_file_key,
 )
 from satt.database import get_db
-from satt.gdrive import build_asset_inventory, fetch_file_content, get_drive_access_token
+from satt.gdrive import (
+    build_asset_inventory,
+    delete_file,
+    fetch_file_content,
+    find_episode_folder,
+    get_drive_access_token,
+    upload_file_to_folder,
+)
 
 router = APIRouter()
 
@@ -89,6 +97,95 @@ async def get_slot_art_direction(
         raise HTTPException(status_code=500, detail=f"Failed to fetch art direction from Drive: {e}")
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=500, detail=f"Art direction file is not valid JSON: {e}")
+
+
+class SaveArtDirectionRequest(BaseModel):
+    topics: list[str]
+    tone: str
+    archetype: dict
+    environment: str
+    bigElementalRole: str
+    babyGags: list[str]
+    props: list[str]
+    sceneSummary: str
+    finalImagePrompt: str
+
+
+@router.put("/postproduction/{slot_id}/art-direction")
+async def save_art_direction(
+    slot_id: str,
+    body: SaveArtDirectionRequest,
+    _user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Save a manually edited art direction JSON back to Drive."""
+    queue = await get_postproduction_queue(db)
+    row = next((r for r in queue if r["slotId"] == slot_id), None)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Slot not found")
+
+    production_key = row.get("productionFileKey")
+    if not production_key:
+        raise HTTPException(status_code=400, detail="No production file key set for this slot")
+
+    settings = get_settings()
+    if not all([
+        settings.google_oauth_client_id,
+        settings.google_oauth_client_secret,
+        settings.google_oauth_refresh_token,
+    ]):
+        raise HTTPException(status_code=400, detail="Google Drive OAuth not configured")
+
+    try:
+        access_token = await get_drive_access_token(
+            settings.google_oauth_client_id,
+            settings.google_oauth_client_secret,
+            settings.google_oauth_refresh_token,
+        )
+    except (httpx.HTTPStatusError, httpx.RequestError) as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get Drive access token: {e}")
+
+    inv = row.get("assetInventory") or {}
+    episode_folder_id = inv.get("episode_folder_id")
+    if not episode_folder_id:
+        db_config = await get_config(db)
+        root_folder_id = db_config.get("gdriveFolderShowRecordings")
+        if root_folder_id:
+            episode_folder_id = await find_episode_folder(access_token, root_folder_id, production_key)
+    if not episode_folder_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Episode folder not found in Drive — scan assets first",
+        )
+
+    art_data = body.model_dump()
+    art_json_filename = f"Art_Direction_{production_key}.json"
+    art_json_bytes = json.dumps(art_data, indent=2).encode()
+
+    # Delete old art direction file if present
+    old_art_dir = inv.get("art_direction", {})
+    if old_art_dir.get("drive_file_id"):
+        try:
+            await delete_file(access_token, old_art_dir["drive_file_id"])
+        except Exception:
+            pass
+
+    try:
+        new_art_dir_id = await upload_file_to_folder(
+            access_token, episode_folder_id, art_json_filename,
+            art_json_bytes, mime_type="application/json",
+        )
+    except (httpx.HTTPStatusError, httpx.RequestError) as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload art direction to Drive: {e}")
+
+    inv["art_direction"] = {
+        "present": True,
+        "drive_file_id": new_art_dir_id,
+        "modified": datetime.now(timezone.utc).isoformat(),
+    }
+    await set_asset_inventory(db, slot_id, inv)
+
+    return art_data
 
 
 def _build_scan_config(settings, db_config: dict) -> dict:

@@ -207,8 +207,10 @@ const PostProd = {
     if (!row || !row.ideaId) return;
 
     const textarea = document.getElementById('pp-prompt-' + slotId);
-    const prompt = textarea ? textarea.value.trim() : '';
-    if (!prompt) { Toast.error('Image prompt is empty — fill in the prompt first.'); return; }
+    const rawPrompt = textarea ? textarea.value.trim() : '';
+    if (!rawPrompt) { Toast.error('Image prompt is empty — fill in the prompt first.'); return; }
+    const styleDesc = (Storage.getConfig().referenceStyleDescription || '').trim();
+    const prompt = styleDesc ? styleDesc + '\n\n' + rawPrompt : rawPrompt;
     if (prompt.length > 4000) { Toast.error('Prompt is ' + prompt.length + ' chars — trim it under 4000 before generating.'); return; }
 
     this._imageLoading[slotId] = true;
@@ -249,7 +251,9 @@ const PostProd = {
     const ta = document.getElementById('pp-prompt-' + slotId);
     const counter = document.getElementById('pp-prompt-count-' + slotId);
     if (!ta || !counter) return;
-    const len = ta.value.length;
+    const styleDesc = (Storage.getConfig().referenceStyleDescription || '').trim();
+    const combined = styleDesc ? styleDesc + '\n\n' + ta.value : ta.value;
+    const len = combined.length;
     counter.textContent = len + ' / 4000';
     counter.style.color = len > 4000 ? '#e05c5c' : 'var(--text-muted)';
   },
@@ -257,7 +261,8 @@ const PostProd = {
   copyPrompt(slotId) {
     const textarea = document.getElementById('pp-prompt-' + slotId);
     if (!textarea) return;
-    const text = textarea.value;
+    const styleDesc = (Storage.getConfig().referenceStyleDescription || '').trim();
+    const text = styleDesc ? styleDesc + '\n\n' + textarea.value : textarea.value;
     if (navigator.clipboard) {
       navigator.clipboard.writeText(text)
         .then(() => Toast.success('Prompt copied to clipboard.'))
@@ -266,6 +271,60 @@ const PostProd = {
       textarea.select();
       document.execCommand('copy');
       Toast.success('Prompt copied.');
+    }
+  },
+
+  async saveArtDirection(slotId) {
+    const sid = slotId;
+    const btn = document.getElementById('pp-save-btn-' + sid);
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+
+    const get = function(id) {
+      const el = document.getElementById(id);
+      return el ? el.value : '';
+    };
+    const getLines = function(id) {
+      const el = document.getElementById(id);
+      if (!el) return [];
+      return el.value.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l; });
+    };
+
+    const existingArt = this._artDirection[slotId] || {};
+    const archetypeId = (existingArt.archetype || {}).id || '';
+
+    const body = {
+      topics: getLines('pp-topics-' + sid),
+      tone: get('pp-tone-' + sid).trim(),
+      archetype: {
+        id: archetypeId,
+        name: get('pp-archetype-name-' + sid).trim(),
+        reason: get('pp-archetype-reason-' + sid).trim()
+      },
+      environment: get('pp-env-' + sid).trim(),
+      bigElementalRole: get('pp-bige-' + sid).trim(),
+      babyGags: getLines('pp-gags-' + sid),
+      props: getLines('pp-props-' + sid),
+      sceneSummary: get('pp-scene-' + sid).trim(),
+      finalImagePrompt: get('pp-prompt-' + sid).trim()
+    };
+
+    try {
+      const resp = await fetch(this._apiBase + '/postproduction/' + slotId + '/art-direction', {
+        method: 'PUT',
+        headers: this._headers(),
+        body: JSON.stringify(body)
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(function() { return {}; });
+        throw new Error(err.detail || ('API error: ' + resp.status));
+      }
+      const saved = await resp.json();
+      this._artDirection[slotId] = saved;
+      this.renderTable();
+      Toast.success('Art direction saved.');
+    } catch (err) {
+      Toast.error('Save failed: ' + err.message);
+      if (btn) { btn.disabled = false; btn.textContent = 'Save Direction'; }
     }
   },
 
@@ -295,39 +354,71 @@ const PostProd = {
     const art = this._artDirection[slotId];
     if (!art) return '';
 
-    const babyGagsList = art.babyGags.map(g => '<li>' + escHtml(g) + '</li>').join('');
-    const topicsText = art.topics.join(', ');
-    const propsText = art.props.join(', ');
-
+    const sid = escHtml(slotId);
     const styleDesc = (Storage.getConfig().referenceStyleDescription || '').trim();
-    const fullPrompt = styleDesc ? styleDesc + '\n\n' + art.finalImagePrompt : art.finalImagePrompt;
+    const rawPrompt = art.finalImagePrompt || '';
+    const combinedLen = (styleDesc ? styleDesc + '\n\n' + rawPrompt : rawPrompt).length;
+
+    const stylePrefixBlock = styleDesc
+      ? '<div><span class="pp-art-label">Style Prefix (from Config \u2014 read-only)</span>'
+        + '<div class="pp-style-prefix">' + escHtml(styleDesc) + '</div></div>'
+      : '';
 
     return '<tr class="pp-art-row">'
       + '<td colspan="13" class="pp-art-cell">'
       + '<div class="pp-art-panel">'
+
+      // Archetype row — editable name + reason
       + '<div class="pp-art-meta">'
-      + '<span class="pp-art-archetype">' + escHtml(art.archetype.name) + '</span>'
-      + ' <span class="pp-art-reason">\u2014 ' + escHtml(art.archetype.reason) + '</span>'
+      + '<input id="pp-archetype-name-' + sid + '" class="pp-art-input" type="text"'
+      + ' value="' + escHtml(art.archetype.name) + '" placeholder="Archetype name"'
+      + ' style="width:200px;font-weight:700;color:var(--gold)">'
+      + '<span style="color:var(--text-muted);margin:0 8px;flex-shrink:0">&mdash;</span>'
+      + '<input id="pp-archetype-reason-' + sid + '" class="pp-art-input" type="text"'
+      + ' value="' + escHtml(art.archetype.reason) + '" placeholder="Archetype reason" style="flex:1">'
       + '</div>'
+
+      // 2-column grid: Scene, Baby Gags, Topics, Tone+Props
       + '<div class="pp-art-grid">'
-      + '<div><span class="pp-art-label">Scene</span><p>' + escHtml(art.sceneSummary) + '</p></div>'
-      + '<div><span class="pp-art-label">Baby Gags</span><ul class="pp-art-gags">' + babyGagsList + '</ul></div>'
-      + '<div><span class="pp-art-label">Topics</span><p>' + escHtml(topicsText) + '</p></div>'
-      + '<div><span class="pp-art-label">Tone &amp; Props</span><p><em>' + escHtml(art.tone) + '</em><br>' + escHtml(propsText) + '</p></div>'
+      + '<div><span class="pp-art-label">Scene</span>'
+      + '<textarea id="pp-scene-' + sid + '" class="pp-art-field-textarea">' + escHtml(art.sceneSummary || '') + '</textarea></div>'
+      + '<div><span class="pp-art-label">Baby Gags (one per line)</span>'
+      + '<textarea id="pp-gags-' + sid + '" class="pp-art-field-textarea">' + escHtml((art.babyGags || []).join('\n')) + '</textarea></div>'
+      + '<div><span class="pp-art-label">Topics (one per line)</span>'
+      + '<textarea id="pp-topics-' + sid + '" class="pp-art-field-textarea">' + escHtml((art.topics || []).join('\n')) + '</textarea></div>'
+      + '<div>'
+      + '<span class="pp-art-label">Tone</span>'
+      + '<input id="pp-tone-' + sid + '" class="pp-art-input" type="text" value="' + escHtml(art.tone || '') + '" style="margin-bottom:10px;width:100%">'
+      + '<span class="pp-art-label" style="margin-top:6px">Props (one per line)</span>'
+      + '<textarea id="pp-props-' + sid + '" class="pp-art-field-textarea">' + escHtml((art.props || []).join('\n')) + '</textarea>'
       + '</div>'
+      + '</div>'
+
+      // Environment + Big Elemental Role
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 24px;">'
+      + '<div><span class="pp-art-label">Environment</span>'
+      + '<input id="pp-env-' + sid + '" class="pp-art-input" type="text" value="' + escHtml(art.environment || '') + '" style="width:100%"></div>'
+      + '<div><span class="pp-art-label">Big Elemental Role</span>'
+      + '<input id="pp-bige-' + sid + '" class="pp-art-input" type="text" value="' + escHtml(art.bigElementalRole || '') + '" style="width:100%"></div>'
+      + '</div>'
+
+      // Style prefix (read-only) + Final image prompt
+      + stylePrefixBlock
       + '<div class="pp-art-prompt-wrap">'
       + '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;">'
       + '<span class="pp-art-label" style="margin-bottom:0">Final Image Prompt (editable)</span>'
-      + '<span id="pp-prompt-count-' + escHtml(slotId) + '" style="font-size:0.72rem;color:var(--text-muted);">' + fullPrompt.length + ' / 4000</span>'
+      + '<span id="pp-prompt-count-' + sid + '" style="font-size:0.72rem;color:var(--text-muted);">' + combinedLen + ' / 4000</span>'
       + '</div>'
-      + '<textarea id="pp-prompt-' + escHtml(slotId) + '" class="pp-art-textarea" oninput="PostProd._updatePromptCount(\'' + escHtml(slotId) + '\')">' + escHtml(fullPrompt) + '</textarea>'
+      + '<textarea id="pp-prompt-' + sid + '" class="pp-art-textarea" oninput="PostProd._updatePromptCount(\'' + sid + '\')">' + escHtml(rawPrompt) + '</textarea>'
       + '<div class="pp-art-actions">'
-      + '<button class="btn btn-secondary btn-sm" onclick="PostProd.copyPrompt(\'' + escHtml(slotId) + '\')">Copy Prompt</button>'
+      + '<button class="btn btn-primary btn-sm" id="pp-save-btn-' + sid + '" onclick="PostProd.saveArtDirection(\'' + sid + '\')">Save Direction</button>'
+      + '<button class="btn btn-secondary btn-sm" onclick="PostProd.copyPrompt(\'' + sid + '\')">Copy Prompt</button>'
       + this._generateArtButtonHtml(slotId)
-      + '<button class="btn btn-ghost btn-sm" onclick="PostProd.generateArtDirection(\'' + escHtml(slotId) + '\')">Regenerate</button>'
-      + '<button class="btn btn-ghost btn-sm pp-art-dismiss" onclick="PostProd.dismissArtDirection(\'' + escHtml(slotId) + '\')">&#x2715; Dismiss</button>'
+      + '<button class="btn btn-ghost btn-sm" onclick="PostProd.generateArtDirection(\'' + sid + '\')">Re-run AI</button>'
+      + '<button class="btn btn-ghost btn-sm pp-art-dismiss" onclick="PostProd.dismissArtDirection(\'' + sid + '\')">&#x2715; Dismiss</button>'
       + '</div>'
       + '</div>'
+
       + this._artImagePreviewHtml(slotId)
       + '</div>'
       + '</td>'

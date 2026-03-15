@@ -166,6 +166,48 @@
       display: inline-flex;
       align-items: center;
     }
+
+    /* Editable art direction fields */
+    .pp-art-meta { align-items: center; }
+    .pp-art-input {
+      background: var(--bg-base);
+      color: var(--text-primary);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-sm);
+      padding: 5px 10px;
+      font-size: 0.875rem;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .pp-art-input:focus { outline: none; border-color: var(--gold); }
+    .pp-art-field-textarea {
+      width: 100%;
+      min-height: 72px;
+      font-size: 0.85rem;
+      font-family: inherit;
+      background: var(--bg-base);
+      color: var(--text-primary);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
+      resize: vertical;
+      box-sizing: border-box;
+      line-height: 1.5;
+    }
+    .pp-art-field-textarea:focus { outline: none; border-color: var(--gold); }
+    .pp-style-prefix {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 8px 12px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 80px;
+      overflow-y: auto;
+    }
   </style>
 </head>
 <body>
