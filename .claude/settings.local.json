@@ -24,7 +24,16 @@
       "Bash(gh secret:*)",
       "Bash(ls:*)",
       "Bash(PYTHONPATH=src pytest:*)",
-      "Bash(npx wrangler:*)"
+      "Bash(npx wrangler:*)",
+      "Bash(git:*)",
+      "Bash(tasklist:*)",
+      "Bash(where pythonw:*)",
+      "Bash(schtasks:*)",
+      "Bash(cmd:*)",
+      "Bash(powershell:*)",
+      "Bash(powershell.exe -NoProfile -NonInteractive -Command \"Get-ScheduledTask | Where-Object { $_.TaskName -match 'satt|transcri|watch' } | Select-Object TaskName, State | Format-List\" 2>&1)",
+      "Bash(cmd /c \"dir \\\\\"J:\\\\\\\\Shared drives\\\\\\\\Salt All The Things\\\\\\\\Show Recordings\\\\\\\\\\\\\" 2>&1\" | head -30)",
+      "Bash(cmd /c \"tasklist /FI \\\\\"IMAGENAME eq python.exe\\\\\"\" ; echo \"exit: $?\")"
     ]
   }
 }
