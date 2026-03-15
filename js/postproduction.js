@@ -274,6 +274,54 @@ const PostProd = {
     }
   },
 
+  async rebuildPrompt(slotId) {
+    const btn = document.getElementById('pp-rebuild-btn-' + slotId);
+    if (btn) { btn.disabled = true; btn.textContent = 'Rebuilding...'; }
+
+    const get = function(id) { const el = document.getElementById(id); return el ? el.value : ''; };
+    const getLines = function(id) {
+      const el = document.getElementById(id);
+      if (!el) return [];
+      return el.value.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l; });
+    };
+
+    const existingArt = this._artDirection[slotId] || {};
+    const body = {
+      archetype: {
+        id: (existingArt.archetype || {}).id || '',
+        name: get('pp-archetype-name-' + slotId).trim(),
+        reason: get('pp-archetype-reason-' + slotId).trim()
+      },
+      sceneSummary: get('pp-scene-' + slotId).trim(),
+      environment: get('pp-env-' + slotId).trim(),
+      bigElementalRole: get('pp-bige-' + slotId).trim(),
+      babyGags: getLines('pp-gags-' + slotId),
+      topics: getLines('pp-topics-' + slotId),
+      tone: get('pp-tone-' + slotId).trim(),
+      props: getLines('pp-props-' + slotId)
+    };
+
+    try {
+      const resp = await fetch(this._apiBase + '/ai/rebuild-image-prompt', {
+        method: 'POST',
+        headers: this._headers(),
+        body: JSON.stringify(body)
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(function() { return {}; });
+        throw new Error(err.error || ('API error: ' + resp.status));
+      }
+      const result = await resp.json();
+      const ta = document.getElementById('pp-prompt-' + slotId);
+      if (ta) { ta.value = result.finalImagePrompt; this._updatePromptCount(slotId); }
+      Toast.success('Image prompt rebuilt from current fields.');
+    } catch (err) {
+      Toast.error('Rebuild failed: ' + err.message);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Rebuild Prompt'; }
+    }
+  },
+
   async saveArtDirection(slotId) {
     const sid = slotId;
     const btn = document.getElementById('pp-save-btn-' + sid);
@@ -405,9 +453,12 @@ const PostProd = {
       // Style prefix (read-only) + Final image prompt
       + stylePrefixBlock
       + '<div class="pp-art-prompt-wrap">'
-      + '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;gap:8px;">'
       + '<span class="pp-art-label" style="margin-bottom:0">Final Image Prompt (editable)</span>'
+      + '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'
+      + '<button id="pp-rebuild-btn-' + sid + '" class="btn btn-ghost btn-sm" onclick="PostProd.rebuildPrompt(\'' + sid + '\')" style="font-size:0.75rem">Rebuild Prompt</button>'
       + '<span id="pp-prompt-count-' + sid + '" style="font-size:0.72rem;color:var(--text-muted);">' + combinedLen + ' / 4000</span>'
+      + '</div>'
       + '</div>'
       + '<textarea id="pp-prompt-' + sid + '" class="pp-art-textarea" oninput="PostProd._updatePromptCount(\'' + sid + '\')">' + escHtml(rawPrompt) + '</textarea>'
       + '<div class="pp-art-actions">'

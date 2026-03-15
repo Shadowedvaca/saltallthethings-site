@@ -757,3 +757,78 @@ async def generate_episode_art(
         "filename": filename,
         "referenceImagesUsed": len(reference_images),
     })
+
+
+# ---------------------------------------------------------------------------
+# POST /api/ai/rebuild-image-prompt
+# ---------------------------------------------------------------------------
+
+
+class RebuildImagePromptRequest(BaseModel):
+    archetype: dict
+    sceneSummary: str
+    environment: str
+    bigElementalRole: str
+    babyGags: list[str]
+    topics: list[str]
+    tone: str
+    props: list[str]
+
+
+@router.post("/ai/rebuild-image-prompt")
+async def rebuild_image_prompt(
+    body: RebuildImagePromptRequest,
+    _user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """Regenerate only the finalImagePrompt from edited art direction fields (no transcript needed)."""
+    config = await get_config(db)
+
+    if not config.get("openaiApiKey"):
+        return JSONResponse(
+            status_code=400,
+            content={"error": "No OpenAI API key configured — rebuilding prompt requires OpenAI"},
+        )
+
+    art_style_bible = config.get("artStyleBible") or _DEFAULT_ART_STYLE_BIBLE
+    art_log = config.get("artLog") or []
+    recent = art_log[-5:]
+
+    system_prompt = (
+        "You are writing a gpt-image-1 image prompt for 'Salt All The Things', a World of Warcraft podcast. "
+        "Follow the style bible exactly. Return ONLY the image prompt — one dense paragraph, "
+        "no JSON, no explanation, no headers, no markdown, no bullet points.\n\n"
+        "ART STYLE BIBLE:\n"
+        + json.dumps(art_style_bible, indent=2)
+    )
+    if recent:
+        continuity = "\n\nCONTINUITY (recent episodes — vary environment and gags, don't repeat):\n"
+        for entry in recent:
+            continuity += (
+                f"- EP {entry.get('episodeNumber', '?')}: {entry.get('archetypeId', '?')}, "
+                f"{entry.get('environment', '?')}, gags: {entry.get('babyGags', [])}\n"
+            )
+        system_prompt += continuity
+
+    user_prompt = (
+        "Write a detailed image prompt for this art direction:\n\n"
+        f"Archetype: {body.archetype.get('name', '')} — {body.archetype.get('reason', '')}\n"
+        f"Scene: {body.sceneSummary}\n"
+        f"Environment: {body.environment}\n"
+        f"Big Elemental Role: {body.bigElementalRole}\n"
+        f"Baby Gags: {'; '.join(body.babyGags)}\n"
+        f"Topics: {', '.join(body.topics)}\n"
+        f"Tone: {body.tone}\n"
+        f"Props: {'; '.join(body.props)}\n\n"
+        "The prompt must be self-contained, ready to send directly to an image model. "
+        "Reference the style bible characters, props, and visual rules throughout. "
+        "NO text, words, letters, or numbers in the image."
+    )
+
+    art_config = {**config, "aiModel": "openai"}
+    try:
+        text = await call_ai(system_prompt, user_prompt, art_config)
+    except (httpx.HTTPStatusError, httpx.RequestError, ValueError) as e:
+        return JSONResponse(status_code=500, content={"error": f"AI API error: {e}"})
+
+    return JSONResponse(content={"finalImagePrompt": text.strip()})
