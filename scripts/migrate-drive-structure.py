@@ -17,6 +17,8 @@ SHARED_ROOT = r"J:\Shared drives\Salt All The Things\Show Recordings"
 
 # Source folders (old structure)
 SRC_RAW      = os.path.join(SHARED_ROOT, "Raw Dog Recordings")
+SRC_TROG     = os.path.join(SHARED_ROOT, "Trog Recordings")
+SRC_ROCKET   = os.path.join(SHARED_ROOT, "Rocket Recordings")
 SRC_FINISHED = os.path.join(SHARED_ROOT, "Finished Episodes")
 SRC_TRANSCRIPTS = os.path.join(SHARED_ROOT, "Transcripts")
 SRC_COVER_ART   = os.path.join(SHARED_ROOT, "Cover Art")
@@ -82,6 +84,34 @@ def migrate(dry_run: bool) -> None:
             continue
         dst_dir = os.path.join(SHARED_ROOT, key)
         dst = os.path.join(dst_dir, f"Raw_Dog_{key}.wav")
+        move_file(src, dst, dry_run)
+
+    # ── Trog Recordings ─────────────────────────────────────────────────────
+    print("\nProcessing Trog Recordings...")
+    for name in sorted(os.listdir(SRC_TROG)):
+        src = os.path.join(SRC_TROG, name)
+        if os.path.isdir(src):
+            continue
+        key = _extract_key_from_raw(name)
+        if not key:
+            print(f"  SKIP (unrecognised): {name}")
+            continue
+        dst_dir = os.path.join(SHARED_ROOT, key)
+        dst = os.path.join(dst_dir, f"Trog_{key}.wav")
+        move_file(src, dst, dry_run)
+
+    # ── Rocket Recordings ───────────────────────────────────────────────────
+    print("\nProcessing Rocket Recordings...")
+    for name in sorted(os.listdir(SRC_ROCKET)):
+        src = os.path.join(SRC_ROCKET, name)
+        if os.path.isdir(src):
+            continue
+        key = _extract_key_from_raw(name)
+        if not key:
+            print(f"  SKIP (unrecognised): {name}")
+            continue
+        dst_dir = os.path.join(SHARED_ROOT, key)
+        dst = os.path.join(dst_dir, f"Rocket_{key}.wav")
         move_file(src, dst, dry_run)
 
     # ── Finished Episodes ───────────────────────────────────────────────────
