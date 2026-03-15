@@ -7,7 +7,6 @@ expires (or is within 60 seconds of expiry).
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import json as _json
 import time
@@ -82,6 +81,40 @@ def _match_files(files: list[dict], key: str, ext: str) -> list[dict]:
     """Return files whose name matches key.ext (case-insensitive)."""
     target = f"{key}.{ext}".lower()
     return [f for f in files if f["name"].lower() == target]
+
+
+def _prefix_match(files: list[dict], prefix: str, ext: str) -> list[dict]:
+    """Return files whose name starts with `prefix` and ends with `.{ext}` (case-insensitive)."""
+    suffix = f".{ext}".lower()
+    pfx = prefix.lower()
+    return [f for f in files if f["name"].lower().startswith(pfx) and f["name"].lower().endswith(suffix)]
+
+
+async def find_episode_folder(
+    access_token: str, root_folder_id: str, key: str
+) -> str | None:
+    """Search root_folder_id for a subfolder named exactly `key`.
+    Returns the folder ID string, or None if not found.
+    """
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            _DRIVE_FILES_URL,
+            params={
+                "q": (
+                    f"'{root_folder_id}' in parents"
+                    " and mimeType = 'application/vnd.google-apps.folder'"
+                    f" and name = '{key}'"
+                    " and trashed = false"
+                ),
+                "fields": "files(id,name)",
+                "supportsAllDrives": "true",
+                "includeItemsFromAllDrives": "true",
+            },
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        resp.raise_for_status()
+        files = resp.json().get("files", [])
+    return files[0]["id"] if files else None
 
 
 def _asset_entry(matches: list[dict]) -> dict:
@@ -164,35 +197,47 @@ async def delete_file(access_token: str, file_id: str) -> None:
 async def build_asset_inventory(
     slot_id: str, production_file_key: str, config: dict
 ) -> dict:
-    """Scan all four Drive folders and return an asset_inventory dict.
+    """Scan the episode subfolder in Drive and return an asset_inventory dict.
 
     config must contain:
-      - clientId (str): OAuth2 client ID
-      - clientSecret (str): OAuth2 client secret
-      - refreshToken (str): OAuth2 refresh token
-      - gdriveFolderRawAudio (str): folder ID
-      - gdriveFolderFinishedAudio (str): folder ID
-      - gdriveFolderTranscripts (str): folder ID
-      - gdriveFolderCoverArt (str): folder ID
+      - clientId, clientSecret, refreshToken (OAuth2 credentials)
+      - gdriveFolderShowRecordings: root Show Recordings folder ID
     """
     access_token = await get_drive_access_token(
         config["clientId"], config["clientSecret"], config["refreshToken"]
     )
 
-    raw_files, finished_files, transcript_files, art_files = await asyncio.gather(
-        list_folder_files(access_token, config["gdriveFolderRawAudio"]),
-        list_folder_files(access_token, config["gdriveFolderFinishedAudio"]),
-        list_folder_files(access_token, config["gdriveFolderTranscripts"]),
-        list_folder_files(access_token, config["gdriveFolderCoverArt"]),
-    )
-
+    root_folder_id = config["gdriveFolderShowRecordings"]
     key = production_file_key
+
+    episode_folder_id = await find_episode_folder(access_token, root_folder_id, key)
+
+    if not episode_folder_id:
+        absent = {"present": False}
+        return {
+            "scanned_at": datetime.now(timezone.utc).isoformat(),
+            "episode_folder_id": None,
+            "raw_audio": absent,
+            "raw_trog": absent,
+            "raw_rocket": absent,
+            "finished_audio": absent,
+            "transcript_txt": absent,
+            "transcript_json": absent,
+            "album_art": absent,
+            "art_direction": absent,
+        }
+
+    files = await list_folder_files(access_token, episode_folder_id)
+
     return {
         "scanned_at": datetime.now(timezone.utc).isoformat(),
-        "raw_audio": _asset_entry(_match_files(raw_files, key, "wav")),
-        "finished_audio": _asset_entry(_match_files(finished_files, key, "mp3")),
-        "transcript_txt": _asset_entry(_match_files(transcript_files, key, "txt")),
-        "transcript_json": _asset_entry(_match_files(transcript_files, key, "json")),
-        "album_art": _asset_entry(_match_files(art_files, key, "png")),
-        "art_direction": _asset_entry(_match_files(art_files, key + "_artdirection", "json")),
+        "episode_folder_id": episode_folder_id,
+        "raw_audio":      _asset_entry(_prefix_match(files, f"Raw_Dog_{key}", "wav")),
+        "raw_trog":       _asset_entry(_prefix_match(files, f"Trog_{key}", "wav")),
+        "raw_rocket":     _asset_entry(_prefix_match(files, f"Rocket_{key}", "wav")),
+        "finished_audio": _asset_entry(_match_files(files, key, "mp3")),
+        "transcript_txt": _asset_entry(_prefix_match(files, f"Transcript_{key}", "txt")),
+        "transcript_json":_asset_entry(_prefix_match(files, f"Transcript_{key}", "json")),
+        "album_art":      _asset_entry(_prefix_match(files, f"Cover_Art_{key}", "png")),
+        "art_direction":  _asset_entry(_prefix_match(files, f"Art_Direction_{key}", "json")),
     }

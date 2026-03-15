@@ -110,14 +110,8 @@ def _check_scan_config(settings, db_config: dict) -> None:
         missing.append("GOOGLE_OAUTH_CLIENT_SECRET")
     if not settings.google_oauth_refresh_token:
         missing.append("GOOGLE_OAUTH_REFRESH_TOKEN")
-    if not db_config.get("gdriveFolderRawAudio"):
-        missing.append("gdriveFolderRawAudio")
-    if not db_config.get("gdriveFolderFinishedAudio"):
-        missing.append("gdriveFolderFinishedAudio")
-    if not db_config.get("gdriveFolderTranscripts"):
-        missing.append("gdriveFolderTranscripts")
-    if not db_config.get("gdriveFolderCoverArt"):
-        missing.append("gdriveFolderCoverArt")
+    if not db_config.get("gdriveFolderShowRecordings"):
+        missing.append("gdriveFolderShowRecordings")
     if missing:
         raise HTTPException(
             status_code=400,

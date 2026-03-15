@@ -1,8 +1,9 @@
 """
 watch.py - Folder watcher for automatic transcription.
 
-Watches Google Drive synced folders for new audio files and triggers
-transcription automatically. Runs as a background process on the recording PC.
+Watches the Show Recordings root folder recursively for new audio files
+and triggers transcription automatically. Runs as a background process
+on the recording PC.
 
 Usage:
     python scripts/watch.py
@@ -24,9 +25,6 @@ from watchdog.observers import Observer
 
 # ── Folder paths ────────────────────────────────────────────────────────────
 SHARED_ROOT = r"J:\Shared drives\Salt All The Things\Show Recordings"
-RAW_DIR = SHARED_ROOT + r"\Raw Dog Recordings"
-FINISHED_DIR = SHARED_ROOT + r"\Finished Episodes"
-TRANSCRIPTS_DIR = SHARED_ROOT + r"\Transcripts"
 
 # How long to wait after a file appears before starting transcription.
 # Allows large files time to finish syncing from Drive before we touch them.
@@ -58,49 +56,35 @@ def schedule_transcription(audio_path, delay=SYNC_SETTLE_SECONDS):
     t.start()
 
 
-class RawRecordingsHandler(FileSystemEventHandler):
-    """Watches Raw Dog Recordings for new WAV files."""
+class ShowRecordingsHandler(FileSystemEventHandler):
+    """Watches the Show Recordings root recursively for audio files to transcribe."""
 
     def on_created(self, event):
         if event.is_directory:
             return
         path = event.src_path
-        if path.lower().endswith(".wav"):
-            print(f"[watch] New raw recording detected: {os.path.basename(path)}")
+        name = os.path.basename(path)
+        name_lower = name.lower()
+        if name_lower.endswith(".wav") and name_lower.startswith("raw_dog_"):
+            print(f"[watch] New raw recording detected: {name}")
             schedule_transcription(path)
-
-
-class FinishedEpisodesHandler(FileSystemEventHandler):
-    """Watches Finished Episodes for new MP3 files."""
-
-    def on_created(self, event):
-        if event.is_directory:
-            return
-        path = event.src_path
-        if path.lower().endswith(".mp3"):
-            basename = os.path.splitext(os.path.basename(path))[0]
-            existing_txt = os.path.join(TRANSCRIPTS_DIR, basename + ".txt")
-            if os.path.isfile(existing_txt):
-                print(f"[watch] Finished episode arrived, replacing transcript for: {basename}")
-            else:
-                print(f"[watch] New finished episode detected: {os.path.basename(path)}")
+        elif name_lower.endswith(".mp3"):
+            print(f"[watch] New finished episode detected: {name}")
             schedule_transcription(path)
 
 
 def main():
-    for folder, label in [(RAW_DIR, "Raw Dog Recordings"), (FINISHED_DIR, "Finished Episodes")]:
-        if not os.path.isdir(folder):
-            print(f"[watch] WARNING: folder not found: {folder}")
-            print(f"[watch]   ({label} — is Google Drive for Desktop running?)")
+    if not os.path.isdir(SHARED_ROOT):
+        print(f"[watch] WARNING: folder not found: {SHARED_ROOT}")
+        print("[watch]   (Show Recordings — is Google Drive for Desktop running?)")
 
     observer = Observer()
-    observer.schedule(RawRecordingsHandler(), RAW_DIR, recursive=False)
-    observer.schedule(FinishedEpisodesHandler(), FINISHED_DIR, recursive=False)
+    observer.schedule(ShowRecordingsHandler(), SHARED_ROOT, recursive=True)
     observer.start()
 
     print("[watch] Watcher started.")
-    print(f"[watch]   Watching: {RAW_DIR}")
-    print(f"[watch]   Watching: {FINISHED_DIR}")
+    print(f"[watch]   Watching recursively: {SHARED_ROOT}")
+    print("[watch]   Triggers: Raw_Dog_*.wav, *.mp3")
     print("[watch] Press Ctrl+C to stop.")
 
     try:

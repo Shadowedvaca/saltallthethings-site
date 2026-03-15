@@ -303,7 +303,7 @@ const PostProd = {
     const fullPrompt = styleDesc ? styleDesc + '\n\n' + art.finalImagePrompt : art.finalImagePrompt;
 
     return '<tr class="pp-art-row">'
-      + '<td colspan="11" class="pp-art-cell">'
+      + '<td colspan="13" class="pp-art-cell">'
       + '<div class="pp-art-panel">'
       + '<div class="pp-art-meta">'
       + '<span class="pp-art-archetype">' + escHtml(art.archetype.name) + '</span>'
@@ -346,7 +346,7 @@ const PostProd = {
       const msg = this._queue.length === 0
         ? 'No recorded episodes in the queue yet.'
         : 'All episodes complete. Use "Show complete" to see them.';
-      tbody.innerHTML = '<tr><td colspan="11" class="pp-empty">' + escHtml(msg) + '</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="13" class="pp-empty">' + escHtml(msg) + '</td></tr>';
       return;
     }
 
@@ -354,6 +354,8 @@ const PostProd = {
       const inv = row.assetInventory;
       const hasKey = !!row.productionFileKey;
       const rawBadge = this._badgeHtml(inv ? inv.raw_audio : null, hasKey);
+      const trogBadge = this._badgeHtml(inv ? inv.raw_trog : null, hasKey);
+      const rocketBadge = this._badgeHtml(inv ? inv.raw_rocket : null, hasKey);
       const transcriptBadge = this._badgeHtml(this._transcriptAsset(inv), hasKey);
       const artBadge = this._badgeHtml(inv ? inv.album_art : null, hasKey);
       const artDirBadge = this._badgeHtml(inv ? inv.art_direction : null, hasKey);
@@ -395,6 +397,8 @@ const PostProd = {
         +   '<input class="pp-key-input" type="text" value="' + keyVal + '" placeholder="e.g. EP003_Title_2026-03-04" style="display:none" data-slot="' + escHtml(row.slotId) + '">'
         + '</td>'
         + '<td class="col-asset">' + rawBadge + '</td>'
+        + '<td class="col-asset">' + trogBadge + '</td>'
+        + '<td class="col-asset">' + rocketBadge + '</td>'
         + '<td class="col-asset">' + transcriptBadge + '</td>'
         + '<td class="col-asset">' + artDirBadge + '</td>'
         + '<td class="col-asset">' + artBadge + '</td>'

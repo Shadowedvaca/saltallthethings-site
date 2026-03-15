@@ -8,18 +8,22 @@ Called by the watcher after a new file lands in Google Drive. Runs WhisperX
 with diarization, then calls label-speakers.py --auto to assign speaker names
 without user interaction. Optionally notifies the server to refresh asset
 inventory.
+
+Output files are written to the same folder as the audio file, prefixed with
+Transcript_. The production key is extracted from the filename:
+  Raw_Dog_{key}.wav  ->  key = {key}
+  {key}.mp3          ->  key = {key}
 """
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 
 # ── Folder paths ────────────────────────────────────────────────────────────
 SHARED_ROOT = r"J:\Shared drives\Salt All The Things\Show Recordings"
-RAW_DIR = SHARED_ROOT + r"\Raw Dog Recordings"
-FINISHED_DIR = SHARED_ROOT + r"\Finished Episodes"
-TRANSCRIPTS_DIR = SHARED_ROOT + r"\Transcripts"
 
 WHISPERX_MODEL = "medium"
 DEFAULT_HOSTS = ["Rocket", "Trog"]
@@ -72,21 +76,47 @@ def get_jwt(username, password):
     return None
 
 
-def transcribe(audio_path, hf_token):
-    """Run WhisperX on audio_path, output JSON to TRANSCRIPTS_DIR."""
-    cmd = [
-        "whisperx", audio_path,
-        "--model", WHISPERX_MODEL,
-        "--language", "en",
-        "--compute_type", "int8",
-        "--diarize",
-        "--hf_token", hf_token,
-        "--output_format", "json",
-        "--output_dir", TRANSCRIPTS_DIR,
-    ]
-    print(f"[transcribe-auto] Running WhisperX on: {os.path.basename(audio_path)}")
-    result = subprocess.run(cmd)
-    return result.returncode == 0
+def _extract_key(audio_path: str) -> str:
+    """Extract the production key from an audio filename.
+
+    Raw_Dog_{key}.wav  ->  {key}
+    {key}.mp3          ->  {key}
+    """
+    name = os.path.splitext(os.path.basename(audio_path))[0]
+    if name.lower().startswith("raw_dog_"):
+        return name[len("Raw_Dog_"):]
+    return name
+
+
+def transcribe(audio_path: str, hf_token: str, output_dir: str, key: str) -> bool:
+    """Run WhisperX; rename output to Transcript_{key}.json in output_dir."""
+    with tempfile.TemporaryDirectory() as tmp:
+        cmd = [
+            "whisperx", audio_path,
+            "--model", WHISPERX_MODEL,
+            "--language", "en",
+            "--compute_type", "int8",
+            "--diarize",
+            "--hf_token", hf_token,
+            "--output_format", "json",
+            "--output_dir", tmp,
+        ]
+        print(f"[transcribe-auto] Running WhisperX on: {os.path.basename(audio_path)}")
+        result = subprocess.run(cmd)
+        if result.returncode != 0:
+            return False
+
+        # WhisperX names the JSON after the input filename (without extension)
+        whisperx_name = os.path.splitext(os.path.basename(audio_path))[0] + ".json"
+        whisperx_out = os.path.join(tmp, whisperx_name)
+        target_json = os.path.join(output_dir, f"Transcript_{key}.json")
+
+        if not os.path.isfile(whisperx_out):
+            print(f"[transcribe-auto] ERROR: WhisperX JSON not found: {whisperx_out}")
+            return False
+
+        shutil.move(whisperx_out, target_json)
+    return True
 
 
 def label_speakers(json_path, txt_path):
@@ -155,14 +185,14 @@ def main():
         print("[transcribe-auto] ERROR: HF_TOKEN not set. Add it to scripts/secrets.py or environment.")
         sys.exit(1)
 
-    os.makedirs(TRANSCRIPTS_DIR, exist_ok=True)
-
-    basename = os.path.splitext(os.path.basename(audio_path))[0]
-    json_out = os.path.join(TRANSCRIPTS_DIR, basename + ".json")
-    txt_out = os.path.join(TRANSCRIPTS_DIR, basename + ".txt")
+    # Output goes to the same folder as the audio file
+    output_dir = os.path.dirname(audio_path)
+    key = _extract_key(audio_path)
+    json_out = os.path.join(output_dir, f"Transcript_{key}.json")
+    txt_out = os.path.join(output_dir, f"Transcript_{key}.txt")
 
     # Step 1: WhisperX
-    if not transcribe(audio_path, hf_token):
+    if not transcribe(audio_path, hf_token, output_dir, key):
         print(f"[transcribe-auto] ERROR: WhisperX failed on {os.path.basename(audio_path)}")
         sys.exit(1)
 
@@ -175,7 +205,7 @@ def main():
         print(f"[transcribe-auto] ERROR: Speaker labeling failed. Raw JSON kept at {json_out}")
         sys.exit(1)
 
-    print(f"[transcribe-auto] Done: {basename}.txt")
+    print(f"[transcribe-auto] Done: Transcript_{key}.txt")
 
     # Step 3: Notify server (optional)
     if args.notify_server:

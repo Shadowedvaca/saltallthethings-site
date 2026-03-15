@@ -21,6 +21,7 @@ from satt.gdrive import (
     delete_file,
     fetch_file_content,
     fetch_image_as_base64,
+    find_episode_folder,
     get_drive_access_token,
     upload_file_to_folder,
 )
@@ -459,11 +460,23 @@ async def generate_art_direction(
     config["artLog"] = art_log
     await save_config(db, config)
 
-    # Upload art direction JSON to Cover Art Drive folder (best-effort)
-    cover_art_folder_id = config.get("gdriveFolderCoverArt")
-    if cover_art_folder_id and slot and slot.production_file_key:
+    # Upload art direction JSON to episode folder in Drive (best-effort)
+    # Resolve episode folder ID from inventory or via find_episode_folder
+    episode_folder_id = None
+    if slot and slot.production_file_key:
+        # Try inventory first (avoids a second Drive API call)
+        inv = (slot.asset_inventory or {})
+        episode_folder_id = inv.get("episode_folder_id")
+        if not episode_folder_id:
+            root_folder_id = config.get("gdriveFolderShowRecordings")
+            if root_folder_id:
+                episode_folder_id = await find_episode_folder(
+                    access_token, root_folder_id, slot.production_file_key
+                )
+
+    if episode_folder_id and slot and slot.production_file_key:
         try:
-            art_json_filename = f"{slot.production_file_key}_artdirection.json"
+            art_json_filename = f"Art_Direction_{slot.production_file_key}.json"
             art_json_bytes = json.dumps(result, indent=2).encode()
 
             # Delete old art direction JSON if present
@@ -476,7 +489,7 @@ async def generate_art_direction(
                     pass
 
             new_art_dir_id = await upload_file_to_folder(
-                access_token, cover_art_folder_id, art_json_filename,
+                access_token, episode_folder_id, art_json_filename,
                 art_json_bytes, mime_type="application/json",
             )
 
@@ -625,7 +638,7 @@ async def generate_episode_art(
             content={"error": "No production file key set on slot — cannot name the art file"},
         )
 
-    filename = f"{slot.production_file_key}.png"
+    filename = f"Cover_Art_{slot.production_file_key}.png"
 
     # Get Drive access token (needed for both reference images and upload)
     settings = get_settings()
@@ -639,13 +652,6 @@ async def generate_episode_art(
             content={"error": "Google Drive OAuth not configured on server."},
         )
 
-    cover_art_folder_id = config.get("gdriveFolderCoverArt")
-    if not cover_art_folder_id:
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Cover art folder not configured — set gdriveFolderCoverArt in Config"},
-        )
-
     try:
         access_token = await get_drive_access_token(
             settings.google_oauth_client_id,
@@ -656,6 +662,21 @@ async def generate_episode_art(
         return JSONResponse(
             status_code=500,
             content={"error": f"Failed to get Drive access token: {e}"},
+        )
+
+    # Resolve episode folder ID from inventory or via find_episode_folder
+    inv = (slot.asset_inventory or {}) if slot else {}
+    episode_folder_id = inv.get("episode_folder_id")
+    if not episode_folder_id:
+        root_folder_id = config.get("gdriveFolderShowRecordings")
+        if root_folder_id:
+            episode_folder_id = await find_episode_folder(
+                access_token, root_folder_id, slot.production_file_key
+            )
+    if not episode_folder_id:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Episode folder not found in Drive — scan assets first or check gdriveFolderShowRecordings in Config"},
         )
 
     # Fetch reference images in configured order — up to 8 file IDs, sent to
@@ -696,7 +717,6 @@ async def generate_episode_art(
         return JSONResponse(status_code=500, content={"error": f"Image generation error: {e}"})
 
     # Delete old art file if it exists in asset inventory (regeneration case)
-    inv = (slot.asset_inventory or {}) if slot else {}
     old_art = inv.get("album_art", {})
     if old_art.get("drive_file_id"):
         try:
@@ -704,10 +724,10 @@ async def generate_episode_art(
         except (httpx.HTTPStatusError, httpx.RequestError):
             pass  # best-effort — old file may already be gone
 
-    # Upload new PNG to Cover Art folder
+    # Upload new PNG to episode folder
     try:
         new_file_id = await upload_file_to_folder(
-            access_token, cover_art_folder_id, filename, png_bytes
+            access_token, episode_folder_id, filename, png_bytes
         )
     except (httpx.HTTPStatusError, httpx.RequestError) as e:
         return JSONResponse(
