@@ -33,6 +33,9 @@
     }
     .ai-suggestion:hover { border-color: var(--gold-dim); background: var(--gold-glow); }
 
+    .joke-edit-input { width: 100%; margin-top: 4px; font-size: 0.9rem; line-height: 1.5; resize: vertical; }
+    .joke-edit-actions { display: flex; gap: 6px; margin-top: 6px; }
+
     .filter-tabs { display: flex; gap: var(--space-sm); margin-bottom: var(--space-lg); }
     .filter-tab {
       padding: var(--space-xs) var(--space-md); border-radius: 100px;
@@ -176,14 +179,20 @@
       list.innerHTML = sorted.map(function(joke) {
         var ideaTitle = joke.usedByIdeaId ? getIdeaTitle(joke.usedByIdeaId) : null;
         var statusBadge = joke.status === 'unused' ? 'processed' : joke.status === 'used' ? 'scheduled' : 'draft';
-        var html = '<div class="joke-item ' + joke.status + '">'
+        var html = '<div class="joke-item ' + joke.status + '" id="joke-' + esc(joke.id) + '">'
           + '<div style="flex:1;">'
           + '<span class="badge badge-' + statusBadge + '" style="margin-bottom:4px;">' + joke.status + '</span>'
-          + '<div class="joke-text">' + esc(joke.text) + '</div>'
+          + '<div class="joke-text" id="joke-text-' + esc(joke.id) + '">' + esc(joke.text) + '</div>'
+          + '<textarea class="joke-edit-input hidden" id="joke-edit-' + esc(joke.id) + '" rows="3">' + esc(joke.text) + '</textarea>'
+          + '<div class="joke-edit-actions hidden" id="joke-edit-actions-' + esc(joke.id) + '">'
+          + '<button class="btn btn-primary btn-sm" onclick="saveJokeEdit(\'' + joke.id + '\')">Save</button>'
+          + '<button class="btn btn-ghost btn-sm" onclick="cancelJokeEdit(\'' + joke.id + '\')">Cancel</button>'
+          + '</div>'
           + '<div class="joke-meta">Added ' + formatDate(joke.createdAt)
           + (joke.source ? ' · ' + esc(joke.source) : '')
           + (ideaTitle ? ' · Used in: ' + esc(ideaTitle) : '')
-          + '</div></div><div class="joke-actions">';
+          + '</div></div><div class="joke-actions" id="joke-actions-' + esc(joke.id) + '">';
+        html += '<button class="btn btn-ghost btn-sm" onclick="startJokeEdit(\'' + joke.id + '\')" title="Edit">✎</button>';
         if (joke.status === 'unused') html += '<button class="btn btn-ghost btn-sm" onclick="retireJoke(\'' + joke.id + '\')" title="Retire">💤</button>';
         if (joke.status === 'retired') html += '<button class="btn btn-ghost btn-sm" onclick="unretireJoke(\'' + joke.id + '\')" title="Bring back">♻️</button>';
         if (joke.status === 'used') html += '<button class="btn btn-ghost btn-sm" onclick="freeJoke(\'' + joke.id + '\')" title="Mark unused">↩</button>';
@@ -256,6 +265,33 @@
       document.getElementById('manualJoke').value = '';
       renderJokes();
       Toast.success('Joke added!');
+    }
+
+    function startJokeEdit(id) {
+      document.getElementById('joke-text-' + id).classList.add('hidden');
+      document.getElementById('joke-actions-' + id).classList.add('hidden');
+      var ta = document.getElementById('joke-edit-' + id);
+      ta.classList.remove('hidden');
+      document.getElementById('joke-edit-actions-' + id).classList.remove('hidden');
+      ta.focus();
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+    }
+
+    function cancelJokeEdit(id) {
+      var joke = Storage.getJokes().find(function(j) { return j.id === id; });
+      if (joke) document.getElementById('joke-edit-' + id).value = joke.text;
+      document.getElementById('joke-text-' + id).classList.remove('hidden');
+      document.getElementById('joke-actions-' + id).classList.remove('hidden');
+      document.getElementById('joke-edit-' + id).classList.add('hidden');
+      document.getElementById('joke-edit-actions-' + id).classList.add('hidden');
+    }
+
+    function saveJokeEdit(id) {
+      var newText = document.getElementById('joke-edit-' + id).value.trim();
+      if (!newText) { Toast.error('Joke text cannot be empty.'); return; }
+      Storage.updateJoke(id, { text: newText });
+      renderJokes();
+      Toast.success('Joke updated.');
     }
 
     function retireJoke(id) { Storage.updateJoke(id, { status: 'retired' }); renderJokes(); }
