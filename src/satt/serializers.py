@@ -86,5 +86,6 @@ def serialize_postprod_row(slot: Any, idea: Any) -> dict:
         "ideaStatus": idea.status if idea else None,
         "imageFileId": idea.image_file_id if idea else None,
         "assetInventory": slot.asset_inventory,
+        "transcriptionJob": slot.transcription_job,
         "nextStep": _compute_next_step(slot),
     }

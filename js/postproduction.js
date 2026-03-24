@@ -142,6 +142,58 @@ const PostProd = {
     }[nextStep] || nextStep;
   },
 
+  _nextStepCellContent(row) {
+    const step = row.nextStep;
+    const job = row.transcriptionJob;
+
+    if (step === 'transcribe' || step === 'retranscribe') {
+      if (job && job.status === 'pending') {
+        return '<span class="pp-job-pending">Queued\u2026</span>';
+      }
+      if (job && job.status === 'in_progress') {
+        return '<span class="pp-job-inprogress">'
+          + '<svg viewBox="0 0 50 50" style="width:11px;height:11px;display:inline-block;vertical-align:middle;margin-right:4px;">'
+          + '<circle cx="25" cy="25" r="20" fill="none" stroke="currentColor" stroke-width="5" stroke-dasharray="80 40" stroke-linecap="round">'
+          + '<animateTransform attributeName="transform" type="rotate" values="0 25 25;360 25 25" dur="0.8s" repeatCount="indefinite"/>'
+          + '</circle></svg>Transcribing\u2026</span>';
+      }
+      if (job && job.status === 'done') {
+        return '<span class="pp-job-done">Done \u2014 refresh assets</span>';
+      }
+      var label = step === 'retranscribe' ? 'Re-transcribe' : 'Run transcription';
+      var extra = '';
+      if (job && job.status === 'failed') {
+        extra = '<div class="pp-job-error" title="' + escHtml(job.error || '') + '">'
+          + escHtml(job.error ? job.error.substring(0, 60) + (job.error.length > 60 ? '\u2026' : '') : 'Failed') + '</div>';
+        label = 'Retry transcription';
+      }
+      return '<button class="btn btn-link btn-sm pp-transcribe-btn" onclick="PostProd.requestTranscription(\'' + escHtml(row.slotId) + '\')">'
+        + escHtml(label) + '</button>' + extra;
+    }
+
+    return escHtml(this._nextStepLabel(step));
+  },
+
+  async requestTranscription(slotId) {
+    try {
+      const resp = await fetch(this._apiBase + '/postproduction/' + slotId + '/transcribe', {
+        method: 'POST',
+        headers: this._headers()
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || ('API error: ' + resp.status));
+      }
+      const updated = await resp.json();
+      const idx = this._queue.findIndex(r => r.slotId === slotId);
+      if (idx !== -1) this._queue[idx] = updated;
+      this.renderTable();
+      Toast.success('Transcription queued \u2014 watcher will pick it up within 30s.');
+    } catch (err) {
+      Toast.error('Failed to queue transcription: ' + err.message);
+    }
+  },
+
   // --- Art direction ---
 
   async generateArtDirection(slotId) {
@@ -545,7 +597,7 @@ const PostProd = {
         + '<td class="col-asset">' + artDirBadge + '</td>'
         + '<td class="col-asset">' + artBadge + '</td>'
         + '<td class="col-asset">' + finishedBadge + '</td>'
-        + '<td class="col-next' + nextClass + '">' + escHtml(this._nextStepLabel(row.nextStep)) + '</td>'
+        + '<td class="col-next' + nextClass + '">' + this._nextStepCellContent(row) + '</td>'
         + actionCell
         + '</tr>';
 

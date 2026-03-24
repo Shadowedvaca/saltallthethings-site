@@ -156,6 +156,7 @@ class ShowSlot(Base):
     release_date_override: Mapped[Optional[date]] = mapped_column(Date)
     production_file_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     asset_inventory: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    transcription_job: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     assignment: Mapped[Optional["Assignment"]] = relationship(back_populates="slot")
 

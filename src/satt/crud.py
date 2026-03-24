@@ -305,6 +305,25 @@ async def set_idea_image_file_id(db: AsyncSession, idea_id: str, file_id: str) -
     await db.flush()
 
 
+async def set_transcription_job(db: AsyncSession, slot_id: str, job: dict | None) -> None:
+    await db.execute(
+        update(ShowSlot)
+        .where(ShowSlot.id == slot_id)
+        .values(transcription_job=job)
+    )
+    await db.flush()
+
+
+async def get_pending_transcription_jobs(db: AsyncSession) -> list[dict]:
+    """Return slots with transcription_job.status = 'pending'."""
+    result = await db.execute(
+        select(ShowSlot.id, ShowSlot.production_file_key)
+        .where(ShowSlot.transcription_job["status"].astext == "pending")
+        .where(ShowSlot.production_file_key.is_not(None))
+    )
+    return [{"slotId": row.id, "productionFileKey": row.production_file_key} for row in result]
+
+
 async def get_slots_for_scan(db: AsyncSession) -> list[dict]:
     """Return slots with a past record_date and a non-null production_file_key."""
     today = datetime.now(_PST).date()

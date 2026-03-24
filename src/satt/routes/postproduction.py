@@ -14,10 +14,12 @@ from satt.auth import require_auth
 from satt.config import get_settings
 from satt.crud import (
     get_config,
+    get_pending_transcription_jobs,
     get_postproduction_queue,
     get_slots_for_scan,
     set_asset_inventory,
     set_production_file_key,
+    set_transcription_job,
 )
 from satt.database import get_db
 from satt.gdrive import (
@@ -186,6 +188,64 @@ async def save_art_direction(
     await set_asset_inventory(db, slot_id, inv)
 
     return art_data
+
+
+@router.post("/postproduction/{slot_id}/transcribe")
+async def request_transcription(
+    slot_id: str,
+    _user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Queue a transcription job for the watcher to pick up."""
+    queue = await get_postproduction_queue(db)
+    row = next((r for r in queue if r["slotId"] == slot_id), None)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    if not row.get("productionFileKey"):
+        raise HTTPException(status_code=400, detail="Production file key not set — set it before transcribing")
+
+    job = {"status": "pending", "requestedAt": datetime.now(timezone.utc).isoformat()}
+    await set_transcription_job(db, slot_id, job)
+
+    # Return the updated row
+    queue = await get_postproduction_queue(db)
+    for r in queue:
+        if r["slotId"] == slot_id:
+            return r
+    raise HTTPException(status_code=404, detail="Slot not found after update")
+
+
+@router.get("/postproduction/transcription-jobs")
+async def get_transcription_jobs(
+    _user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> list:
+    """Return pending transcription jobs. Polled by the local watcher."""
+    return await get_pending_transcription_jobs(db)
+
+
+class TranscriptionStatusRequest(BaseModel):
+    status: str  # 'in_progress' | 'done' | 'failed'
+    error: str | None = None
+
+
+@router.put("/postproduction/{slot_id}/transcribe-status")
+async def update_transcription_status(
+    slot_id: str,
+    body: TranscriptionStatusRequest,
+    _user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Update a transcription job's status. Called by the local watcher."""
+    allowed = {"in_progress", "done", "failed"}
+    if body.status not in allowed:
+        raise HTTPException(status_code=400, detail=f"status must be one of: {', '.join(allowed)}")
+
+    job: dict = {"status": body.status, "updatedAt": datetime.now(timezone.utc).isoformat()}
+    if body.error:
+        job["error"] = body.error
+    await set_transcription_job(db, slot_id, job)
+    return job
 
 
 def _build_scan_config(settings, db_config: dict) -> dict:
