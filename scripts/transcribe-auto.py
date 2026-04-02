@@ -94,9 +94,9 @@ def get_jwt(username, password):
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read())
-            token = data.get("access_token")
+            token = data.get("token")
             if not token:
-                log.error("Login succeeded but response has no access_token: %s", data)
+                log.error("Login succeeded but response has no token: %s", data)
             return token
     except urllib.error.HTTPError as e:
         body = e.read().decode(errors="replace")
