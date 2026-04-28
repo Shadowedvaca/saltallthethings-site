@@ -132,7 +132,7 @@ def transcribe(audio_path: str, hf_token: str, output_dir: str, key: str) -> boo
             "--output_dir", tmp,
         ]
         log.info("Running WhisperX on: %s", os.path.basename(audio_path))
-        result = subprocess.run(cmd, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode != 0:
             log.error("WhisperX exited with code %d", result.returncode)
             if result.stderr:
