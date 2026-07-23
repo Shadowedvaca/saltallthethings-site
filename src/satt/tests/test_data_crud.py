@@ -220,7 +220,11 @@ async def test_put_config_then_get(db_client: AsyncClient):
     assert put_resp.status_code == 200
 
     get_resp = await db_client.get("/api/data/config", headers=_headers())
-    assert get_resp.json() == config
+    assert get_resp.json() == {
+        **config,
+        "claudeApiKeyConfigured": False,
+        "openaiApiKeyConfigured": False,
+    }
 
 
 @pytest.mark.asyncio
