@@ -71,3 +71,13 @@ async def test_export_config_is_dict(db_client: AsyncClient):
         "/api/export", headers={"Authorization": f"Bearer {_token()}"}
     )
     assert isinstance(response.json()["config"], dict)
+
+
+@pytest.mark.asyncio
+async def test_export_never_returns_api_keys(db_client: AsyncClient):
+    response = await db_client.get(
+        "/api/export", headers={"Authorization": f"Bearer {_token()}"}
+    )
+    config = response.json()["config"]
+    assert "claudeApiKey" not in config
+    assert "openaiApiKey" not in config

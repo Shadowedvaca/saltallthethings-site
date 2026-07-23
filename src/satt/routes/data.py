@@ -25,6 +25,53 @@ from satt.database import get_db
 router = APIRouter()
 
 _ALLOWED_KEYS = {"config", "ideas", "jokes", "showSlots", "assignments"}
+_CONFIG_SECRET_KEYS = ("claudeApiKey", "openaiApiKey")
+
+
+def _public_config(config: dict) -> dict:
+    """Return browser-safe config with secret presence flags."""
+    public = dict(config)
+    for key in _CONFIG_SECRET_KEYS:
+        public.pop(key, None)
+        public[f"{key}Configured"] = bool(config.get(key))
+    return public
+
+
+def _merge_config_update(
+    existing: dict,
+    incoming: dict,
+    *,
+    allow_secret_updates: bool,
+) -> dict:
+    """Merge a config update while keeping stored API keys server-side."""
+    merged = dict(existing)
+    update = dict(incoming)
+
+    for key in _CONFIG_SECRET_KEYS:
+        value = update.pop(key, None)
+        if value is None or value == "":
+            continue
+        if not isinstance(value, str):
+            raise HTTPException(
+                status_code=422,
+                detail=f"{key} must be a string",
+            )
+        value = value.strip()
+        if not value:
+            continue
+        if not allow_secret_updates:
+            raise HTTPException(
+                status_code=403,
+                detail="Only administrators may replace AI API keys",
+            )
+        merged[key] = value
+
+    for key in tuple(update):
+        if key.endswith("ApiKeyConfigured"):
+            update.pop(key)
+
+    merged.update(update)
+    return merged
 
 
 # ---------------------------------------------------------------------------
@@ -45,7 +92,7 @@ async def export_all(
         await get_assignments(db),
     )
     return {
-        "config": config,
+        "config": _public_config(config),
         "ideas": ideas,
         "jokes": jokes,
         "showSlots": show_slots,
@@ -68,7 +115,7 @@ async def get_data(
         raise HTTPException(status_code=400, detail=f"Unknown key: {key!r}")
 
     if key == "config":
-        return await get_config(db)
+        return _public_config(await get_config(db))
     if key == "ideas":
         return await get_ideas(db)
     if key == "jokes":
@@ -97,7 +144,13 @@ async def put_data(
     if key == "config":
         if not isinstance(body, dict):
             raise HTTPException(status_code=422, detail="config must be an object")
-        await save_config(db, body)
+        existing = await get_config(db)
+        merged = _merge_config_update(
+            existing,
+            body,
+            allow_secret_updates=bool(_user.get("is_admin")),
+        )
+        await save_config(db, merged)
     elif key == "ideas":
         if not isinstance(body, list):
             raise HTTPException(status_code=422, detail="ideas must be an array")
@@ -130,7 +183,15 @@ async def bulk_import(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     if "config" in body:
-        await save_config(db, body["config"])
+        if not isinstance(body["config"], dict):
+            raise HTTPException(status_code=422, detail="config must be an object")
+        existing = await get_config(db)
+        merged = _merge_config_update(
+            existing,
+            body["config"],
+            allow_secret_updates=bool(_user.get("is_admin")),
+        )
+        await save_config(db, merged)
     if "ideas" in body:
         await replace_ideas(db, body["ideas"])
     if "jokes" in body:

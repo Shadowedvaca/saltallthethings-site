@@ -247,6 +247,14 @@ AI_REQUEST_TIMEOUT=60
 AI API keys are NOT in `.env` — they are stored in `satt.config` in Postgres
 and managed through the Config page UI.
 
+### Secret handling (STRICT)
+
+- Never print API keys, tokens, passwords, private keys, OAuth secrets, database URLs, or complete secret-bearing configuration records into a terminal or agent transcript.
+- Never return `claudeApiKey` or `openaiApiKey` from an API response. Browser clients receive only `claudeApiKeyConfigured` and `openaiApiKeyConfigured` booleans.
+- Validate credentials only by presence or one-way SHA-256 fingerprint. Consume actual values entirely inside the server process.
+- Blank API-key fields preserve the existing server-side value. Only an authenticated administrator may replace a stored AI key.
+- If a secret is accidentally emitted, stop, notify the user, revoke it, and rotate every location where it was reused.
+
 ---
 
 ## Testing
