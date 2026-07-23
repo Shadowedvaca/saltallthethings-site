@@ -9,14 +9,15 @@ import pytest
 from httpx import AsyncClient
 
 from satt.config import get_settings
+from satt.crud import get_config
 
 
-def _token() -> str:
+def _token(is_admin: bool = False) -> str:
     settings = get_settings()
     payload = {
         "user_id": 1,
         "username": "testuser",
-        "is_admin": False,
+        "is_admin": is_admin,
         "exp": datetime.now(timezone.utc) + timedelta(hours=1),
         "iat": datetime.now(timezone.utc),
     }
@@ -28,6 +29,10 @@ AUTH = property(lambda self: {"Authorization": f"Bearer {_token()}"})
 
 def _headers() -> dict:
     return {"Authorization": f"Bearer {_token()}"}
+
+
+def _admin_headers() -> dict:
+    return {"Authorization": f"Bearer {_token(is_admin=True)}"}
 
 
 # ---------------------------------------------------------------------------
@@ -215,4 +220,61 @@ async def test_put_config_then_get(db_client: AsyncClient):
     assert put_resp.status_code == 200
 
     get_resp = await db_client.get("/api/data/config", headers=_headers())
-    assert get_resp.json() == config
+    assert get_resp.json() == {
+        **config,
+        "claudeApiKeyConfigured": False,
+        "openaiApiKeyConfigured": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_config_api_keys_never_returned_to_browser(
+    db_client: AsyncClient,
+):
+    config = {
+        "aiModel": "openai",
+        "claudeApiKey": "sk-ant-secret",
+        "openaiApiKey": "sk-openai-secret",
+    }
+    put_resp = await db_client.put(
+        "/api/data/config", json=config, headers=_admin_headers()
+    )
+    assert put_resp.status_code == 200
+
+    get_resp = await db_client.get("/api/data/config", headers=_headers())
+    body = get_resp.json()
+    assert "claudeApiKey" not in body
+    assert "openaiApiKey" not in body
+    assert body["claudeApiKeyConfigured"] is True
+    assert body["openaiApiKeyConfigured"] is True
+
+
+@pytest.mark.asyncio
+async def test_blank_secret_fields_preserve_stored_keys(
+    db_client: AsyncClient,
+    db_session,
+):
+    await db_client.put(
+        "/api/data/config",
+        json={"openaiApiKey": "sk-openai-secret"},
+        headers=_admin_headers(),
+    )
+    update_resp = await db_client.put(
+        "/api/data/config",
+        json={"aiModel": "openai", "openaiApiKey": ""},
+        headers=_headers(),
+    )
+    assert update_resp.status_code == 200
+
+    stored = await get_config(db_session)
+    assert stored["openaiApiKey"] == "sk-openai-secret"
+
+
+@pytest.mark.asyncio
+async def test_non_admin_cannot_replace_api_key(db_client: AsyncClient):
+    response = await db_client.put(
+        "/api/data/config",
+        json={"openaiApiKey": "sk-unauthorized"},
+        headers=_headers(),
+    )
+    assert response.status_code == 403

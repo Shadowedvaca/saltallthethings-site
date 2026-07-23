@@ -263,9 +263,15 @@
     function loadConfig() {
       const config = Storage.getConfig();
       document.getElementById('aiModel').value = config.aiModel || 'claude';
-      document.getElementById('claudeApiKey').value = config.claudeApiKey || '';
+      document.getElementById('claudeApiKey').value = '';
+      document.getElementById('claudeApiKey').placeholder = config.claudeApiKeyConfigured
+        ? 'Stored on server — enter a new key to replace'
+        : 'sk-ant-...';
       document.getElementById('claudeModelId').value = config.claudeModelId || 'claude-sonnet-4-5-20250929';
-      document.getElementById('openaiApiKey').value = config.openaiApiKey || '';
+      document.getElementById('openaiApiKey').value = '';
+      document.getElementById('openaiApiKey').placeholder = config.openaiApiKeyConfigured
+        ? 'Stored on server — enter a new key to replace'
+        : 'sk-...';
       document.getElementById('openaiModelId').value = config.openaiModelId || 'gpt-4o';
       document.getElementById('titleCount').value = config.titleCount || 3;
       document.getElementById('jokeCount').value = config.jokeCount || 5;
