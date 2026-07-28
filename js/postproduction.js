@@ -6,7 +6,7 @@
    ============================================ */
 
 const PostProd = {
-  _apiBase: 'https://saltallthethings.com/api',
+  _apiBase: '/api',
   _queue: [],
   _showComplete: false,
   _artDirection: {},

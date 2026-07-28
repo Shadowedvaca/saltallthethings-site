@@ -75,7 +75,8 @@ saltallthethings-site/
   files directly from `/opt/satt-platform/static/`
 - **SSL:** Certbot / Let's Encrypt
 - **Production URL:** `https://saltallthethings.com`
-- **Staging URL:** `https://salt.shadowedvaca.com`
+- **Development URL (provisioned by Foundation #11):** `https://dev.saltallthethings.com`
+- **Test URL (provisioned by Foundation #12):** `https://test.saltallthethings.com`
 
 ### Other sites on this server
 
@@ -185,8 +186,7 @@ manually propagated here.
 
 ### Frontend conventions
 - No build step — raw HTML/CSS/JS, no bundler, no framework
-- `API_BASE = 'https://saltallthethings.com/api'` hardcoded in `storage.js`
-  and `ai-service.js`
+- Browser API calls use same-origin `/api` and `/public` paths.
 - AI keys are stored in `satt.config` in Postgres — never in the frontend
 - `show-engine.js` is never modified — it is pure date logic and has no
   dependencies on auth or storage
@@ -240,17 +240,27 @@ not use it as the release procedure for Foundation work.
 
 ## Environment Variables
 
-Stored in `/opt/satt-platform/.env`:
+Stored separately for each environment in its server-side `.env`:
 
 ```
-DATABASE_URL=postgresql://user:password@localhost/sattdb
+DATABASE_URL=<environment-specific database URL>
 SECRET_KEY=<hex string — generate with: openssl rand -hex 32>
-ENVIRONMENT=production
+ENVIRONMENT=<local|development|test|production>
+DATABASE_ENVIRONMENT=<must match ENVIRONMENT>
+SITE_URL=<matching canonical origin>
+CORS_ORIGINS=<matching canonical origin>
+COMMIT_SHA=<deployed commit>
 AI_REQUEST_TIMEOUT=60
+ALLOW_NONPRODUCTION_EXTERNAL_SERVICES=false
 ```
 
 AI API keys are NOT in `.env` — they are stored in `satt.config` in Postgres
 and managed through the Config page UI.
+
+Canonical origins are documented in `docs/delivery.md`. Non-production startup
+rejects production web origins, mismatched database ownership, and Google OAuth
+credentials unless an authorized external-service smoke test explicitly opts
+in. Opt-in never authorizes reuse of production credentials or Drive resources.
 
 ### Secret handling (STRICT)
 

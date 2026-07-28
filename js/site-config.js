@@ -54,8 +54,8 @@ const SiteConfig = {
   },
 
   // ---- API ----
-  // Public episodes endpoint (no auth required)
-  publicApiUrl: 'https://saltallthethings.com',
+  // Resolve public API calls to the environment serving this page.
+  publicApiUrl: window.location.origin,
 
   // ---- Helper Methods ----
   hasLink(key) {

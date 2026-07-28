@@ -51,15 +51,17 @@ venv/Scripts/activate        # Windows
 pip install -r requirements.txt
 
 # Needs an explicitly isolated local Postgres instance
-cp .env.example .env         # fill in DATABASE_URL, SECRET_KEY
-PYTHONPATH=src uvicorn satt.main:app --reload
+Copy-Item .env.example .env  # fill in local-only DATABASE_URL and SECRET_KEY
+$env:PYTHONPATH='src'
+uvicorn satt.main:app --reload --port 8200
 ```
 
 ### Frontend
 
-Open the HTML files directly in a browser or serve them statically. Environment-
-safe browser/API routing is tracked by Foundation issue #5; do not edit
-committed URLs as a deployment workaround.
+Open `http://localhost:8200`. In the local environment FastAPI serves only the
+explicit public HTML, CSS, JavaScript, and image assets; it does not expose
+`.env`, backend source, or repository metadata. Browser API calls use
+same-origin `/api` and `/public` paths in every environment.
 
 ### Tests
 
@@ -89,16 +91,20 @@ them against production.
 
 ## Environment variables
 
-Stored in `/opt/satt-platform/.env` on the server:
+Each deployment supplies its own server-side `.env`. Canonical settings are:
 
-```
-DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/satt_db
-SECRET_KEY=<hex string>
-ENVIRONMENT=production
-SITE_URL=https://saltallthethings.com
-CORS_ORIGINS=https://saltallthethings.com,https://salt.shadowedvaca.com
-AI_REQUEST_TIMEOUT=60
-```
+| Tier | `ENVIRONMENT` / `DATABASE_ENVIRONMENT` | `SITE_URL` and allowed CORS origin |
+|---|---|---|
+| Local | `local` | `http://localhost:8200` |
+| Development | `development` | `https://dev.saltallthethings.com` |
+| Test | `test` | `https://test.saltallthethings.com` |
+| Production | `production` | `https://saltallthethings.com` |
+
+`DATABASE_ENVIRONMENT` must match `ENVIRONMENT`. Non-production refuses the
+production origin and refuses configured Google OAuth credentials unless
+`ALLOW_NONPRODUCTION_EXTERNAL_SERVICES=true` is deliberately set for an
+authorized smoke test. Each non-production environment still requires its own
+database, credentials, and Drive resources.
 
 AI API keys are **not** in `.env` — they are stored in `satt.config` in Postgres
 and managed through the Config page.

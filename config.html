@@ -328,7 +328,7 @@
       btn.textContent = 'Analyzing...';
       try {
         const token = Auth.getToken();
-        const resp = await fetch('https://saltallthethings.com/api/ai/analyze-reference-style', {
+        const resp = await fetch('/api/ai/analyze-reference-style', {
           method: 'POST',
           headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }
         });
@@ -473,7 +473,7 @@
       btn.disabled = true;
       btn.textContent = 'Updating...';
       try {
-        var resp = await fetch('https://salt.shadowedvaca.com/api/users/me/password', {
+        var resp = await fetch('/api/users/me/password', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + Auth.getToken() },
           body: JSON.stringify({ currentPassword: current, newPassword: next })
@@ -496,7 +496,7 @@
       var container = document.getElementById('userList');
       container.innerHTML = '<span class="text-muted text-sm">Loading...</span>';
       try {
-        var resp = await fetch('https://salt.shadowedvaca.com/api/users', {
+        var resp = await fetch('/api/users', {
           headers: { 'Authorization': 'Bearer ' + Auth.getToken() }
         });
         if (!resp.ok) return;
@@ -552,7 +552,7 @@
       if (!confirm('Reset password for ' + username + '?')) return;
 
       try {
-        var resp = await fetch('https://salt.shadowedvaca.com/api/users/' + userId + '/reset-password', {
+        var resp = await fetch('/api/users/' + userId + '/reset-password', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + Auth.getToken() },
           body: JSON.stringify({ newPassword: newPw })
@@ -575,7 +575,7 @@
       resultEl.style.display = 'none';
 
       try {
-        var resp = await fetch('https://salt.shadowedvaca.com/api/auth/invite', {
+        var resp = await fetch('/api/auth/invite', {
           method: 'POST',
           headers: { 'Authorization': 'Bearer ' + Auth.getToken() }
         });

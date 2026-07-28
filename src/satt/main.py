@@ -1,7 +1,11 @@
 """FastAPI application entry point for Salt All The Things."""
 
-from fastapi import FastAPI
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from satt.config import get_settings
 from satt.routes.ai import router as ai_router
@@ -32,3 +36,35 @@ app.include_router(ai_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 app.include_router(postproduction_router, prefix="/api")
 app.include_router(public_router, prefix="/public")
+
+# Local development serves only explicitly public frontend assets. Server
+# configuration, source, .env, and repository metadata remain unreachable.
+if _settings.environment == "local":
+    _frontend_root = Path(__file__).resolve().parents[2]
+    for _asset_directory in ("css", "images", "js"):
+        app.mount(
+            f"/{_asset_directory}",
+            StaticFiles(directory=_frontend_root / _asset_directory),
+            name=_asset_directory,
+        )
+
+    _frontend_pages = {
+        "config.html",
+        "index.html",
+        "jokes.html",
+        "login.html",
+        "postproduction.html",
+        "register.html",
+        "show_management.html",
+    }
+
+    @app.get("/", include_in_schema=False)
+    async def local_index() -> FileResponse:
+        return FileResponse(_frontend_root / "index.html")
+
+    @app.get("/{page_name}.html", include_in_schema=False)
+    async def local_page(page_name: str) -> FileResponse:
+        filename = f"{page_name}.html"
+        if filename not in _frontend_pages:
+            raise HTTPException(status_code=404)
+        return FileResponse(_frontend_root / filename)

@@ -76,6 +76,26 @@ credentials, databases, API origins, or Drive resources.
 Changing GitHub environments, protection rules, repository secrets, servers,
 DNS, or production requires explicit authorization at the time of change.
 
+## Canonical application origins
+
+| Tier | Application origin | Runtime identifiers |
+|---|---|---|
+| Local | `http://localhost:8200` | `ENVIRONMENT=local`, `DATABASE_ENVIRONMENT=local` |
+| Development | `https://dev.saltallthethings.com` | `ENVIRONMENT=development`, `DATABASE_ENVIRONMENT=development` |
+| Test | `https://test.saltallthethings.com` | `ENVIRONMENT=test`, `DATABASE_ENVIRONMENT=test` |
+| Production | `https://saltallthethings.com` | `ENVIRONMENT=production`, `DATABASE_ENVIRONMENT=production` |
+
+`SITE_URL` and `CORS_ORIGINS` use the matching origin. Browser calls use
+same-origin `/api` and `/public` paths, so an immutable frontend cannot silently
+cross tiers. Application startup rejects mismatched environment/database
+ownership and rejects the production web origin in non-production.
+
+Non-production Google OAuth configuration is disabled by default. An authorized
+external-service smoke test must deliberately set
+`ALLOW_NONPRODUCTION_EXTERNAL_SERVICES=true` and must still use non-production
+credentials and Drive resources. AI credentials remain server-side in the
+environment's isolated database.
+
 ## Version and release record
 
 `VERSION` is the authoritative semantic version. Release notes live at
