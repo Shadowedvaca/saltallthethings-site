@@ -124,6 +124,10 @@ async def test_process_idea_openai_success(client: AsyncClient):
     assert resp.status_code == 200
     data = resp.json()
     assert data["titles"] == _VALID_IDEA_RESPONSE["titles"]
+    request_json = mock_client.post.await_args.kwargs["json"]
+    assert request_json["max_completion_tokens"] == 4096
+    assert "max_tokens" not in request_json
+    assert "temperature" not in request_json
 
 
 @pytest.mark.asyncio
