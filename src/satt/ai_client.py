@@ -96,12 +96,11 @@ async def call_openai(
             },
             json={
                 "model": config.get("openaiModelId") or "gpt-4o",
-                "max_tokens": 4096,
+                "max_completion_tokens": 4096,
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_content},
                 ],
-                "temperature": 0.7,
             },
         )
     resp.raise_for_status()
