@@ -220,16 +220,21 @@ calls Anthropic or OpenAI directly.
 
 ## Deploy
 
-Static files are deployed to `/opt/satt-platform/static/` via the GitHub Actions
-workflow on push to `main`. There is no build step — files are copied as-is.
+`docs/delivery.md` is the canonical delivery contract. The post-Foundation
+target is:
 
-The FastAPI backend is deployed manually:
-```bash
-cd /opt/satt-platform
-git pull
-PYTHONPATH=src alembic upgrade head   # if there are schema changes
-sudo systemctl restart satt
-```
+- a shared feature branch deploys manually to isolated development;
+- an explicitly approved merge commit on `main` deploys to isolated test; and
+- only an explicitly approved immutable `prod-vX.Y.Z` tag deploys production.
+
+Frontend and backend must promote from the same commit. A child approval does
+not authorize merge, test deployment, production tagging, production
+deployment, server or DNS changes, GitHub environment changes, or repository
+secret changes.
+
+The legacy push-to-`main` production workflow remains only as a documented
+transition risk until Foundation issue #14 performs the approved cutover. Do
+not use it as the release procedure for Foundation work.
 
 ---
 
@@ -276,7 +281,7 @@ TEST_DATABASE_URL=... PYTHONPATH=src pytest src/satt/tests/ --cov=satt --cov-rep
 On the server, run tests like this:
 ```bash
 cd /opt/satt-platform
-TEST_DATABASE_URL=postgresql+asyncpg://satt_user:SaltSalty7x@localhost:5432/satt_test_db \
+TEST_DATABASE_URL=postgresql+asyncpg://satt_user:<password>@localhost:5432/satt_test_db \
   PYTHONPATH=src venv/bin/pytest src/satt/tests/ -v
 ```
 (Create `satt_test_db` first if it doesn't exist: `sudo -u postgres createdb satt_test_db && sudo -u postgres psql -c "GRANT ALL ON DATABASE satt_test_db TO satt_user;"`)

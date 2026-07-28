@@ -1,7 +1,7 @@
-# Git & CI/CD Workflow — Personal Standard
+# Git & CI/CD Workflow — SATT Standard
 
-This document defines the canonical git and deployment workflow for all projects.
-Drop a reference to this file in each project's CLAUDE.md so the rules travel with you.
+`docs/delivery.md` is authoritative for Salt All The Things. This reference
+summarizes the same post-Foundation promotion model.
 
 ---
 
@@ -18,11 +18,9 @@ Drop a reference to this file in each project's CLAUDE.md so the rules travel wi
 
 | Prefix | Purpose | Version bump |
 |--------|---------|-------------|
-| `feature/*` | New functionality | MINOR (`x.Y.0`) |
-| `fix/*` | Planned bug fix | PATCH (`x.y.Z`) |
-| `hotfix/*` | Emergency production fix | PATCH (`x.y.Z`) |
-| `chore/*` | Deps, docs, config, cleanup | none |
-| `refactor/*` | Internal restructuring, no behavior change | none |
+| `codex/<parent-issue-title-slug>` | Ordered parent/child delivery on one cumulative branch | Release target selected by the parent |
+| `codex/<focused-fix-slug>` | Independent planned fix | PATCH (`x.y.Z`) |
+| `hotfix/*` | Separately approved emergency production fix | PATCH (`x.y.Z`) |
 
 ---
 
@@ -34,7 +32,7 @@ Three environments, three gates:
 |-------------|---------|-------------|
 | **dev** | Fast feedback sandbox. Break things here. | Manual trigger from feature branch |
 | **test** | Integration gate. Matches prod config. | Auto on push to `main` (i.e. merged PR) |
-| **prod** | Live. Real users/data. | Auto on `prod-*` tag only |
+| **prod** | Live. Real users/data. | Validated `prod-v*` tag after explicit approval |
 
 ---
 
@@ -43,30 +41,32 @@ Three environments, three gates:
 ```
 1. Branch from main
    git checkout main && git pull
-   git checkout -b feature/my-thing
+   git checkout -b codex/parent-issue-title
 
 2. Develop, iterate
    [write code, run tests]
 
 3. Deploy to dev — verify it works
-   git push origin feature/my-thing
-   gh workflow run deploy-dev.yml -f branch=feature/my-thing
+   git push origin codex/parent-issue-title
+   gh workflow run deploy-dev.yml -f branch=codex/parent-issue-title
    [verify in dev environment]
 
-4. Merge to main → test auto-deploys
+4. Obtain explicit merge approval, merge to main → test auto-deploys
    git checkout main
-   git merge feature/my-thing --no-ff
+   git merge codex/parent-issue-title --no-ff
    git push origin main
    [verify in test environment]
 
-5. Tag to release to prod
+5. Verify test, obtain separate production-release approval, then tag
    git tag prod-vX.Y.Z && git push origin prod-vX.Y.Z
 ```
 
 **Rules:**
-- Always use `--no-ff` on merges so the branch history is visible in the log
-- Delete feature branches after merge — don't let them accumulate
+- Keep the cumulative branch and draft pull request until every ordered child
+  and release integration check is complete
 - Don't skip dev verification just because the change feels small
+- Child approval authorizes only the next child; it never authorizes merge,
+  test deployment, a production tag, or production deployment
 
 ---
 
@@ -86,11 +86,12 @@ Hotfixes follow the same branch discipline — no shortcuts on that — but they
    gh workflow run deploy-dev.yml -f branch=hotfix/describe-the-break
    [confirm the fix works]
 
-4. Merge to main + tag prod immediately (test deploys as a side effect, that's fine)
+4. Obtain explicit emergency merge and production approvals; do not infer either
+   from the incident
    git checkout main
    git merge hotfix/describe-the-break --no-ff
    git push origin main                          ← this auto-deploys test
-   git tag prod-vX.Y.Z && git push origin prod-vX.Y.Z  ← this deploys prod
+   git tag prod-vX.Y.Z && git push origin prod-vX.Y.Z  ← only after approval
 ```
 
 **Hotfix rules:**
@@ -128,10 +129,11 @@ Tag format: `prod-vMAJOR.MINOR.PATCH` (e.g. `prod-v0.1.6`)
 
 1. **Never commit directly to `main`** — always a branch + merge, even for a 1-line fix
 2. **Never skip the branch step** — hotfixes still get branches, just shorter ones
-3. **main is always deployable** — if main is broken, that is a P0
+3. **main is always test-deployable** — if main is broken, that is a P0
 4. **Tags are permanent** — never reuse or force-push a tag
 5. **Hotfix ≠ license for scope creep** — fix the one thing, ship it, move on
-6. **Dev verify before prod tag** — even on hotfixes, confirm the fix in dev first
+6. **Dev and test verify before prod tag** — exceptions require explicit,
+   recorded emergency approval
 
 ---
 
@@ -140,11 +142,13 @@ Tag format: `prod-vMAJOR.MINOR.PATCH` (e.g. `prod-v0.1.6`)
 ```bash
 # --- NORMAL FEATURE ---
 git checkout main && git pull
-git checkout -b feature/thing
+git checkout -b codex/parent-issue-title
 # ... work ...
-git push origin feature/thing
-gh workflow run deploy-dev.yml -f branch=feature/thing   # verify in dev
-git checkout main && git merge feature/thing --no-ff && git push origin main  # → test
+git push origin codex/parent-issue-title
+gh workflow run deploy-dev.yml -f branch=codex/parent-issue-title  # verify in dev
+# obtain explicit merge approval
+git checkout main && git merge codex/parent-issue-title --no-ff && git push origin main  # → test
+# verify test and obtain separate production approval
 git tag prod-vX.Y.Z && git push origin prod-vX.Y.Z       # → prod
 
 # --- HOTFIX ---
@@ -167,10 +171,10 @@ When setting up CI/CD for a new project, the three-workflow pattern should mirro
 |------|---------|--------|
 | `deploy-dev.yml` | `workflow_dispatch` with `branch` input | dev environment |
 | `deploy-test.yml` | `push: branches: [main]` | test environment |
-| `deploy.yml` | `push: tags: ['prod-*']` | prod environment |
+| `deploy-prod.yml` | `push: tags: ['prod-v*']` | production environment |
 
 Each workflow should: checkout the branch/tag → build → copy to server → restart container → health check.
 
 ---
 
-*Last updated: 2026-03-17*
+*Last updated: 2026-07-28*

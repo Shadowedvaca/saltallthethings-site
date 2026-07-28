@@ -15,3 +15,12 @@ Read `CLAUDE.md` completely before making changes; its architecture, deployment,
 - Work on feature branches; never commit directly to `main`.
 - Preserve unrelated uncommitted changes.
 - Do not deploy or run database-backed tests against production.
+- Follow `docs/delivery.md` as the canonical branch, issue, approval, promotion,
+  and production-permission contract.
+- Foundation release work uses one shared `codex/<parent-issue-title-slug>`
+  branch and one cumulative draft pull request, with children completed in their
+  recorded order.
+- A child approval authorizes only the next child. It does not authorize merge,
+  test deployment, a production tag, production deployment, server or DNS
+  changes, GitHub environment changes, or repository secret changes.
+- Production requires a separately approved immutable `prod-vX.Y.Z` tag.

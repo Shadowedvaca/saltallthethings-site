@@ -10,6 +10,7 @@ async def test_health_returns_ok(client: AsyncClient):
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
+    assert body["version"] == "0.0.1"
     assert "timestamp" in body
 
 

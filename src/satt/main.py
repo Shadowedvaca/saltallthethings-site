@@ -11,10 +11,11 @@ from satt.routes.health import router as health_router
 from satt.routes.postproduction import router as postproduction_router
 from satt.routes.public import router as public_router
 from satt.routes.users import router as users_router
+from satt.version import APP_VERSION
 
 _settings = get_settings()
 
-app = FastAPI(title="Salt All The Things API", version="1.0.0")
+app = FastAPI(title="Salt All The Things API", version=APP_VERSION)
 
 app.add_middleware(
     CORSMiddleware,

@@ -3,7 +3,10 @@
 Website and internal production tools for the *Salt All The Things* WoW podcast.
 
 **Production:** https://saltallthethings.com
-**Staging:** https://salt.shadowedvaca.com
+
+The Foundation milestone is establishing isolated development and test
+environments. See `docs/delivery.md` for the authoritative rollout state and
+approval gates.
 
 ---
 
@@ -18,26 +21,23 @@ Website and internal production tools for the *Salt All The Things* WoW podcast.
 
 ---
 
-## Deploy
+## Delivery
 
-### Static files (automatic)
+The post-Foundation contract promotes one immutable frontend/backend commit:
 
-Push to `main` — GitHub Actions SSHes into the server, runs `git pull`, copies
-static files to `/opt/satt-platform/static/`, and restarts the `satt` service.
+1. Manually deploy the shared feature branch to isolated development.
+2. After explicit merge approval, deploy the approved `main` commit to isolated
+   test.
+3. After separate production approval, deploy only the matching immutable
+   `prod-vX.Y.Z` tag.
 
-Required GitHub secrets:
-- `STAGING_SSH_KEY` — private key for `root@5.78.114.224`
-- `STAGING_SSH_KNOWN_HOSTS` — server host fingerprint
+The standard GitHub configuration names are `DEV_HOST`, `TEST_HOST`,
+`PROD_HOST`, and `DEPLOY_SSH_KEY`. Values remain in GitHub/server-side
+configuration and are verified only by name and presence.
 
-### Backend (manual)
-
-```bash
-ssh hetzner
-cd /opt/satt-platform
-git pull
-PYTHONPATH=src alembic upgrade head   # only if there are schema changes
-sudo systemctl restart satt
-```
+The repository is still transitioning from its legacy direct-production
+workflow. Do not merge, tag, deploy, or alter infrastructure based only on this
+README; follow [docs/delivery.md](docs/delivery.md).
 
 ---
 
@@ -50,24 +50,27 @@ python -m venv venv
 venv/Scripts/activate        # Windows
 pip install -r requirements.txt
 
-# Needs a local Postgres instance or tunnel to the server
+# Needs an explicitly isolated local Postgres instance
 cp .env.example .env         # fill in DATABASE_URL, SECRET_KEY
 PYTHONPATH=src uvicorn satt.main:app --reload
 ```
 
 ### Frontend
 
-Open the HTML files directly in a browser or serve them statically.
-The JS hardcodes `https://saltallthethings.com/api` as the API base —
-override in `js/storage.js` and `js/ai-service.js` if pointing at a local backend.
+Open the HTML files directly in a browser or serve them statically. Environment-
+safe browser/API routing is tracked by Foundation issue #5; do not edit
+committed URLs as a deployment workaround.
 
 ### Tests
 
 ```bash
-PYTHONPATH=src pytest src/satt/tests/ -v
+TEST_DATABASE_URL=<isolated-test-database-url> PYTHONPATH=src \
+  pytest src/satt/tests/ -v
 ```
 
-Tests use a separate `satt_test` Postgres schema. Never run against production.
+Database-backed tests require an explicit isolated `TEST_DATABASE_URL`, skip
+when it is absent, and refuse to run when it matches `DATABASE_URL`. Never run
+them against production.
 
 ---
 

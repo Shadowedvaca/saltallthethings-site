@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import jwt
 import pytest
@@ -116,8 +116,13 @@ async def _override_get_db():
 
 
 def _patch_drive(transcript: str = _FAKE_TRANSCRIPT):
-    """Context managers that mock the Drive token + file fetch."""
+    """Context managers that mock server OAuth, Drive token, and file fetch."""
+    settings = MagicMock()
+    settings.google_oauth_client_id = "fake-client-id"
+    settings.google_oauth_client_secret = "fake-client-secret"
+    settings.google_oauth_refresh_token = "fake-refresh-token"
     return (
+        patch("satt.routes.ai.get_settings", return_value=settings),
         patch("satt.routes.ai.get_drive_access_token", new=AsyncMock(return_value="fake-token")),
         patch("satt.routes.ai.fetch_file_content", new=AsyncMock(return_value=transcript)),
     )
@@ -127,14 +132,14 @@ def _patch_drive(transcript: str = _FAKE_TRANSCRIPT):
 async def test_generate_art_direction_success(client: AsyncClient):
     app.dependency_overrides[get_db] = _override_get_db
 
-    token_patch, fetch_patch = _patch_drive()
+    settings_patch, token_patch, fetch_patch = _patch_drive()
     with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=_fake_config())):
         with patch("satt.routes.ai.save_config", new=AsyncMock()):
             with patch(
                 "satt.routes.ai.get_idea_and_slot",
                 new=AsyncMock(return_value=(_FakeIdea(), _FakeSlot())),
             ):
-                with token_patch, fetch_patch:
+                with settings_patch, token_patch, fetch_patch:
                     with patch(
                         "satt.routes.ai.call_ai",
                         new=AsyncMock(return_value=json.dumps(_VALID_ART_DIRECTION)),
@@ -169,14 +174,14 @@ async def test_generate_art_direction_artlog_updated(client: AsyncClient):
     async def capture_save(db, config):
         saved_configs.append(json.loads(json.dumps(config)))
 
-    token_patch, fetch_patch = _patch_drive()
+    settings_patch, token_patch, fetch_patch = _patch_drive()
     with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=_fake_config())):
         with patch("satt.routes.ai.save_config", new=capture_save):
             with patch(
                 "satt.routes.ai.get_idea_and_slot",
                 new=AsyncMock(return_value=(_FakeIdea(), _FakeSlot())),
             ):
-                with token_patch, fetch_patch:
+                with settings_patch, token_patch, fetch_patch:
                     with patch(
                         "satt.routes.ai.call_ai",
                         new=AsyncMock(return_value=json.dumps(_VALID_ART_DIRECTION)),
@@ -223,14 +228,14 @@ async def test_generate_art_direction_artlog_capped_at_50(client: AsyncClient):
     async def capture_save(db, cfg):
         saved_configs.append(json.loads(json.dumps(cfg)))
 
-    token_patch, fetch_patch = _patch_drive()
+    settings_patch, token_patch, fetch_patch = _patch_drive()
     with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=config)):
         with patch("satt.routes.ai.save_config", new=capture_save):
             with patch(
                 "satt.routes.ai.get_idea_and_slot",
                 new=AsyncMock(return_value=(_FakeIdea(), _FakeSlot())),
             ):
-                with token_patch, fetch_patch:
+                with settings_patch, token_patch, fetch_patch:
                     with patch(
                         "satt.routes.ai.call_ai",
                         new=AsyncMock(return_value=json.dumps(_VALID_ART_DIRECTION)),
@@ -320,14 +325,14 @@ async def test_generate_art_direction_continuity_in_prompt_when_artlog_present(
         }
     ]
 
-    token_patch, fetch_patch = _patch_drive()
+    settings_patch, token_patch, fetch_patch = _patch_drive()
     with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=config)):
         with patch("satt.routes.ai.save_config", new=AsyncMock()):
             with patch(
                 "satt.routes.ai.get_idea_and_slot",
                 new=AsyncMock(return_value=(_FakeIdea(), _FakeSlot())),
             ):
-                with token_patch, fetch_patch:
+                with settings_patch, token_patch, fetch_patch:
                     with patch("satt.routes.ai.call_ai", new=mock_call_ai):
                         resp = await client.post(
                             "/api/ai/generate-art-direction",
@@ -355,14 +360,14 @@ async def test_generate_art_direction_no_continuity_when_artlog_empty(client: As
         captured.append({"system": system_prompt})
         return json.dumps(_VALID_ART_DIRECTION)
 
-    token_patch, fetch_patch = _patch_drive()
+    settings_patch, token_patch, fetch_patch = _patch_drive()
     with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=_fake_config())):
         with patch("satt.routes.ai.save_config", new=AsyncMock()):
             with patch(
                 "satt.routes.ai.get_idea_and_slot",
                 new=AsyncMock(return_value=(_FakeIdea(), _FakeSlot())),
             ):
-                with token_patch, fetch_patch:
+                with settings_patch, token_patch, fetch_patch:
                     with patch("satt.routes.ai.call_ai", new=mock_call_ai):
                         resp = await client.post(
                             "/api/ai/generate-art-direction",

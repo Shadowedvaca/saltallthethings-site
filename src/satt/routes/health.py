@@ -4,9 +4,15 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter
 
+from satt.version import APP_VERSION
+
 router = APIRouter()
 
 
 @router.get("/health")
 async def health():
-    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+    return {
+        "status": "ok",
+        "version": APP_VERSION,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
