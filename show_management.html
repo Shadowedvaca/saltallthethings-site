@@ -920,8 +920,8 @@
       var notes = document.getElementById('ideaNotes').value.trim();
       if (!notes) { Toast.error('Write some notes first!'); return; }
       var config = Storage.getConfig();
-      if (config.aiModel === 'claude' && !config.claudeApiKey) { Toast.error('Claude API key not set. Go to Config.'); return; }
-      if (config.aiModel === 'openai' && !config.openaiApiKey) { Toast.error('OpenAI API key not set. Go to Config.'); return; }
+      if (config.aiModel === 'claude' && !config.claudeApiKeyConfigured) { Toast.error('Claude API key not set. Go to Config.'); return; }
+      if (config.aiModel === 'openai' && !config.openaiApiKeyConfigured) { Toast.error('OpenAI API key not set. Go to Config.'); return; }
       document.getElementById('composerOverlay').classList.remove('hidden');
       document.getElementById('processBtn').disabled = true;
       try {
@@ -960,8 +960,8 @@
       var idea = Storage.getIdeas().find(function(i) { return i.id === ideaId; });
       if (!idea) return;
       var config = Storage.getConfig();
-      if (config.aiModel === 'claude' && !config.claudeApiKey) { Toast.error('Claude API key not set.'); return; }
-      if (config.aiModel === 'openai' && !config.openaiApiKey) { Toast.error('OpenAI API key not set.'); return; }
+      if (config.aiModel === 'claude' && !config.claudeApiKeyConfigured) { Toast.error('Claude API key not set.'); return; }
+      if (config.aiModel === 'openai' && !config.openaiApiKeyConfigured) { Toast.error('OpenAI API key not set.'); return; }
       Toast.info('Processing idea with AI...');
       try {
         var result = await AIService.processIdea(idea.rawNotes);
