@@ -1,7 +1,11 @@
 # Git & CI/CD Workflow — SATT Standard
 
-`docs/delivery.md` is authoritative for Salt All The Things. This reference
-summarizes the same post-Foundation promotion model.
+This document provides operational environment and Git detail.
+`reference/work-management.md` and `reference/development-and-release.md` are
+authoritative for issue lifecycle, delivery slices, approval boundaries,
+review, integration, and release authorization. `docs/delivery.md` is the
+human-facing companion. If these documents conflict, the two canonical
+references win.
 
 ---
 

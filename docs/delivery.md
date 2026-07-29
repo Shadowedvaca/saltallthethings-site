@@ -1,8 +1,9 @@
 # Delivery and Release Governance
 
-This is the canonical delivery contract for Salt All The Things. `AGENTS.md`,
-`CLAUDE.md`, repository workflows, and release documentation must remain
-consistent with it.
+This is the human-facing delivery contract for Salt All The Things.
+`reference/work-management.md` and `reference/development-and-release.md` are
+the canonical AI process instructions. This document, repository workflows, and
+release documentation must remain consistent with them.
 
 ## Release environments and gates
 
