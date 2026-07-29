@@ -36,7 +36,7 @@ jobs:
         env:
           DEPLOY_BRANCH: ${{ inputs.branch }}
         run: |
-          set -euo pipefailo pipefail
+          set -euo pipefail
           case "$DEPLOY_BRANCH" in
             codex/*) ;;
             *)
@@ -55,7 +55,7 @@ jobs:
         id: release
         shell: bash
         run: |
-          set -euo pipefailo pipefail
+          set -euo pipefail
           sha="$(git rev-parse HEAD)"
           test "${#sha}" -eq 40
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
@@ -66,7 +66,7 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEV_SSH_KNOWN_HOSTS: ${{ secrets.DEV_SSH_KNOWN_HOSTS }}
         run: |
-          set -euo pipefailo pipefail
+          set -euo pipefail
           test -n "$DEV_HOST"
           test -n "$DEPLOY_SSH_KEY"
           test -n "$DEV_SSH_KNOWN_HOSTS"
@@ -81,7 +81,7 @@ jobs:
         env:
           DEPLOY_SHA: ${{ steps.release.outputs.sha }}
         run: |
-          set -euo pipefailo pipefail
+          set -euo pipefail
           ssh \
             -i "$HOME/.ssh/deploy_key" \
             -o BatchMode=yes \
@@ -152,7 +152,7 @@ jobs:
         env:
           DEPLOY_SHA: ${{ steps.release.outputs.sha }}
         run: |
-          set -euo pipefailo pipefail
+          set -euo pipefail
           curl --fail --silent --show-error \
             --retry 10 --retry-delay 3 --retry-connrefused \
             https://dev.saltallthethings.com/api/health \

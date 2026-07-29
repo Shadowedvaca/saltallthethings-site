@@ -141,6 +141,12 @@ def test_ci_database_helper_cannot_target_external_hosts():
 def test_development_deploy_is_manual_immutable_and_isolated():
     source = DEV_WORKFLOW_PATH.read_text(encoding="utf-8")
     workflow = yaml.safe_load(source)
+    assert "pipefailo" not in source
+    strict_mode_lines = [
+        line.strip() for line in source.splitlines() if line.strip().startswith("set -")
+    ]
+    assert strict_mode_lines
+    assert set(strict_mode_lines) == {"set -euo pipefail"}
 
     assert workflow["permissions"] == {"contents": "read"}
     assert "workflow_dispatch:" in source
