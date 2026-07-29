@@ -100,6 +100,19 @@ Do not touch configs, units, or files belonging to other sites.
 - **Testing:** pytest + httpx.AsyncClient
 - **Python version:** match whatever PATT uses on this server
 
+### Container runtime
+
+- `Dockerfile` is the shared production-suitable runtime artifact.
+- `scripts/container-entrypoint.sh` validates environment/data ownership, runs
+  `alembic upgrade head`, and then starts FastAPI.
+- `compose.yaml` plus the local/development/test override selects isolated
+  non-production storage; `compose.production.yaml` never provisions a database.
+- The image contains the explicitly public frontend and backend from one commit
+  and runs as an unprivileged user.
+- Never print expanded Compose configuration because it may contain secrets.
+- Pull-request CI is validation-only, uses read-only repository permission, and
+  cannot deploy.
+
 ### sv_common
 
 `sv_common` is a shared services package copied from `PullAllTheThings-site/src/sv_common/`.

@@ -96,6 +96,31 @@ external-service smoke test must deliberately set
 credentials and Drive resources. AI credentials remain server-side in the
 environment's isolated database.
 
+## Container and pull-request validation
+
+`Dockerfile` is the shared runtime artifact. The entrypoint validates
+environment/database ownership before it runs `alembic upgrade head`, then
+starts FastAPI as an unprivileged user. Explicit copy boundaries and
+`.dockerignore` prevent local configuration, repository metadata, workbooks,
+backups, tests, and release documentation from entering the image.
+
+Compose definitions keep local, development, and test database storage under
+distinct project and volume names. The production definition contains no
+database service; production remains externally managed and must receive its
+configuration only through the separately approved production delivery path.
+
+`pull-request-validation.yml` has read-only repository permission and two
+non-deployment jobs:
+
+1. migrate a fresh loopback-only CI database and run the complete safe suite;
+2. build and inspect the production image, start it with a fresh isolated
+   container database, and verify health environment/version/commit metadata.
+
+CI constructs database connection strings only inside the runner process after
+asserting the GitHub Actions context, loopback host, port, user, and allowed
+database names. It ignores any production database configuration and uses no
+external AI, OAuth, or Drive credentials.
+
 ## Version and release record
 
 `VERSION` is the authoritative semantic version. Release notes live at

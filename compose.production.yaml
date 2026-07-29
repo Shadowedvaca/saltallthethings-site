@@ -1,0 +1,30 @@
+name: satt-production
+
+services:
+  app:
+    build:
+      context: .
+      args:
+        VCS_REF: ${COMMIT_SHA:?COMMIT_SHA is required}
+    image: ${SATT_IMAGE:-satt:production}
+    restart: unless-stopped
+    init: true
+    environment:
+      ENVIRONMENT: production
+      DATABASE_ENVIRONMENT: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      SITE_URL: https://saltallthethings.com
+      CORS_ORIGINS: https://saltallthethings.com
+      COMMIT_SHA: ${COMMIT_SHA:?COMMIT_SHA is required}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      GOOGLE_OAUTH_REFRESH_TOKEN: ${GOOGLE_OAUTH_REFRESH_TOKEN:-}
+    ports:
+      - "127.0.0.1:${SATT_APP_PORT:?SATT_APP_PORT is required}:8200"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json, urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8200/api/health', timeout=2)); raise SystemExit(0 if data.get('status') == 'ok' else 1)"]
+      interval: 10s
+      timeout: 3s
+      start_period: 20s
+      retries: 6

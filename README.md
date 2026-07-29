@@ -39,6 +39,29 @@ The repository is still transitioning from its legacy direct-production
 workflow. Do not merge, tag, deploy, or alter infrastructure based only on this
 README; follow [docs/delivery.md](docs/delivery.md).
 
+### Container runtime
+
+`Dockerfile` is the production runtime definition. It installs locked runtime
+dependencies, runs as an unprivileged user, validates environment/data
+ownership, applies Alembic migrations, and then starts FastAPI. The same image
+contains the explicitly public frontend and backend.
+
+For a disposable local environment:
+
+```powershell
+docker compose -f compose.yaml -f compose.local.yaml up --build --wait
+```
+
+Development and test use `compose.development.yaml` and `compose.test.yaml`
+with separately supplied database components, secrets, host port, and commit.
+Their named database volumes are distinct. `compose.production.yaml` contains
+only the application service and never provisions a development or test
+database on the production host.
+
+Do not print expanded Compose configuration: interpolation can contain
+secret-bearing values. Validate configuration by exit status, configured
+presence, or one-way fingerprint only.
+
 ---
 
 ## Local development
@@ -48,7 +71,7 @@ README; follow [docs/delivery.md](docs/delivery.md).
 ```bash
 python -m venv venv
 venv/Scripts/activate        # Windows
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 
 # Needs an explicitly isolated local Postgres instance
 Copy-Item .env.example .env  # fill in local-only DATABASE_URL and SECRET_KEY
@@ -63,6 +86,9 @@ explicit public HTML, CSS, JavaScript, and image assets; it does not expose
 `.env`, backend source, or repository metadata. Browser API calls use
 same-origin `/api` and `/public` paths in every environment.
 
+The Docker-based local runtime is preferred when Docker is available because
+it also validates the entrypoint, fresh-database migration, and health contract.
+
 ### Tests
 
 ```bash
@@ -73,6 +99,11 @@ TEST_DATABASE_URL=<isolated-test-database-url> PYTHONPATH=src \
 Database-backed tests require an explicit isolated `TEST_DATABASE_URL`, skip
 when it is absent, and refuse to run when it matches `DATABASE_URL`. Never run
 them against production.
+
+Pull requests run the complete database suite against an ephemeral
+loopback-only PostgreSQL service and separately build and inspect the production
+image against a fresh isolated container database. The workflow has read-only
+repository permission and no deployment trigger or production configuration.
 
 ---
 
