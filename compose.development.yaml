@@ -8,6 +8,7 @@ services:
       POSTGRES_PASSWORD: ${SATT_DB_PASSWORD:?SATT_DB_PASSWORD is required}
 
   app:
+    image: satt:development
     ports:
       - "127.0.0.1:${SATT_APP_PORT:?SATT_APP_PORT is required}:8200"
     environment:
@@ -20,6 +21,10 @@ services:
       SITE_URL: https://dev.saltallthethings.com
       CORS_ORIGINS: https://dev.saltallthethings.com
       COMMIT_SHA: ${COMMIT_SHA:?COMMIT_SHA is required}
+      GOOGLE_OAUTH_CLIENT_ID: ""
+      GOOGLE_OAUTH_CLIENT_SECRET: ""
+      GOOGLE_OAUTH_REFRESH_TOKEN: ""
+      ALLOW_NONPRODUCTION_EXTERNAL_SERVICES: "false"
 
 volumes:
   satt_postgres:

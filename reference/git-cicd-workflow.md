@@ -40,6 +40,34 @@ Three environments, three gates:
 
 ---
 
+## Shared non-production server inventory
+
+Development and test run on separate shared servers. The same application port
+is reserved on both servers so environment definitions remain symmetric.
+
+| Port | Application | Development | Test |
+|---|---|---|---|
+| `8100` | Pull All The Things | `dev.pullallthethings.com` | `test.pullallthethings.com` |
+| `8200` | Shadowedvaca site | `dev.shadowedvaca.com` | `test.shadowedvaca.com` |
+| `8300` | Salt All The Things | `dev.saltallthethings.com` | reserved for issue #12 |
+
+SATT development uses:
+
+- SSH alias `my-web-apps-dev`;
+- repository path `/opt/satt-platform`;
+- Compose project `satt-development`;
+- loopback binding `127.0.0.1:8300`;
+- database volume `satt-development-postgres`; and
+- GitHub environment `development`.
+
+The manual workflow requires the configured secret names `DEV_HOST`,
+`DEPLOY_SSH_KEY`, and `DEV_SSH_KNOWN_HOSTS`. It resolves the explicit
+`codex/*` branch to an immutable commit before SSH and deploys only that commit.
+See `docs/development-environment.md` for bootstrap, isolation, backup, smoke,
+cleanup, and rollback procedures.
+
+---
+
 ## Normal Feature Flow
 
 ```

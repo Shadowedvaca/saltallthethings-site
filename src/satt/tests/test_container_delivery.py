@@ -8,6 +8,7 @@ import yaml
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 COMPOSE_FILES = tuple(REPOSITORY_ROOT.glob("compose*.yaml"))
 WORKFLOW_PATH = REPOSITORY_ROOT / ".github/workflows/pull-request-validation.yml"
+DEV_WORKFLOW_PATH = REPOSITORY_ROOT / ".github/workflows/deploy-dev.yml"
 
 
 def test_container_context_excludes_sensitive_and_unrelated_files():
@@ -66,6 +67,23 @@ def test_nonproduction_compose_definitions_are_isolated():
     )
 
     assert development["name"] == "satt-development"
+    assert development["services"]["app"]["image"] == "satt:development"
+    assert (
+        development["services"]["app"]["ports"][0]
+        == "127.0.0.1:${SATT_APP_PORT:?SATT_APP_PORT is required}:8200"
+    )
+    assert (
+        development["services"]["app"]["environment"][
+            "ALLOW_NONPRODUCTION_EXTERNAL_SERVICES"
+        ]
+        == "false"
+    )
+    for credential in (
+        "GOOGLE_OAUTH_CLIENT_ID",
+        "GOOGLE_OAUTH_CLIENT_SECRET",
+        "GOOGLE_OAUTH_REFRESH_TOKEN",
+    ):
+        assert development["services"]["app"]["environment"][credential] == ""
     assert test["name"] == "satt-test"
     assert development["volumes"]["satt_postgres"]["name"] != test["volumes"][
         "satt_postgres"
@@ -118,3 +136,61 @@ def test_ci_database_helper_cannot_target_external_hosts():
     assert 'os.environ.get("GITHUB_ACTIONS") != "true"' in source
     assert '"TEST_DATABASE_URL": migration_url' in source
     assert '"DATABASE_URL": guard_url' in source
+
+
+def test_development_deploy_is_manual_immutable_and_isolated():
+    source = DEV_WORKFLOW_PATH.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(source)
+
+    assert workflow["permissions"] == {"contents": "read"}
+    assert "workflow_dispatch:" in source
+    assert "branch:" in source
+    assert "push:" not in source
+    assert "environment: development" in source
+
+    action_uses = re.findall(r"uses:\s*([^\s#]+)", source)
+    assert action_uses
+    for action in action_uses:
+        revision = action.rsplit("@", 1)[1]
+        assert re.fullmatch(r"[0-9a-f]{40}", revision)
+
+    for required in (
+        "DEV_HOST",
+        "DEPLOY_SSH_KEY",
+        "DEV_SSH_KNOWN_HOSTS",
+        'sha="$(git rev-parse HEAD)"',
+        'git checkout --detach "$deploy_sha"',
+        'test "$(git rev-parse HEAD)" = "$deploy_sha"',
+        "/opt/satt-platform",
+        "http://127.0.0.1:8300/api/health",
+        "https://dev.saltallthethings.com/api/health",
+        'assert data["environment"]=="development"',
+        'assert data["version"]=="0.0.1"',
+        "logs --no-color --tail 100 app database",
+        "set -euo pipefail",
+    ):
+        assert required in source
+
+    for forbidden in (
+        "TEST_HOST",
+        "PROD_HOST",
+        "test.saltallthethings.com",
+        "docker image prune",
+    ):
+        assert forbidden not in source
+
+
+def test_registered_legacy_workflow_bootstraps_development_safely():
+    source = (REPOSITORY_ROOT / ".github/workflows/deploy.yml").read_text(
+        encoding="utf-8"
+    )
+    workflow = yaml.safe_load(source)
+
+    assert workflow["permissions"] == {"contents": "read"}
+    assert "uses: ./.github/workflows/deploy-dev.yml" in source
+    assert "branch: ${{ inputs.branch }}" in source
+    assert "if: github.event_name == 'workflow_dispatch'" in source
+    assert (
+        "if: github.event_name == 'push' && github.ref == 'refs/heads/main'"
+        in source
+    )

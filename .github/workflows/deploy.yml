@@ -1,38 +1,65 @@
-name: Deploy to Production (Hetzner)
+name: Legacy deployment bootstrap
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      branch:
+        description: Explicit codex/* branch to deploy to isolated development
+        required: true
+        type: string
+
+permissions:
+  contents: read
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
+  deploy-development:
+    name: Bootstrap development workflow from feature branch
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/deploy-dev.yml
+    with:
+      branch: ${{ inputs.branch }}
+    secrets: inherit
 
+  legacy-production:
+    name: Legacy direct production deployment
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Set up SSH
+        shell: bash
+        env:
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          STAGING_SSH_KNOWN_HOSTS: ${{ secrets.STAGING_SSH_KNOWN_HOSTS }}
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.STAGING_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          echo "${{ secrets.STAGING_SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          set -euo pipefail
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$STAGING_SSH_KEY" > "$HOME/.ssh/deploy_key"
+          printf '%s\n' "$STAGING_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/deploy_key" "$HOME/.ssh/known_hosts"
 
-      - name: Deploy to server
+      - name: Deploy legacy production service
+        shell: bash
         run: |
-          ssh -i ~/.ssh/deploy_key root@5.78.114.224 bash << 'ENDSSH'
-            set -e
-            cd /opt/satt-platform
-
-            echo "=== Pulling latest code ==="
-            git pull
-
-            echo "=== Copying static files ==="
-            cp *.html static/
-            cp -r css/ js/ images/ static/
-
-            echo "=== Restarting backend ==="
-            systemctl restart satt
-            systemctl is-active satt
-
-            echo "=== Done ==="
+          set -euo pipefail
+          ssh \
+            -i "$HOME/.ssh/deploy_key" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            root@5.78.114.224 bash <<'ENDSSH'
+          set -e
+          cd /opt/satt-platform
+          git pull
+          cp ./*.html static/
+          cp -r css/ js/ images/ static/
+          systemctl restart satt
+          systemctl is-active satt
           ENDSSH
+
+      - name: Remove runner SSH material
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/deploy_key" "$HOME/.ssh/known_hosts"

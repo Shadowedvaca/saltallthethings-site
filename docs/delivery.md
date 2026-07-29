@@ -17,6 +17,26 @@ Production never deploys from an ordinary branch push or merge. Tags are
 immutable and must not be reused or force-pushed. Static frontend and FastAPI
 backend artifacts must come from the same commit.
 
+## Isolated development implementation
+
+SATT development uses `/opt/satt-platform` on `my-web-apps-dev`, loopback port
+`8300`, Compose project `satt-development`, and database volume
+`satt-development-postgres`. Port `8200` is occupied by another application and
+must not be reused.
+
+`deploy-dev.yml` accepts an explicit `codex/*` branch, resolves it to an
+immutable commit, and deploys that exact commit with strict SSH host-key
+verification. The workflow may build, migrate, restart, inspect, back up, and
+clean up only the SATT development Compose project and its bounded backup
+directory. It may not prune shared Docker state or operate on test or
+production.
+
+The public and local health checks must both report environment `development`,
+version `0.0.1`, and the exact resolved commit. One-time server, DNS, TLS,
+GitHub environment, and secret provisioning requires explicit authorization.
+The detailed bootstrap, validation, cleanup, and rollback procedure is in
+`docs/development-environment.md`.
+
 The repository is currently transitioning to this contract under milestone
 `Cleanup & DevOps Foundation`. Until issue #14 completes, the legacy direct
 production workflow is an acknowledged risk, not an authorized release path.
@@ -59,6 +79,7 @@ Repository or environment configuration uses these names:
 - `TEST_HOST`
 - `PROD_HOST`
 - `DEPLOY_SSH_KEY`
+- `DEV_SSH_KNOWN_HOSTS`
 
 Secret values are never printed, committed, returned to browsers, or copied into
 release notes. Verification is limited to name/presence, configured-status
