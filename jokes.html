@@ -303,9 +303,15 @@
       Toast.success('Joke updated.');
     }
 
-    function retireJoke(id) { Storage.updateJoke(id, { status: 'retired' }); renderJokes(); }
-    function unretireJoke(id) { Storage.updateJoke(id, { status: 'unused' }); renderJokes(); }
-    function freeJoke(id) { Storage.markJokeUnused(id); renderJokes(); }
+    async function retireJoke(id) {
+      if (await Storage.updateJoke(id, { status: 'retired' })) renderJokes();
+    }
+    async function unretireJoke(id) {
+      if (await Storage.updateJoke(id, { status: 'unused' })) renderJokes();
+    }
+    async function freeJoke(id) {
+      if (await Storage.freeJoke(id)) renderJokes();
+    }
     async function deleteJokeItem(id) {
       if (confirm('Delete this joke?') && await Storage.deleteJoke(id)) {
         renderJokes();

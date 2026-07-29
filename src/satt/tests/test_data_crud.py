@@ -59,7 +59,7 @@ async def test_put_unknown_key_returns_400(db_client: AsyncClient):
 JOKE = {
     "id": "test_joke_1",
     "text": "Why so salty?",
-    "status": "active",
+    "status": "unused",
     "source": "manual",
     "usedByIdeaId": None,
     "createdAt": "2026-01-01T00:00:00Z",

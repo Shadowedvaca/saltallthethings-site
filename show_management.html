@@ -910,15 +910,14 @@
       if (idea && idea.titles && await Storage.updateIdea(ideaId, { selectedTitle: idea.titles[titleIndex] })) renderIdeasList();
     }
 
-    function selectJokeForIdea(ideaId, jokeId) {
-      Storage.freeJokesForIdea(ideaId);
-      Storage.markJokeUsed(jokeId, ideaId);
+    async function selectJokeForIdea(ideaId, jokeId) {
+      if (!await Storage.assignJokeToIdea(jokeId, ideaId)) return;
       renderIdeasList();
       Toast.success('Joke assigned to show!');
     }
 
-    function clearJokeFromIdea(ideaId, jokeId) {
-      Storage.markJokeUnused(jokeId);
+    async function clearJokeFromIdea(ideaId, jokeId) {
+      if (!await Storage.freeJoke(jokeId)) return;
       renderIdeasList();
       Toast.info('Joke freed up.');
     }
@@ -994,12 +993,9 @@
       } catch (err) { Toast.error('Processing failed: ' + err.message); }
     }
 
-    function deleteIdea(ideaId) {
+    async function deleteIdea(ideaId) {
       if (!confirm('Delete this idea?')) return;
-      var slotId = Storage.getSlotForIdea(ideaId);
-      if (slotId) Storage.unassignSlot(slotId);
-      Storage.freeJokesForIdea(ideaId);
-      Storage.deleteIdea(ideaId);
+      if (!await Storage.deleteIdea(ideaId)) return;
       editingIdeas.delete(ideaId);
       renderIdeasList();
       Toast.info('Idea deleted.');

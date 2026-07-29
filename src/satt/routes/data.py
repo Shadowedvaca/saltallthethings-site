@@ -5,10 +5,15 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from satt.auth import require_auth
 from satt.crud import (
+    DataNotFoundError,
+    assign_joke_to_idea,
+    delete_idea,
+    free_joke,
     get_assignments,
     get_config,
     get_ideas,
@@ -21,12 +26,17 @@ from satt.crud import (
     save_config,
 )
 from satt.database import get_db
+from satt.joke_contract import JokeContractError
 from satt.outline_contract import OutlineContractError, normalize_configured_segments
 
 router = APIRouter()
 
 _ALLOWED_KEYS = {"config", "ideas", "jokes", "showSlots", "assignments"}
 _CONFIG_SECRET_KEYS = ("claudeApiKey", "openaiApiKey")
+
+
+class JokeAssignmentRequest(BaseModel):
+    ideaId: str
 
 
 def _public_config(config: dict) -> dict:
@@ -170,7 +180,10 @@ async def put_data(
     elif key == "jokes":
         if not isinstance(body, list):
             raise HTTPException(status_code=422, detail="jokes must be an array")
-        await replace_jokes(db, body)
+        try:
+            await replace_jokes(db, body)
+        except JokeContractError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
         saved = await get_jokes(db)
     elif key == "showSlots":
         if not isinstance(body, list):
@@ -210,9 +223,68 @@ async def bulk_import(
     if "ideas" in body:
         await replace_ideas(db, body["ideas"])
     if "jokes" in body:
-        await replace_jokes(db, body["jokes"])
+        if not isinstance(body["jokes"], list):
+            raise HTTPException(status_code=422, detail="jokes must be an array")
+        try:
+            await replace_jokes(db, body["jokes"])
+        except JokeContractError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
     if "showSlots" in body:
         await replace_show_slots(db, body["showSlots"])
     if "assignments" in body:
         await replace_assignments(db, body["assignments"])
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Atomic joke and idea lifecycle operations
+# ---------------------------------------------------------------------------
+
+
+@router.put("/jokes/{joke_id}/assignment")
+async def put_joke_assignment(
+    joke_id: str,
+    body: JokeAssignmentRequest,
+    _user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    if not body.ideaId.strip():
+        raise HTTPException(status_code=422, detail="ideaId must not be empty")
+    try:
+        await assign_joke_to_idea(db, joke_id, body.ideaId.strip())
+    except DataNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    return {"ok": True, "data": await get_jokes(db)}
+
+
+@router.delete("/jokes/{joke_id}/assignment")
+async def delete_joke_assignment(
+    joke_id: str,
+    _user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    try:
+        await free_joke(db, joke_id)
+    except DataNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    return {"ok": True, "data": await get_jokes(db)}
+
+
+@router.delete("/ideas/{idea_id}")
+async def delete_one_idea(
+    idea_id: str,
+    _user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    try:
+        await delete_idea(db, idea_id)
+    except DataNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    return {
+        "ok": True,
+        "data": {
+            "ideas": await get_ideas(db),
+            "jokes": await get_jokes(db),
+            "assignments": await get_assignments(db),
+        },
+    }

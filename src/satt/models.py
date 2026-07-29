@@ -14,6 +14,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
@@ -124,11 +125,23 @@ class Idea(Base):
 
 class Joke(Base):
     __tablename__ = "jokes"
-    __table_args__ = {"schema": "satt"}
+    __table_args__ = (
+        UniqueConstraint("used_by_idea_id", name="uq_jokes_used_by_idea_id"),
+        CheckConstraint(
+            "status IN ('unused', 'used', 'retired')",
+            name="jokes_valid_status",
+        ),
+        CheckConstraint(
+            "(status = 'used' AND used_by_idea_id IS NOT NULL) OR "
+            "(status <> 'used' AND used_by_idea_id IS NULL)",
+            name="jokes_assignment_matches_status",
+        ),
+        {"schema": "satt"},
+    )
 
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="'active'")
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="'unused'")
     source: Mapped[str] = mapped_column(Text, nullable=False, server_default="'manual'")
     used_by_idea_id: Mapped[Optional[str]] = mapped_column(
         Text, ForeignKey("satt.ideas.id", ondelete="SET NULL")

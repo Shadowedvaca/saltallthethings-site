@@ -6,16 +6,25 @@ from datetime import date, datetime, timezone
 from typing import Any
 
 import pytz
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sqlalchemy import update
-
+from satt.joke_contract import validate_banked_jokes
 from satt.models import Assignment, Config, Idea, Joke, ShowSlot
 from satt.serializers import serialize_idea, serialize_joke, serialize_postprod_row, serialize_show_slot
 
 _PST = pytz.timezone("America/Los_Angeles")
+_JOKE_LIFECYCLE_LOCK_ID = 0x53415454
+
+
+class DataNotFoundError(LookupError):
+    """Raised when a requested lifecycle resource does not exist."""
+
+
+async def _lock_joke_lifecycle(db: AsyncSession) -> None:
+    """Serialize the small bank's lifecycle writes to avoid cross-swap deadlocks."""
+    await db.execute(select(func.pg_advisory_xact_lock(_JOKE_LIFECYCLE_LOCK_ID)))
 
 
 # ---------------------------------------------------------------------------
@@ -93,13 +102,23 @@ async def get_idea_and_slot(
 
 
 async def replace_ideas(db: AsyncSession, ideas: list[dict]) -> None:
+    await _lock_joke_lifecycle(db)
     new_ids = {idea["id"] for idea in ideas}
 
     # Preserve created_at for existing rows
     result = await db.execute(select(Idea.id, Idea.created_at))
     created_at_map: dict[str, datetime] = {row.id: row.created_at for row in result}
+    deleted_ids = set(created_at_map) - new_ids
 
-    # Delete rows not in new set (cascade removes their assignments)
+    # Free opening jokes in the same transaction before removed ideas cascade.
+    if deleted_ids:
+        await db.execute(
+            update(Joke)
+            .where(Joke.used_by_idea_id.in_(deleted_ids))
+            .values(status="unused", used_by_idea_id=None)
+        )
+
+    # Delete rows not in new set (cascade removes their schedule assignments).
     if new_ids:
         await db.execute(delete(Idea).where(Idea.id.notin_(new_ids)))
     else:
@@ -158,6 +177,8 @@ async def get_jokes(db: AsyncSession) -> list[dict]:
 
 
 async def replace_jokes(db: AsyncSession, jokes: list[dict]) -> None:
+    jokes = validate_banked_jokes(jokes)
+    await _lock_joke_lifecycle(db)
     new_ids = {joke["id"] for joke in jokes}
 
     result = await db.execute(select(Joke.id, Joke.created_at))
@@ -169,6 +190,13 @@ async def replace_jokes(db: AsyncSession, jokes: list[dict]) -> None:
         await db.execute(delete(Joke))
     await db.flush()
 
+    # Remove transient assignments before upserts so valid assignment swaps do
+    # not collide with the uniqueness constraint partway through the batch.
+    await db.execute(
+        update(Joke).values(status="unused", used_by_idea_id=None)
+    )
+    await db.flush()
+
     for joke in jokes:
         jid = joke["id"]
         orig_created_at = created_at_map.get(jid)
@@ -176,8 +204,8 @@ async def replace_jokes(db: AsyncSession, jokes: list[dict]) -> None:
 
         stmt = pg_insert(Joke.__table__).values(
             id=jid,
-            text=joke.get("text") or "",
-            status=joke.get("status") or "active",
+            text=joke["text"],
+            status=joke["status"],
             source=joke.get("source") or "manual",
             used_by_idea_id=joke.get("usedByIdeaId"),
             created_at=created_at_val,
@@ -192,6 +220,71 @@ async def replace_jokes(db: AsyncSession, jokes: list[dict]) -> None:
             },
         )
         await db.execute(ins)
+    await db.flush()
+
+
+async def assign_joke_to_idea(
+    db: AsyncSession,
+    joke_id: str,
+    idea_id: str,
+) -> None:
+    """Atomically replace an idea's opening joke with the selected bank entry."""
+    await _lock_joke_lifecycle(db)
+    idea_result = await db.execute(
+        select(Idea.id).where(Idea.id == idea_id).with_for_update()
+    )
+    if idea_result.scalar_one_or_none() is None:
+        raise DataNotFoundError("Idea not found")
+
+    joke_result = await db.execute(
+        select(Joke.id).where(Joke.id == joke_id).with_for_update()
+    )
+    if joke_result.scalar_one_or_none() is None:
+        raise DataNotFoundError("Joke not found")
+
+    await db.execute(
+        update(Joke)
+        .where(Joke.used_by_idea_id == idea_id)
+        .values(status="unused", used_by_idea_id=None)
+    )
+    await db.flush()
+    await db.execute(
+        update(Joke)
+        .where(Joke.id == joke_id)
+        .values(status="used", used_by_idea_id=idea_id)
+    )
+    await db.flush()
+
+
+async def free_joke(db: AsyncSession, joke_id: str) -> None:
+    await _lock_joke_lifecycle(db)
+    result = await db.execute(
+        select(Joke.id).where(Joke.id == joke_id).with_for_update()
+    )
+    if result.scalar_one_or_none() is None:
+        raise DataNotFoundError("Joke not found")
+    await db.execute(
+        update(Joke)
+        .where(Joke.id == joke_id)
+        .values(status="unused", used_by_idea_id=None)
+    )
+    await db.flush()
+
+
+async def delete_idea(db: AsyncSession, idea_id: str) -> None:
+    """Delete one idea while freeing its opening joke in the same transaction."""
+    await _lock_joke_lifecycle(db)
+    result = await db.execute(
+        select(Idea.id).where(Idea.id == idea_id).with_for_update()
+    )
+    if result.scalar_one_or_none() is None:
+        raise DataNotFoundError("Idea not found")
+    await db.execute(
+        update(Joke)
+        .where(Joke.used_by_idea_id == idea_id)
+        .values(status="unused", used_by_idea_id=None)
+    )
+    await db.execute(delete(Idea).where(Idea.id == idea_id))
     await db.flush()
 
 

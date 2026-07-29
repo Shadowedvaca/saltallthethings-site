@@ -1,7 +1,7 @@
 """Tests for POST /api/ai/generate-jokes.
 
 Mocks httpx.AsyncClient so no real AI API calls are made.
-Verifies used jokes are injected into the system prompt.
+Verifies the complete bank is injected and malformed batches are rejected.
 """
 
 from __future__ import annotations
@@ -124,8 +124,8 @@ async def test_generate_jokes_openai_success(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_generate_jokes_used_jokes_in_prompt(client: AsyncClient):
-    """Verify that jokes with status='used' are injected into the system prompt."""
+async def test_generate_jokes_all_banked_jokes_in_prompt(client: AsyncClient):
+    """Every banked joke participates in duplicate avoidance."""
     app.dependency_overrides[get_db] = _override_get_db
     captured: list = []
 
@@ -147,17 +147,14 @@ async def test_generate_jokes_used_jokes_in_prompt(client: AsyncClient):
     assert len(captured) == 1
 
     system_prompt = captured[0]["system"]
-    # Only used jokes should appear in the prompt
     assert "Why did the WoW player cry?" in system_prompt
     assert "Salt is nature's seasoning." in system_prompt
-    # Unused joke should NOT be in the prompt
-    assert "I asked my healer for help." not in system_prompt
-    assert "ALREADY USED JOKES" in system_prompt
+    assert "I asked my healer for help." in system_prompt
+    assert "ALREADY BANKED JOKES" in system_prompt
 
 
 @pytest.mark.asyncio
-async def test_generate_jokes_no_used_jokes_no_section(client: AsyncClient):
-    """When there are no used jokes, the 'ALREADY USED JOKES' section is omitted."""
+async def test_generate_jokes_empty_bank_omits_section(client: AsyncClient):
     app.dependency_overrides[get_db] = _override_get_db
     captured: list = []
 
@@ -176,7 +173,7 @@ async def test_generate_jokes_no_used_jokes_no_section(client: AsyncClient):
 
     app.dependency_overrides.clear()
     assert resp.status_code == 200
-    assert "ALREADY USED JOKES" not in captured[0]
+    assert "ALREADY BANKED JOKES" not in captured[0]
 
 
 @pytest.mark.asyncio
@@ -227,3 +224,63 @@ async def test_generate_jokes_theme_hint_in_user_prompt(client: AsyncClient):
     app.dependency_overrides.clear()
     assert resp.status_code == 200
     assert "HOUSING_THEME_MARKER" in captured[0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("generated", "expected_error"),
+    [
+        ({"joke": "not an array"}, "expected a JSON array of jokes"),
+        (["only one"], "expected exactly 3 jokes"),
+        (["one", 2, "three"], "generated joke 2 must be a string"),
+        (["one", "   ", "three"], "generated joke 2 must not be empty"),
+        (["same joke", "SAME—JOKE!", "three"], "duplicates another generated joke"),
+        (["Why did the WoW player cry!", "two", "three"], "existing banked joke"),
+        (["x" * 501, "two", "three"], "at most 500 characters"),
+    ],
+)
+async def test_generate_jokes_rejects_invalid_batch(
+    client: AsyncClient,
+    generated: list,
+    expected_error: str,
+):
+    app.dependency_overrides[get_db] = _override_get_db
+
+    with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=_fake_config())):
+        with patch(
+            "satt.routes.ai.get_jokes",
+            new=AsyncMock(return_value=_FAKE_JOKES_DB),
+        ):
+            with patch(
+                "satt.routes.ai.call_ai",
+                new=AsyncMock(return_value=json.dumps(generated)),
+            ):
+                resp = await client.post(
+                    "/api/ai/generate-jokes",
+                    json={"themeHint": ""},
+                    headers={"Authorization": f"Bearer {_token()}"},
+                )
+
+    app.dependency_overrides.clear()
+    assert resp.status_code == 502
+    assert expected_error in resp.json()["error"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invalid_count", [0, 21, True, "3"])
+async def test_generate_jokes_rejects_invalid_configured_count(
+    client: AsyncClient,
+    invalid_count,
+):
+    app.dependency_overrides[get_db] = _override_get_db
+    config = _fake_config()
+    config["jokeCount"] = invalid_count
+    with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=config)):
+        resp = await client.post(
+            "/api/ai/generate-jokes",
+            json={"themeHint": ""},
+            headers={"Authorization": f"Bearer {_token()}"},
+        )
+    app.dependency_overrides.clear()
+    assert resp.status_code == 422
+    assert "Invalid joke configuration" in resp.json()["error"]

@@ -97,6 +97,22 @@ const Storage = {
     return operation;
   },
 
+  async _request(path, options) {
+    const token = this._getToken();
+    if (!token) throw new Error('Not authenticated');
+    var requestOptions = Object.assign({}, options || {});
+    requestOptions.headers = Object.assign(
+      { 'Authorization': 'Bearer ' + token },
+      requestOptions.headers || {}
+    );
+    var resp = await fetch(this._apiUrl + path, requestOptions);
+    var body = await resp.json().catch(function() { return {}; });
+    if (!resp.ok) {
+      throw new Error(body.detail || body.error || ('API error: ' + resp.status));
+    }
+    return body;
+  },
+
   _clone(value) {
     return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
   },
@@ -171,6 +187,9 @@ const Storage = {
     var idx = jokes.findIndex(function(j) { return j.id === jokeId; });
     if (idx !== -1) {
       Object.assign(jokes[idx], updates);
+      if (updates.status && updates.status !== 'used') {
+        jokes[idx].usedByIdeaId = null;
+      }
       return this.saveJokes(jokes);
     }
     return false;
@@ -189,23 +208,38 @@ const Storage = {
     return this.getJokes().filter(function(j) { return j.status === 'used'; });
   },
 
-  markJokeUsed(jokeId, ideaId) {
-    return this.updateJoke(jokeId, { status: 'used', usedByIdeaId: ideaId });
+  async assignJokeToIdea(jokeId, ideaId) {
+    try {
+      var body = await this._request(
+        '/jokes/' + encodeURIComponent(jokeId) + '/assignment',
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ideaId: ideaId })
+        }
+      );
+      this._cache.jokes = body.data || [];
+      return true;
+    } catch (err) {
+      console.error('Joke assignment failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to assign joke: ' + err.message);
+      return false;
+    }
   },
 
-  markJokeUnused(jokeId) {
-    return this.updateJoke(jokeId, { status: 'unused', usedByIdeaId: null });
-  },
-
-  freeJokesForIdea(ideaId) {
-    var jokes = this._clone(this.getJokes());
-    jokes.forEach(function(j) {
-      if (j.usedByIdeaId === ideaId) {
-        j.status = 'unused';
-        j.usedByIdeaId = null;
-      }
-    });
-    return this.saveJokes(jokes);
+  async freeJoke(jokeId) {
+    try {
+      var body = await this._request(
+        '/jokes/' + encodeURIComponent(jokeId) + '/assignment',
+        { method: 'DELETE' }
+      );
+      this._cache.jokes = body.data || [];
+      return true;
+    } catch (err) {
+      console.error('Free joke failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to free joke: ' + err.message);
+      return false;
+    }
   },
 
   getJokeForIdea(ideaId) {
@@ -237,9 +271,21 @@ const Storage = {
     return false;
   },
 
-  deleteIdea(ideaId) {
-    var ideas = this.getIdeas().filter(function(i) { return i.id !== ideaId; });
-    return this.saveIdeas(ideas);
+  async deleteIdea(ideaId) {
+    try {
+      var body = await this._request(
+        '/ideas/' + encodeURIComponent(ideaId),
+        { method: 'DELETE' }
+      );
+      this._cache.ideas = body.data.ideas || [];
+      this._cache.jokes = body.data.jokes || [];
+      this._cache.assignments = body.data.assignments || {};
+      return true;
+    } catch (err) {
+      console.error('Delete idea failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to delete idea: ' + err.message);
+      return false;
+    }
   },
 
   // ---- Show Slots ----

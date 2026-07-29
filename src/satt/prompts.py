@@ -80,22 +80,23 @@ def build_process_idea_repair_prompt(
 
 
 def build_generate_jokes_prompts(
-    config: dict, used_jokes: list[str], theme_hint: str
+    config: dict, banked_jokes: list[str], theme_hint: str
 ) -> tuple[str, str]:
     """Returns (system_prompt, user_prompt) for the generate-jokes endpoint."""
     joke_context = config.get("jokeContext") or ""
     joke_count = config.get("jokeCount") or 5
 
-    used_list = "\n".join(f"- {j}" for j in used_jokes)
-    used_section = (
-        f"ALREADY USED JOKES (do NOT repeat these or anything too similar):\n{used_list}\n"
-        if used_list
+    banked_list = "\n".join(f"- {j}" for j in banked_jokes)
+    banked_section = (
+        "ALREADY BANKED JOKES (do NOT repeat these or anything too similar):\n"
+        f"{banked_list}\n"
+        if banked_list
         else ""
     )
 
     system_prompt = (
         f"{joke_context}\n\n"
-        f"{used_section}"
+        f"{banked_section}"
         "Return ONLY a JSON array of strings, each being one joke. "
         'No markdown, no backticks, no explanation. Example: ["joke one", "joke two"]\n'
         f"Generate exactly {joke_count} jokes."

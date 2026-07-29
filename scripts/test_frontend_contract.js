@@ -46,6 +46,10 @@ async function main() {
   assert.match(showManagement, /!config\.openaiApiKeyConfigured/);
   assert.match(showManagement, /await Storage\.addIdea\(idea\)/);
   assert.match(showManagement, /await Storage\.updateIdea\(ideaId/);
+  assert.match(showManagement, /await Storage\.assignJokeToIdea\(jokeId, ideaId\)/);
+  assert.match(showManagement, /await Storage\.freeJoke\(jokeId\)/);
+  assert.match(showManagement, /await Storage\.deleteIdea\(ideaId\)/);
+  assert.doesNotMatch(showManagement, /freeJokesForIdea/);
   assert.doesNotMatch(showManagement, /lastModified/);
   assert.match(jokesPage, /!config\.claudeApiKeyConfigured/);
   assert.match(jokesPage, /!config\.openaiApiKeyConfigured/);
@@ -101,6 +105,29 @@ async function main() {
   assert.equal(failing.storage.getIdeas()[0].id, "existing");
   assert.equal(failing.errors.length, 1);
   assert.match(failing.errors[0], /^Failed to save ideas:/);
+
+  const jokeRequests = [];
+  const lifecycle = loadStorage(async (url, options) => {
+    jokeRequests.push({ url, options });
+    return response(200, {
+      ok: true,
+      data: [{
+        id: "joke-1",
+        text: "Atomic joke",
+        status: "used",
+        usedByIdeaId: "idea-1",
+      }],
+    });
+  });
+  assert.equal(
+    await lifecycle.storage.assignJokeToIdea("joke-1", "idea-1"),
+    true,
+  );
+  assert.equal(jokeRequests.length, 1);
+  assert.equal(jokeRequests[0].url, "/api/jokes/joke-1/assignment");
+  assert.equal(jokeRequests[0].options.method, "PUT");
+  assert.equal(JSON.parse(jokeRequests[0].options.body).ideaId, "idea-1");
+  assert.equal(lifecycle.storage.getJokes()[0].usedByIdeaId, "idea-1");
 }
 
 main().catch((error) => {

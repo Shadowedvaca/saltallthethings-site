@@ -27,6 +27,11 @@ from satt.gdrive import (
     move_file,
     upload_file_to_folder,
 )
+from satt.joke_contract import (
+    JokeContractError,
+    validate_generated_jokes,
+    validate_joke_count,
+)
 from satt.outline_contract import (
     OutlineContractError,
     normalize_configured_segments,
@@ -74,7 +79,12 @@ def _parse_idea_response(text: str, configured_segments: list[dict]) -> dict:
     }
 
 
-def _parse_joke_response(text: str) -> list[str]:
+def _parse_joke_response(
+    text: str,
+    *,
+    expected_count: int,
+    banked_jokes: list[str],
+) -> list[str]:
     cleaned = text.strip()
     if cleaned.startswith("```json"):
         cleaned = cleaned[7:]
@@ -85,9 +95,11 @@ def _parse_joke_response(text: str) -> list[str]:
     cleaned = cleaned.strip()
 
     parsed = json.loads(cleaned)
-    if not isinstance(parsed, list):
-        raise ValueError("Expected array of jokes")
-    return [j for j in parsed if isinstance(j, str)]
+    return validate_generated_jokes(
+        parsed,
+        expected_count=expected_count,
+        banked_jokes=banked_jokes,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +195,13 @@ async def generate_jokes(
 ) -> JSONResponse:
     config = await get_config(db)
     ai_model = config.get("aiModel", "claude")
+    try:
+        joke_count = validate_joke_count(config.get("jokeCount", 5))
+    except JokeContractError as error:
+        return JSONResponse(
+            status_code=422,
+            content={"error": f"Invalid joke configuration: {error}"},
+        )
 
     if ai_model == "claude" and not config.get("claudeApiKey"):
         return JSONResponse(
@@ -196,10 +215,10 @@ async def generate_jokes(
         )
 
     all_jokes = await get_jokes(db)
-    used_jokes = [j["text"] for j in all_jokes if j.get("status") == "used"]
+    banked_jokes = [j["text"] for j in all_jokes]
 
     system_prompt, user_prompt = build_generate_jokes_prompts(
-        config, used_jokes, body.themeHint
+        config, banked_jokes, body.themeHint
     )
 
     try:
@@ -210,11 +229,15 @@ async def generate_jokes(
         )
 
     try:
-        jokes = _parse_joke_response(text)
-    except (json.JSONDecodeError, ValueError) as e:
+        jokes = _parse_joke_response(
+            text,
+            expected_count=joke_count,
+            banked_jokes=banked_jokes,
+        )
+    except (json.JSONDecodeError, JokeContractError) as e:
         return JSONResponse(
-            status_code=500,
-            content={"error": f"AI API error: Failed to parse response: {e}"},
+            status_code=502,
+            content={"error": f"AI returned an invalid joke batch: {e}"},
         )
 
     return JSONResponse(content={"jokes": jokes})
