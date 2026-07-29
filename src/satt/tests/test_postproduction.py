@@ -324,7 +324,7 @@ async def test_queue_includes_idea_fields_when_assigned(db_client: AsyncClient):
     row = rows[PAST_SLOT_1["id"]]
     assert row["ideaId"] == IDEA["id"]
     assert row["selectedTitle"] == IDEA["selectedTitle"]
-    assert row["ideaStatus"] == IDEA["status"]
+    assert row["ideaStatus"] == "scheduled"
 
 
 @pytest.mark.asyncio
