@@ -4,18 +4,21 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from satt.auth import require_auth
 from satt.crud import (
+    DataConflictError,
     DataNotFoundError,
+    assign_idea_to_slot,
     assign_joke_to_idea,
     delete_idea,
     free_joke,
     get_assignments,
     get_config,
+    get_data_revision,
     get_ideas,
     get_jokes,
     get_show_slots,
@@ -23,7 +26,9 @@ from satt.crud import (
     replace_ideas,
     replace_jokes,
     replace_show_slots,
+    require_data_revision,
     save_config,
+    unassign_idea_from_slot,
 )
 from satt.database import get_db
 from satt.joke_contract import JokeContractError
@@ -36,6 +41,10 @@ _CONFIG_SECRET_KEYS = ("claudeApiKey", "openaiApiKey")
 
 
 class JokeAssignmentRequest(BaseModel):
+    ideaId: str
+
+
+class ScheduleAssignmentRequest(BaseModel):
     ideaId: str
 
 
@@ -63,10 +72,7 @@ def _merge_config_update(
         if value is None or value == "":
             continue
         if not isinstance(value, str):
-            raise HTTPException(
-                status_code=422,
-                detail=f"{key} must be a string",
-            )
+            raise HTTPException(status_code=422, detail=f"{key} must be a string")
         value = value.strip()
         if not value:
             continue
@@ -94,22 +100,54 @@ def _merge_config_update(
     return merged
 
 
-# ---------------------------------------------------------------------------
-# GET /api/export
-# ---------------------------------------------------------------------------
+def _parse_revision(if_match: str | None) -> int:
+    if if_match is None:
+        raise HTTPException(
+            status_code=428,
+            detail="If-Match data revision is required",
+        )
+    value = if_match.strip()
+    if value.startswith("W/"):
+        value = value[2:].strip()
+    if len(value) >= 2 and value[0] == value[-1] == '"':
+        value = value[1:-1]
+    try:
+        revision = int(value)
+    except (TypeError, ValueError) as error:
+        raise HTTPException(
+            status_code=422,
+            detail="If-Match must contain a non-negative integer revision",
+        ) from error
+    if revision < 0:
+        raise HTTPException(
+            status_code=422,
+            detail="If-Match must contain a non-negative integer revision",
+        )
+    return revision
 
 
-@router.get("/export")
-async def export_all(
-    _user: dict = Depends(require_auth),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    config, ideas, jokes, show_slots, assignments = (
+async def _guard_revision(db: AsyncSession, if_match: str | None) -> None:
+    expected_revision = _parse_revision(if_match)
+    try:
+        await require_data_revision(db, expected_revision)
+    except DataConflictError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Server data changed after this page loaded. Reloaded data is required before retrying.",
+                "currentRevision": error.current_revision,
+            },
+        ) from error
+
+
+async def _export_state(db: AsyncSession) -> dict:
+    config, ideas, jokes, show_slots, assignments, revision = (
         await get_config(db),
         await get_ideas(db),
         await get_jokes(db),
         await get_show_slots(db),
         await get_assignments(db),
+        await get_data_revision(db),
     )
     return {
         "config": _public_config(config),
@@ -117,12 +155,25 @@ async def export_all(
         "jokes": jokes,
         "showSlots": show_slots,
         "assignments": assignments,
+        "revision": revision,
     }
 
 
-# ---------------------------------------------------------------------------
-# GET /api/data/:key
-# ---------------------------------------------------------------------------
+def _mutation_response(state: dict, data: Any | None = None) -> dict:
+    return {
+        "ok": True,
+        "data": state if data is None else data,
+        "state": state,
+        "revision": state["revision"],
+    }
+
+
+@router.get("/export")
+async def export_all(
+    _user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    return await _export_state(db)
 
 
 @router.get("/data/{key}")
@@ -133,7 +184,6 @@ async def get_data(
 ) -> Any:
     if key not in _ALLOWED_KEYS:
         raise HTTPException(status_code=400, detail=f"Unknown key: {key!r}")
-
     if key == "config":
         return _public_config(await get_config(db))
     if key == "ideas":
@@ -142,24 +192,20 @@ async def get_data(
         return await get_jokes(db)
     if key == "showSlots":
         return await get_show_slots(db)
-    if key == "assignments":
-        return await get_assignments(db)
-
-
-# ---------------------------------------------------------------------------
-# PUT /api/data/:key
-# ---------------------------------------------------------------------------
+    return await get_assignments(db)
 
 
 @router.put("/data/{key}")
 async def put_data(
     key: str,
     body: Any = Body(...),
+    if_match: str | None = Header(default=None, alias="If-Match"),
     _user: dict = Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     if key not in _ALLOWED_KEYS:
         raise HTTPException(status_code=400, detail=f"Unknown key: {key!r}")
+    await _guard_revision(db, if_match)
 
     if key == "config":
         if not isinstance(body, dict):
@@ -190,29 +236,46 @@ async def put_data(
             raise HTTPException(status_code=422, detail="showSlots must be an array")
         await replace_show_slots(db, body)
         saved = await get_show_slots(db)
-    elif key == "assignments":
+    else:
         if not isinstance(body, dict):
             raise HTTPException(status_code=422, detail="assignments must be an object")
-        await replace_assignments(db, body)
+        try:
+            await replace_assignments(db, body)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
         saved = await get_assignments(db)
 
-    return {"ok": True, "data": saved}
-
-
-# ---------------------------------------------------------------------------
-# PUT /api/import
-# ---------------------------------------------------------------------------
+    state = await _export_state(db)
+    return _mutation_response(state, saved)
 
 
 @router.put("/import")
 async def bulk_import(
     body: dict,
+    if_match: str | None = Header(default=None, alias="If-Match"),
     _user: dict = Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
+    unknown_keys = set(body) - _ALLOWED_KEYS
+    if unknown_keys:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown import keys: {', '.join(sorted(unknown_keys))}",
+        )
+    expected_types = {
+        "config": dict,
+        "ideas": list,
+        "jokes": list,
+        "showSlots": list,
+        "assignments": dict,
+    }
+    for key, expected_type in expected_types.items():
+        if key in body and not isinstance(body[key], expected_type):
+            type_name = "object" if expected_type is dict else "array"
+            raise HTTPException(status_code=422, detail=f"{key} must be an {type_name}")
+
+    await _guard_revision(db, if_match)
     if "config" in body:
-        if not isinstance(body["config"], dict):
-            raise HTTPException(status_code=422, detail="config must be an object")
         existing = await get_config(db)
         merged = _merge_config_update(
             existing,
@@ -223,8 +286,6 @@ async def bulk_import(
     if "ideas" in body:
         await replace_ideas(db, body["ideas"])
     if "jokes" in body:
-        if not isinstance(body["jokes"], list):
-            raise HTTPException(status_code=422, detail="jokes must be an array")
         try:
             await replace_jokes(db, body["jokes"])
         except JokeContractError as error:
@@ -232,59 +293,108 @@ async def bulk_import(
     if "showSlots" in body:
         await replace_show_slots(db, body["showSlots"])
     if "assignments" in body:
-        await replace_assignments(db, body["assignments"])
-    return {"ok": True}
-
-
-# ---------------------------------------------------------------------------
-# Atomic joke and idea lifecycle operations
-# ---------------------------------------------------------------------------
+        try:
+            await replace_assignments(db, body["assignments"])
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+    state = await _export_state(db)
+    return _mutation_response(state)
 
 
 @router.put("/jokes/{joke_id}/assignment")
 async def put_joke_assignment(
     joke_id: str,
     body: JokeAssignmentRequest,
+    if_match: str | None = Header(default=None, alias="If-Match"),
     _user: dict = Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     if not body.ideaId.strip():
         raise HTTPException(status_code=422, detail="ideaId must not be empty")
+    await _guard_revision(db, if_match)
     try:
         await assign_joke_to_idea(db, joke_id, body.ideaId.strip())
     except DataNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
-    return {"ok": True, "data": await get_jokes(db)}
+    state = await _export_state(db)
+    return _mutation_response(state, state["jokes"])
 
 
 @router.delete("/jokes/{joke_id}/assignment")
 async def delete_joke_assignment(
     joke_id: str,
+    if_match: str | None = Header(default=None, alias="If-Match"),
     _user: dict = Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
+    await _guard_revision(db, if_match)
     try:
         await free_joke(db, joke_id)
     except DataNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
-    return {"ok": True, "data": await get_jokes(db)}
+    state = await _export_state(db)
+    return _mutation_response(state, state["jokes"])
 
 
 @router.delete("/ideas/{idea_id}")
 async def delete_one_idea(
     idea_id: str,
+    if_match: str | None = Header(default=None, alias="If-Match"),
     _user: dict = Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
+    await _guard_revision(db, if_match)
     try:
         await delete_idea(db, idea_id)
     except DataNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
-    return {
-        "ok": True,
-        "data": {
-            "ideas": await get_ideas(db),
-            "jokes": await get_jokes(db),
-            "assignments": await get_assignments(db),
+    state = await _export_state(db)
+    return _mutation_response(
+        state,
+        {
+            "ideas": state["ideas"],
+            "jokes": state["jokes"],
+            "assignments": state["assignments"],
         },
-    }
+    )
+
+
+@router.put("/schedule/{slot_id}/assignment")
+async def put_schedule_assignment(
+    slot_id: str,
+    body: ScheduleAssignmentRequest,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    _user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    if not body.ideaId.strip():
+        raise HTTPException(status_code=422, detail="ideaId must not be empty")
+    await _guard_revision(db, if_match)
+    try:
+        await assign_idea_to_slot(db, body.ideaId.strip(), slot_id)
+    except DataNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    state = await _export_state(db)
+    return _mutation_response(
+        state,
+        {"ideas": state["ideas"], "assignments": state["assignments"]},
+    )
+
+
+@router.delete("/schedule/{slot_id}/assignment")
+async def delete_schedule_assignment(
+    slot_id: str,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    _user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    await _guard_revision(db, if_match)
+    try:
+        await unassign_idea_from_slot(db, slot_id)
+    except DataNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    state = await _export_state(db)
+    return _mutation_response(
+        state,
+        {"ideas": state["ideas"], "assignments": state["assignments"]},
+    )

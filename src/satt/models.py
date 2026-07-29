@@ -8,6 +8,7 @@ from typing import Optional
 
 from sqlalchemy import (
     Boolean,
+    BigInteger,
     CheckConstraint,
     Date,
     ForeignKey,
@@ -85,6 +86,24 @@ class Config(Base):
     data: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
+    )
+
+
+# ---------------------------------------------------------------------------
+# satt.data_revision
+# ---------------------------------------------------------------------------
+
+
+class DataRevision(Base):
+    __tablename__ = "data_revision"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="single_row"),
+        {"schema": "satt"},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, server_default="1")
+    revision: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default="0"
     )
 
 
@@ -183,7 +202,10 @@ class ShowSlot(Base):
 
 class Assignment(Base):
     __tablename__ = "assignments"
-    __table_args__ = {"schema": "satt"}
+    __table_args__ = (
+        UniqueConstraint("idea_id", name="uq_assignments_idea_id"),
+        {"schema": "satt"},
+    )
 
     slot_id: Mapped[str] = mapped_column(
         Text, ForeignKey("satt.show_slots.id", ondelete="CASCADE"), primary_key=True

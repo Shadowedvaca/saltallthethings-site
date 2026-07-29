@@ -9,33 +9,30 @@
 
 const Storage = {
   _apiUrl: '/api',
-  _cache: {},               // in-memory data store
+  _cache: {},
+  _serverState: null,
   _ready: false,
-  _syncing: {},             // serialize in-flight saves per key
-  _writeVersion: {},
+  _revision: null,
+  _syncing: Promise.resolve(),
+  _writeGeneration: 0,
+  _pendingWrites: 0,
+  _statusTimer: null,
+  _beforeUnloadRegistered: false,
 
-  // ---- Initialization ----
+  // Full-array writes remain supported for ideas, jokes, slots, and
+  // assignments, but every mutation is serialized globally and guarded by
+  // the exact revision returned by /api/export. A stale page is reloaded and
+  // its queued writes are cancelled instead of overwriting newer server data.
   async init() {
     const token = this._getToken();
     if (!token) throw new Error('Not authenticated');
-
+    this._registerBeforeUnload();
     try {
-      const resp = await fetch(this._apiUrl + '/export', {
-        headers: { 'Authorization': 'Bearer ' + token }
-      });
-      if (resp.status === 401) throw new Error('Invalid credentials');
-      if (!resp.ok) throw new Error('API error: ' + resp.status);
-      const data = await resp.json();
-
-      // Populate cache
-      this._cache.config = data.config || null;
-      this._cache.ideas = data.ideas || [];
-      this._cache.jokes = data.jokes || [];
-      this._cache.showSlots = data.showSlots || [];
-      this._cache.assignments = data.assignments || {};
+      await this._reloadLatest();
       this._ready = true;
-
+      this._setStatus('saved', 'All changes saved');
     } catch (err) {
+      this._setStatus('failed', 'Unable to load saved data', () => this.init());
       console.error('Storage.init failed:', err);
       throw err;
     }
@@ -45,55 +42,111 @@ const Storage = {
     return typeof Auth !== 'undefined' ? Auth.getToken() : null;
   },
 
-  // ---- Core get/set (synchronous from cache) ----
+  _applyState(state) {
+    if (!state) return;
+    if (Object.prototype.hasOwnProperty.call(state, 'config')) this._cache.config = state.config || null;
+    if (Object.prototype.hasOwnProperty.call(state, 'ideas')) this._cache.ideas = state.ideas || [];
+    if (Object.prototype.hasOwnProperty.call(state, 'jokes')) this._cache.jokes = state.jokes || [];
+    if (Object.prototype.hasOwnProperty.call(state, 'showSlots')) this._cache.showSlots = state.showSlots || [];
+    if (Object.prototype.hasOwnProperty.call(state, 'assignments')) this._cache.assignments = state.assignments || {};
+    if (Number.isInteger(state.revision)) this._revision = state.revision;
+    if (Number.isInteger(state.revision)) {
+      this._serverState = {
+        config: this._clone(this._cache.config),
+        ideas: this._clone(this._cache.ideas),
+        jokes: this._clone(this._cache.jokes),
+        showSlots: this._clone(this._cache.showSlots),
+        assignments: this._clone(this._cache.assignments),
+        revision: this._revision
+      };
+    }
+  },
+
+  _restoreServerState() {
+    if (!this._serverState) return;
+    var canonical = this._clone(this._serverState);
+    this._cache.config = canonical.config;
+    this._cache.ideas = canonical.ideas;
+    this._cache.jokes = canonical.jokes;
+    this._cache.showSlots = canonical.showSlots;
+    this._cache.assignments = canonical.assignments;
+    this._revision = canonical.revision;
+  },
+
+  async _reloadLatest() {
+    const token = this._getToken();
+    if (!token) throw new Error('Not authenticated');
+    const resp = await fetch(this._apiUrl + '/export', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (resp.status === 401) throw new Error('Invalid credentials');
+    if (!resp.ok) throw new Error('API error: ' + resp.status);
+    const data = await resp.json();
+    this._applyState(data);
+    return data;
+  },
+
   get(key) {
     return this._cache[key] !== undefined ? this._cache[key] : null;
   },
 
   async set(key, value) {
-    var previous = this._clone(this._cache[key]);
-    var version = (this._writeVersion[key] || 0) + 1;
-    this._writeVersion[key] = version;
     this._cache[key] = value;
     try {
-      var canonical = await this._pushToApi(key, value);
-      if (this._writeVersion[key] === version && canonical !== undefined) {
-        this._cache[key] = canonical;
-      }
+      await this._enqueueMutation(
+        () => this._request('/data/' + key, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(value)
+        }),
+        () => this.set(key, value)
+      );
       return true;
     } catch (err) {
-      if (this._writeVersion[key] === version) this._cache[key] = previous;
       console.error('API save failed for', key, err);
-      if (typeof Toast !== 'undefined') {
-        Toast.error('Failed to save ' + key + ': ' + err.message);
-      }
+      if (typeof Toast !== 'undefined') Toast.error('Failed to save ' + key + ': ' + err.message);
       return false;
     }
   },
 
-  _pushToApi(key, value) {
-    const token = this._getToken();
-    if (!token) return Promise.reject(new Error('Not authenticated'));
-
-    var prior = this._syncing[key] || Promise.resolve();
+  _enqueueMutation(run, retry) {
+    var generation = this._writeGeneration;
+    this._pendingWrites += 1;
+    this._setStatus('saving', 'Saving changes…');
+    var prior = this._syncing || Promise.resolve();
     var operation = prior.catch(function() {}).then(async () => {
-      var resp = await fetch(this._apiUrl + '/data/' + key, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify(value)
-      });
-      var body = await resp.json().catch(function() { return {}; });
-      if (!resp.ok) {
-        throw new Error(body.detail || body.error || ('API error: ' + resp.status));
+      if (generation !== this._writeGeneration) {
+        var cancelled = new Error('A previous save failed; review the latest data before retrying.');
+        cancelled.status = 409;
+        cancelled.cancelled = true;
+        throw cancelled;
       }
-      return body.data;
+      return run();
+    }).then((body) => {
+      this._applyState(body.state || body);
+      return body;
+    }).catch(async (err) => {
+      if (!err.cancelled) this._writeGeneration += 1;
+      if (err.status === 409 && !err.cancelled) {
+        try {
+          await this._reloadLatest();
+          this._setStatus('conflict', 'Newer server data loaded. Review your change and save again.');
+        } catch (reloadError) {
+          this._restoreServerState();
+          this._setStatus('failed', 'Conflict detected; reload failed', () => this._reloadLatest());
+        }
+      } else {
+        this._restoreServerState();
+        if (!err.cancelled) this._setStatus('failed', 'Save failed', retry);
+      }
+      throw err;
+    }).finally(() => {
+      this._pendingWrites = Math.max(0, this._pendingWrites - 1);
+      if (this._pendingWrites === 0 && generation === this._writeGeneration) {
+        this._setStatus('saved', 'All changes saved');
+      }
     });
-    this._syncing[key] = operation;
-    operation.then(() => {
-      if (this._syncing[key] === operation) delete this._syncing[key];
-    }, () => {
-      if (this._syncing[key] === operation) delete this._syncing[key];
-    });
+    this._syncing = operation;
     return operation;
   },
 
@@ -105,18 +158,75 @@ const Storage = {
       { 'Authorization': 'Bearer ' + token },
       requestOptions.headers || {}
     );
+    if (requestOptions.method && requestOptions.method !== 'GET') {
+      if (!Number.isInteger(this._revision)) throw new Error('Data revision is unavailable; reload before saving.');
+      requestOptions.headers['If-Match'] = String(this._revision);
+    }
     var resp = await fetch(this._apiUrl + path, requestOptions);
     var body = await resp.json().catch(function() { return {}; });
     if (!resp.ok) {
-      throw new Error(body.detail || body.error || ('API error: ' + resp.status));
+      var detail = body.detail;
+      var message = detail && typeof detail === 'object' ? detail.message : detail;
+      var error = new Error(message || body.error || ('API error: ' + resp.status));
+      error.status = resp.status;
+      error.detail = detail;
+      throw error;
     }
     return body;
+  },
+
+  _ensureStatusElement() {
+    if (typeof document === 'undefined' || !document.body) return null;
+    var element = document.getElementById('save-status');
+    if (element) return element;
+    element = document.createElement('div');
+    element.id = 'save-status';
+    element.className = 'save-status saved';
+    element.setAttribute('role', 'status');
+    element.setAttribute('aria-live', 'polite');
+    document.body.appendChild(element);
+    return element;
+  },
+
+  _setStatus(kind, message, retry) {
+    var element = this._ensureStatusElement();
+    if (!element) return;
+    if (this._statusTimer) {
+      clearTimeout(this._statusTimer);
+      this._statusTimer = null;
+    }
+    element.className = 'save-status ' + kind;
+    element.textContent = message;
+    if (retry) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = 'Retry';
+      button.addEventListener('click', () => {
+        button.disabled = true;
+        retry();
+      });
+      element.appendChild(button);
+    }
+    if (kind === 'saved') {
+      this._statusTimer = setTimeout(function() {
+        element.classList.add('quiet');
+      }, 2500);
+    }
+  },
+
+  _registerBeforeUnload() {
+    if (this._beforeUnloadRegistered || typeof window === 'undefined') return;
+    window.addEventListener('beforeunload', (event) => {
+      if (this._pendingWrites <= 0) return;
+      event.preventDefault();
+      event.returnValue = '';
+    });
+    this._beforeUnloadRegistered = true;
   },
 
   _clone(value) {
     return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
   },
-
   // ---- Config ----
   getConfig() {
     var stored = this.get('config');
@@ -210,15 +320,14 @@ const Storage = {
 
   async assignJokeToIdea(jokeId, ideaId) {
     try {
-      var body = await this._request(
-        '/jokes/' + encodeURIComponent(jokeId) + '/assignment',
-        {
+      await this._enqueueMutation(
+        () => this._request('/jokes/' + encodeURIComponent(jokeId) + '/assignment', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ideaId: ideaId })
-        }
+        }),
+        () => this.assignJokeToIdea(jokeId, ideaId)
       );
-      this._cache.jokes = body.data || [];
       return true;
     } catch (err) {
       console.error('Joke assignment failed:', err);
@@ -229,11 +338,10 @@ const Storage = {
 
   async freeJoke(jokeId) {
     try {
-      var body = await this._request(
-        '/jokes/' + encodeURIComponent(jokeId) + '/assignment',
-        { method: 'DELETE' }
+      await this._enqueueMutation(
+        () => this._request('/jokes/' + encodeURIComponent(jokeId) + '/assignment', { method: 'DELETE' }),
+        () => this.freeJoke(jokeId)
       );
-      this._cache.jokes = body.data || [];
       return true;
     } catch (err) {
       console.error('Free joke failed:', err);
@@ -273,13 +381,10 @@ const Storage = {
 
   async deleteIdea(ideaId) {
     try {
-      var body = await this._request(
-        '/ideas/' + encodeURIComponent(ideaId),
-        { method: 'DELETE' }
+      await this._enqueueMutation(
+        () => this._request('/ideas/' + encodeURIComponent(ideaId), { method: 'DELETE' }),
+        () => this.deleteIdea(ideaId)
       );
-      this._cache.ideas = body.data.ideas || [];
-      this._cache.jokes = body.data.jokes || [];
-      this._cache.assignments = body.data.assignments || {};
       return true;
     } catch (err) {
       console.error('Delete idea failed:', err);
@@ -306,23 +411,36 @@ const Storage = {
     return this.set('assignments', assignments);
   },
 
-  assignIdeaToSlot(ideaId, slotId) {
-    var assignments = this._clone(this.getAssignments());
-    for (var sid in assignments) {
-      if (assignments[sid] === ideaId) delete assignments[sid];
+  async assignIdeaToSlot(ideaId, slotId) {
+    try {
+      await this._enqueueMutation(
+        () => this._request('/schedule/' + encodeURIComponent(slotId) + '/assignment', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ideaId: ideaId })
+        }),
+        () => this.assignIdeaToSlot(ideaId, slotId)
+      );
+      return true;
+    } catch (err) {
+      console.error('Schedule assignment failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to schedule idea: ' + err.message);
+      return false;
     }
-    assignments[slotId] = ideaId;
-    this.saveAssignments(assignments);
-    this.updateIdea(ideaId, { status: 'scheduled' });
   },
 
-  unassignSlot(slotId) {
-    var assignments = this._clone(this.getAssignments());
-    var ideaId = assignments[slotId];
-    if (ideaId) {
-      delete assignments[slotId];
-      this.saveAssignments(assignments);
-      this.updateIdea(ideaId, { status: 'processed' });
+  async unassignSlot(slotId) {
+    if (!this.getAssignments()[slotId]) return true;
+    try {
+      await this._enqueueMutation(
+        () => this._request('/schedule/' + encodeURIComponent(slotId) + '/assignment', { method: 'DELETE' }),
+        () => this.unassignSlot(slotId)
+      );
+      return true;
+    } catch (err) {
+      console.error('Schedule unassignment failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to unschedule idea: ' + err.message);
+      return false;
     }
   },
 
@@ -355,13 +473,24 @@ const Storage = {
   },
 
   async importAll(data) {
-    var writes = [];
-    if (data.config) writes.push(this.saveConfig(data.config));
-    if (data.ideas) writes.push(this.saveIdeas(data.ideas));
-    if (data.jokes) writes.push(this.saveJokes(data.jokes));
-    if (data.showSlots) writes.push(this.saveShowSlots(data.showSlots));
-    if (data.assignments) writes.push(this.saveAssignments(data.assignments));
-    var results = await Promise.all(writes);
-    return results.every(function(result) { return result; });
+    var payload = {};
+    ['config', 'ideas', 'jokes', 'showSlots', 'assignments'].forEach(function(key) {
+      if (Object.prototype.hasOwnProperty.call(data, key)) payload[key] = data[key];
+    });
+    try {
+      await this._enqueueMutation(
+        () => this._request('/import', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }),
+        () => this.importAll(payload)
+      );
+      return true;
+    } catch (err) {
+      console.error('Import failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to import data: ' + err.message);
+      return false;
+    }
   }
 };

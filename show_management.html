@@ -1238,18 +1238,21 @@
     function onDragEnd(e) { draggedIdeaId = null; e.target.classList.remove('dragging'); }
     function onDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; e.currentTarget.classList.add('drag-over'); }
     function onDragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
-    function onDrop(e, slotId) {
+    async function onDrop(e, slotId) {
       e.preventDefault(); e.currentTarget.classList.remove('drag-over');
       var ideaId = e.dataTransfer.getData('text/plain') || draggedIdeaId;
       if (!ideaId || !slotId) return;
       var currentAssignment = Storage.getIdeaForSlot(slotId);
-      if (currentAssignment) { if (!confirm('This slot already has an idea. Replace it?')) return; Storage.unassignSlot(slotId); }
-      Storage.assignIdeaToSlot(ideaId, slotId);
+      if (currentAssignment && !confirm('This slot already has an idea. Replace it?')) return;
+      if (!await Storage.assignIdeaToSlot(ideaId, slotId)) return;
       renderScheduleBoard(); renderIdeasList();
       var slot = ShowEngine.getSlotById(slotId);
       Toast.success('Assigned to ' + slot.episodeNumber + ' (record ' + ShowEngine.formatDateShort(slot.recordDate) + ')');
     }
-    function unassignShow(slotId) { Storage.unassignSlot(slotId); renderScheduleBoard(); renderIdeasList(); Toast.info('Show unassigned.'); }
+    async function unassignShow(slotId) {
+      if (!await Storage.unassignSlot(slotId)) return;
+      renderScheduleBoard(); renderIdeasList(); Toast.info('Show unassigned.');
+    }
 
     function updateReleaseDate(slotId, newDate) {
       ShowEngine.setReleaseDate(slotId, newDate);
