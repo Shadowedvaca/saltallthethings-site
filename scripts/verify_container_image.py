@@ -13,7 +13,8 @@ FORBIDDEN_ENVIRONMENT_PREFIXES = (
     "SATT_DB_PASSWORD=",
 )
 FORBIDDEN_HISTORY_MARKERS = (
-    "ci-only-not-a-secret",
+    "ci-only-database-placeholder",
+    "ci-only-signing-placeholder-at-least-32-characters",
     "DATABASE_URL=",
     "GOOGLE_OAUTH_CLIENT_SECRET=",
     "SATT_DB_PASSWORD=",

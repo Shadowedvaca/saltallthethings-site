@@ -46,7 +46,7 @@ def main() -> int:
         {
             "ENVIRONMENT": "test",
             "DATABASE_ENVIRONMENT": "test",
-            "SECRET_KEY": "ci-only-not-a-secret",
+            "SECRET_KEY": "ci-only-signing-placeholder-at-least-32-characters",
             "SITE_URL": "http://testserver",
             "CORS_ORIGINS": "http://testserver",
             "COMMIT_SHA": os.environ.get("GITHUB_SHA", "ci"),
