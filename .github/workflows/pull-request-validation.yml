@@ -65,6 +65,9 @@ jobs:
             node --check "$file"
           done
 
+      - name: Test browser storage and credential-status contracts
+        run: node scripts/test_frontend_contract.js
+
   container:
     name: Production image and fresh-database health
     runs-on: ubuntu-latest

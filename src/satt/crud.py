@@ -111,7 +111,7 @@ async def replace_ideas(db: AsyncSession, ideas: list[dict]) -> None:
         iid = idea["id"]
         orig_created_at = created_at_map.get(iid)
         created_at_val = orig_created_at or _parse_dt(idea.get("createdAt")) or datetime.now(timezone.utc)
-        updated_at_val = _parse_dt(idea.get("updatedAt")) or datetime.now(timezone.utc)
+        updated_at_val = datetime.now(timezone.utc)
 
         stmt = pg_insert(Idea.__table__).values(
             id=iid,
@@ -122,6 +122,8 @@ async def replace_ideas(db: AsyncSession, ideas: list[dict]) -> None:
             status=idea.get("status") or "draft",
             image_file_id=idea.get("imageFileId"),
             raw_notes=idea.get("rawNotes"),
+            ai_provider=idea.get("aiProvider") or idea.get("aiModel"),
+            ai_model_id=idea.get("aiModelId"),
             created_at=created_at_val,
             updated_at=updated_at_val,
         )
@@ -135,6 +137,8 @@ async def replace_ideas(db: AsyncSession, ideas: list[dict]) -> None:
                 "status": stmt.excluded.status,
                 "image_file_id": stmt.excluded.image_file_id,
                 "raw_notes": stmt.excluded.raw_notes,
+                "ai_provider": stmt.excluded.ai_provider,
+                "ai_model_id": stmt.excluded.ai_model_id,
                 "updated_at": stmt.excluded.updated_at,
                 # created_at intentionally omitted — preserve original
             },

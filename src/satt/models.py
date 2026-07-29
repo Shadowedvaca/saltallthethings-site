@@ -104,6 +104,8 @@ class Idea(Base):
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="'draft'")
     image_file_id: Mapped[Optional[str]] = mapped_column(Text)
     raw_notes: Mapped[Optional[str]] = mapped_column(Text)
+    ai_provider: Mapped[Optional[str]] = mapped_column(Text)
+    ai_model_id: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )

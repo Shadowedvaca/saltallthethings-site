@@ -294,10 +294,10 @@
       toggleProviderSettings();
     }
 
-    function saveConfig() {
+    async function saveConfig() {
       // Merge with existing config to preserve server-managed fields
       // (artStyleBible, artArchetypes, artLog, imageFileId, etc.)
-      const existing = Storage.getConfig();
+      const existing = Storage._clone(Storage.getConfig());
       const config = Object.assign({}, existing, {
         aiModel: document.getElementById('aiModel').value,
         claudeApiKey: document.getElementById('claudeApiKey').value,
@@ -317,7 +317,7 @@
         jokeContext: document.getElementById('jokeContext').value,
         segments: getSegmentsFromDOM()
       });
-      Storage.saveConfig(config);
+      if (!await Storage.saveConfig(config)) return;
       Toast.success('Configuration saved!');
       document.getElementById('saveStatus').textContent = 'Saved ' + new Date().toLocaleTimeString();
     }
@@ -349,18 +349,18 @@
 
     async function saveStyleDescription() {
       const desc = document.getElementById('referenceStyleDescription').value.trim();
-      const existing = Storage.getConfig();
+      const existing = Storage._clone(Storage.getConfig());
       existing.referenceStyleDescription = desc;
-      Storage.saveConfig(existing);
+      if (!await Storage.saveConfig(existing)) return;
       await Storage.init();
       Toast.success('Style description saved.');
     }
 
     async function clearStyleDescription() {
       if (!confirm('Clear the saved style description? Art direction will fall back to the style bible text only.')) return;
-      const existing = Storage.getConfig();
+      const existing = Storage._clone(Storage.getConfig());
       delete existing.referenceStyleDescription;
-      Storage.saveConfig(existing);
+      if (!await Storage.saveConfig(existing)) return;
       await Storage.init();
       document.getElementById('referenceStyleDescription').value = '';
       document.getElementById('styleDescriptionWrap').style.display = 'none';
@@ -439,22 +439,29 @@
     function importData(event) {
       const file = event.target.files[0]; if (!file) return;
       const reader = new FileReader();
-      reader.onload = (e) => {
+      reader.onload = async (e) => {
         try {
           const data = JSON.parse(e.target.result);
-          if (confirm(`Import data from ${data.exportDate || 'unknown date'}? This will overwrite current data.`)) { Storage.importAll(data); loadConfig(); Toast.success('Data imported!'); }
+          if (confirm(`Import data from ${data.exportDate || 'unknown date'}? This will overwrite current data.`)) {
+            if (!await Storage.importAll(data)) return;
+            loadConfig();
+            Toast.success('Data imported!');
+          }
         } catch (err) { Toast.error('Failed to parse import file: ' + err.message); }
       };
       reader.readAsText(file); event.target.value = '';
     }
 
-    function clearAllData() {
+    async function clearAllData() {
       if (confirm('This will delete ALL data including ideas, schedule, and config. Are you sure?')) {
         if (confirm('Really? This cannot be undone.')) {
-          Storage.saveIdeas([]);
-          Storage.saveJokes([]);
-          Storage.saveShowSlots([]);
-          Storage.saveAssignments({});
+          var cleared = await Promise.all([
+            Storage.saveIdeas([]),
+            Storage.saveJokes([]),
+            Storage.saveShowSlots([]),
+            Storage.saveAssignments({})
+          ]);
+          if (!cleared.every(function(result) { return result; })) return;
           loadConfig(); Toast.info('All data cleared.');
         }
       }

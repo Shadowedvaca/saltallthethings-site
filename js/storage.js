@@ -3,15 +3,16 @@
 
    In-memory cache + FastAPI backend.
    All reads are synchronous from cache.
-   All writes update cache immediately, then
-   push to API in the background.
+   Writes update the cache optimistically, then
+   resolve only after the API acknowledges them.
    ============================================ */
 
 const Storage = {
   _apiUrl: '/api',
   _cache: {},               // in-memory data store
   _ready: false,
-  _syncing: {},             // track in-flight saves per key
+  _syncing: {},             // serialize in-flight saves per key
+  _writeVersion: {},
 
   // ---- Initialization ----
   async init() {
@@ -49,42 +50,55 @@ const Storage = {
     return this._cache[key] !== undefined ? this._cache[key] : null;
   },
 
-  set(key, value) {
+  async set(key, value) {
+    var previous = this._clone(this._cache[key]);
+    var version = (this._writeVersion[key] || 0) + 1;
+    this._writeVersion[key] = version;
     this._cache[key] = value;
-    this._pushToApi(key, value);
-    return true;
+    try {
+      var canonical = await this._pushToApi(key, value);
+      if (this._writeVersion[key] === version && canonical !== undefined) {
+        this._cache[key] = canonical;
+      }
+      return true;
+    } catch (err) {
+      if (this._writeVersion[key] === version) this._cache[key] = previous;
+      console.error('API save failed for', key, err);
+      if (typeof Toast !== 'undefined') {
+        Toast.error('Failed to save ' + key + ': ' + err.message);
+      }
+      return false;
+    }
   },
 
   _pushToApi(key, value) {
     const token = this._getToken();
-    if (!token) return;
+    if (!token) return Promise.reject(new Error('Not authenticated'));
 
-    // Debounce: if already saving this key, mark as dirty
-    if (this._syncing[key]) {
-      this._syncing[key].dirty = true;
-      this._syncing[key].value = value;
-      return;
-    }
-
-    this._syncing[key] = { dirty: false, value: value };
-
-    fetch(this._apiUrl + '/data/' + key, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify(value)
-    })
-    .then(resp => {
-      if (!resp.ok) console.error('API save failed for', key, resp.status);
-    })
-    .catch(err => console.error('API save error for', key, err))
-    .finally(() => {
-      const pending = this._syncing[key];
-      delete this._syncing[key];
-      // If more writes came in while we were saving, save again
-      if (pending && pending.dirty) {
-        this._pushToApi(key, pending.value);
+    var prior = this._syncing[key] || Promise.resolve();
+    var operation = prior.catch(function() {}).then(async () => {
+      var resp = await fetch(this._apiUrl + '/data/' + key, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify(value)
+      });
+      var body = await resp.json().catch(function() { return {}; });
+      if (!resp.ok) {
+        throw new Error(body.detail || body.error || ('API error: ' + resp.status));
       }
+      return body.data;
     });
+    this._syncing[key] = operation;
+    operation.then(() => {
+      if (this._syncing[key] === operation) delete this._syncing[key];
+    }, () => {
+      if (this._syncing[key] === operation) delete this._syncing[key];
+    });
+    return operation;
+  },
+
+  _clone(value) {
+    return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
   },
 
   // ---- Config ----
@@ -92,9 +106,9 @@ const Storage = {
     var stored = this.get('config');
     var defaults = {
       aiModel: 'claude',
-      claudeApiKey: '',
+      claudeApiKeyConfigured: false,
       claudeModelId: 'claude-sonnet-4-5-20250929',
-      openaiApiKey: '',
+      openaiApiKeyConfigured: false,
       openaiModelId: 'gpt-4o',
       titleCount: 3,
       jokeCount: 5,
@@ -147,13 +161,13 @@ const Storage = {
   },
 
   addJoke(joke) {
-    var jokes = this.getJokes();
+    var jokes = this._clone(this.getJokes());
     jokes.push(joke);
     return this.saveJokes(jokes);
   },
 
   updateJoke(jokeId, updates) {
-    var jokes = this.getJokes();
+    var jokes = this._clone(this.getJokes());
     var idx = jokes.findIndex(function(j) { return j.id === jokeId; });
     if (idx !== -1) {
       Object.assign(jokes[idx], updates);
@@ -184,7 +198,7 @@ const Storage = {
   },
 
   freeJokesForIdea(ideaId) {
-    var jokes = this.getJokes();
+    var jokes = this._clone(this.getJokes());
     jokes.forEach(function(j) {
       if (j.usedByIdeaId === ideaId) {
         j.status = 'unused';
@@ -208,13 +222,13 @@ const Storage = {
   },
 
   addIdea(idea) {
-    var ideas = this.getIdeas();
+    var ideas = this._clone(this.getIdeas());
     ideas.push(idea);
     return this.saveIdeas(ideas);
   },
 
   updateIdea(ideaId, updates) {
-    var ideas = this.getIdeas();
+    var ideas = this._clone(this.getIdeas());
     var idx = ideas.findIndex(function(i) { return i.id === ideaId; });
     if (idx !== -1) {
       Object.assign(ideas[idx], updates);
@@ -247,7 +261,7 @@ const Storage = {
   },
 
   assignIdeaToSlot(ideaId, slotId) {
-    var assignments = this.getAssignments();
+    var assignments = this._clone(this.getAssignments());
     for (var sid in assignments) {
       if (assignments[sid] === ideaId) delete assignments[sid];
     }
@@ -257,7 +271,7 @@ const Storage = {
   },
 
   unassignSlot(slotId) {
-    var assignments = this.getAssignments();
+    var assignments = this._clone(this.getAssignments());
     var ideaId = assignments[slotId];
     if (ideaId) {
       delete assignments[slotId];
@@ -294,11 +308,14 @@ const Storage = {
     };
   },
 
-  importAll(data) {
-    if (data.config) this.saveConfig(data.config);
-    if (data.ideas) this.saveIdeas(data.ideas);
-    if (data.jokes) this.saveJokes(data.jokes);
-    if (data.showSlots) this.saveShowSlots(data.showSlots);
-    if (data.assignments) this.saveAssignments(data.assignments);
+  async importAll(data) {
+    var writes = [];
+    if (data.config) writes.push(this.saveConfig(data.config));
+    if (data.ideas) writes.push(this.saveIdeas(data.ideas));
+    if (data.jokes) writes.push(this.saveJokes(data.jokes));
+    if (data.showSlots) writes.push(this.saveShowSlots(data.showSlots));
+    if (data.assignments) writes.push(this.saveAssignments(data.assignments));
+    var results = await Promise.all(writes);
+    return results.every(function(result) { return result; });
   }
 };

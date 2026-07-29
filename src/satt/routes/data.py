@@ -151,24 +151,29 @@ async def put_data(
             allow_secret_updates=bool(_user.get("is_admin")),
         )
         await save_config(db, merged)
+        saved = _public_config(merged)
     elif key == "ideas":
         if not isinstance(body, list):
             raise HTTPException(status_code=422, detail="ideas must be an array")
         await replace_ideas(db, body)
+        saved = await get_ideas(db)
     elif key == "jokes":
         if not isinstance(body, list):
             raise HTTPException(status_code=422, detail="jokes must be an array")
         await replace_jokes(db, body)
+        saved = await get_jokes(db)
     elif key == "showSlots":
         if not isinstance(body, list):
             raise HTTPException(status_code=422, detail="showSlots must be an array")
         await replace_show_slots(db, body)
+        saved = await get_show_slots(db)
     elif key == "assignments":
         if not isinstance(body, dict):
             raise HTTPException(status_code=422, detail="assignments must be an object")
         await replace_assignments(db, body)
+        saved = await get_assignments(db)
 
-    return {"ok": True}
+    return {"ok": True, "data": saved}
 
 
 # ---------------------------------------------------------------------------

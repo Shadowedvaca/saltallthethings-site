@@ -464,7 +464,7 @@
 
       // Split into three groups:
       // 1) Scheduled for today or future (by recording date ascending)
-      // 2) Unscheduled (by lastModified/createdAt descending)
+      // 2) Unscheduled (by server-maintained modification/creation time descending)
       // 3) Past episodes (recording date before today, by recording date descending)
       var futureScheduled = [];
       var unscheduled = [];
@@ -487,10 +487,10 @@
         return a.slot.recordDate.localeCompare(b.slot.recordDate);
       });
 
-      // Sort unscheduled: by lastModified or createdAt descending
+      // Sort unscheduled: by canonical server timestamps descending
       unscheduled.sort(function(a, b) {
-        var aDate = a.idea.lastModified || a.idea.createdAt || '';
-        var bDate = b.idea.lastModified || b.idea.createdAt || '';
+        var aDate = a.idea.updatedAt || a.idea.createdAt || '';
+        var bDate = b.idea.updatedAt || b.idea.createdAt || '';
         return bDate.localeCompare(aDate);
       });
 
@@ -807,7 +807,7 @@
       if (card && !card.classList.contains('expanded')) card.classList.add('expanded');
     }
 
-    function saveEdits(ideaId) {
+    async function saveEdits(ideaId) {
       var container = document.getElementById('expanded-' + ideaId);
       if (!container) return;
 
@@ -846,15 +846,15 @@
       var imageEl = container.querySelector('[data-edit-image-id]');
       var imageFileId = imageEl ? imageEl.value.trim() : '';
 
-      Storage.updateIdea(ideaId, {
+      var saved = await Storage.updateIdea(ideaId, {
         titles: titles,
         selectedTitle: selectedTitle,
         summary: summary,
         outline: outline,
         rawNotes: rawNotes,
-        imageFileId: imageFileId || null,
-        lastModified: new Date().toISOString()
+        imageFileId: imageFileId || null
       });
+      if (!saved) return;
 
       editingIdeas.delete(ideaId);
       renderIdeasList();
@@ -897,10 +897,10 @@
     // ============================================
     function toggleIdeaExpand(ideaId) { document.getElementById('idea-' + ideaId).classList.toggle('expanded'); }
 
-    function selectTitle(ideaId, titleIndex) {
+    async function selectTitle(ideaId, titleIndex) {
       var ideas = Storage.getIdeas();
       var idea = ideas.find(function(i) { return i.id === ideaId; });
-      if (idea && idea.titles) { Storage.updateIdea(ideaId, { selectedTitle: idea.titles[titleIndex] }); renderIdeasList(); }
+      if (idea && idea.titles && await Storage.updateIdea(ideaId, { selectedTitle: idea.titles[titleIndex] })) renderIdeasList();
     }
 
     function selectJokeForIdea(ideaId, jokeId) {
@@ -930,10 +930,13 @@
         var idea = {
           id: newId, rawNotes: notes, titles: result.titles,
           selectedTitle: result.titles[0], summary: result.summary, outline: result.outline,
-          status: 'processed', aiModel: config.aiModel, createdAt: new Date().toISOString(),
+          status: 'processed',
+          aiProvider: config.aiModel,
+          aiModelId: config.aiModel === 'openai' ? config.openaiModelId : config.claudeModelId,
+          createdAt: new Date().toISOString(),
           imageFileId: null
         };
-        Storage.addIdea(idea);
+        if (!await Storage.addIdea(idea)) return;
         document.getElementById('ideaNotes').value = '';
         lastProcessedId = newId;
         editingIdeas.add(newId);
@@ -943,14 +946,16 @@
       finally { document.getElementById('composerOverlay').classList.add('hidden'); document.getElementById('processBtn').disabled = false; }
     }
 
-    function saveDraft() {
+    async function saveDraft() {
       var notes = document.getElementById('ideaNotes').value.trim();
       if (!notes) { Toast.error('Write some notes first!'); return; }
-      Storage.addIdea({
+      var saved = await Storage.addIdea({
         id: Storage.generateId(), rawNotes: notes, titles: [], selectedTitle: null,
-        summary: null, outline: [], status: 'draft', aiModel: null, createdAt: new Date().toISOString(),
+        summary: null, outline: [], status: 'draft', aiProvider: null, aiModelId: null,
+        createdAt: new Date().toISOString(),
         imageFileId: null
       });
+      if (!saved) return;
       document.getElementById('ideaNotes').value = '';
       renderIdeasList();
       Toast.success('Draft saved!');
@@ -965,7 +970,16 @@
       Toast.info('Processing idea with AI...');
       try {
         var result = await AIService.processIdea(idea.rawNotes);
-        Storage.updateIdea(ideaId, { titles: result.titles, selectedTitle: result.titles[0], summary: result.summary, outline: result.outline, status: 'processed', aiModel: config.aiModel });
+        var saved = await Storage.updateIdea(ideaId, {
+          titles: result.titles,
+          selectedTitle: result.titles[0],
+          summary: result.summary,
+          outline: result.outline,
+          status: 'processed',
+          aiProvider: config.aiModel,
+          aiModelId: config.aiModel === 'openai' ? config.openaiModelId : config.claudeModelId
+        });
+        if (!saved) return;
         lastProcessedId = ideaId;
         editingIdeas.add(ideaId);
         renderIdeasList();
