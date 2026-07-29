@@ -84,6 +84,18 @@ def test_entrypoint_validates_isolation_before_migrations():
     assert "set -eu" in entrypoint
 
 
+def test_alembic_bootstraps_version_table_schema_on_fresh_database():
+    migration_environment = (
+        REPOSITORY_ROOT / "src/satt/migrations/env.py"
+    ).read_text(encoding="utf-8")
+    online_migration = migration_environment.split(
+        "def do_run_migrations(connection):", 1
+    )[1]
+    assert online_migration.index("CREATE SCHEMA IF NOT EXISTS satt") < (
+        online_migration.index("context.configure(")
+    )
+
+
 def test_pull_request_workflow_has_minimal_permissions_and_pinned_actions():
     source = WORKFLOW_PATH.read_text(encoding="utf-8")
     workflow = yaml.safe_load(source)
