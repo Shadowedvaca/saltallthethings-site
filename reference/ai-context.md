@@ -223,6 +223,25 @@ calls Anthropic or OpenAI directly.
   original JS prompt logic
 - Model selection is runtime config (`config.aiModel`: `"claude"` or `"openai"`)
 
+### Show outline contract
+
+- Configured show sections have stable, unique `id` values plus editable names,
+  descriptions, and order.
+- Renaming a configured section preserves its ID. Adding a section creates a new
+  opaque ID; duplicate IDs and empty configurations are rejected.
+- New AI outlines must contain every configured section exactly once. Complete
+  reordered output is normalized to configured order and canonical names.
+  Missing, duplicate, unknown, or malformed sections receive one bounded repair
+  attempt and are rejected if still invalid.
+- Each generated section contains 2-5 non-empty talking-point strings.
+- The episode outline editor intentionally constrains section identity, count,
+  and order while allowing names and talking points to be edited.
+- Configuration changes apply only to future generation. Existing episode
+  outlines are historical snapshots and are never silently rewritten.
+- Custom non-empty configurations follow the same contract. An empty
+  configuration cannot process an idea and returns an actionable validation
+  error.
+
 ---
 
 ## Pages

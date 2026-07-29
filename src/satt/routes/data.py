@@ -21,6 +21,7 @@ from satt.crud import (
     save_config,
 )
 from satt.database import get_db
+from satt.outline_contract import OutlineContractError, normalize_configured_segments
 
 router = APIRouter()
 
@@ -69,6 +70,15 @@ def _merge_config_update(
     for key in tuple(update):
         if key.endswith("ApiKeyConfigured"):
             update.pop(key)
+
+    if "segments" in update:
+        try:
+            update["segments"] = normalize_configured_segments(update["segments"])
+        except OutlineContractError as error:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid show section configuration: {error}",
+            ) from error
 
     merged.update(update)
     return merged

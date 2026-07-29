@@ -180,7 +180,7 @@
       <!-- Show Segments -->
       <div class="card card-elevated mb-lg">
         <h2 class="mb-md">Show Segments</h2>
-        <p class="text-sm text-secondary mb-md">The segments of each episode. The AI uses these to structure the show outline. Drag to reorder.</p>
+        <p class="text-sm text-secondary mb-md">The sections of each new episode outline. Drag to reorder. Renaming preserves the stable section ID, and configuration changes never rewrite existing episode outlines.</p>
         <div id="segmentsList"></div>
         <div class="mt-md flex gap-sm">
           <button class="btn btn-secondary btn-sm" onclick="addSegment()">+ Add Segment</button>
@@ -389,6 +389,7 @@
         row.className = 'flex gap-sm items-center mb-sm';
         row.draggable = true;
         row.dataset.index = idx;
+        row.dataset.segmentId = seg.id;
         row.style.cssText = 'padding: 8px 12px; background: var(--bg-surface); border-radius: var(--radius-md); border: 1px solid var(--border-subtle); cursor: grab;';
         row.innerHTML = `
           <span class="text-muted" style="min-width: 24px; font-size: 0.75rem;">${idx + 1}.</span>
@@ -413,15 +414,15 @@
       const rows = document.querySelectorAll('#segmentsList .flex.items-center');
       const segments = [];
       rows.forEach((row) => {
-        const name = row.querySelector('[data-field="name"]').value;
-        const description = row.querySelector('[data-field="description"]').value;
-        const id = name.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').substring(0, 20);
+        const name = row.querySelector('[data-field="name"]').value.trim();
+        const description = row.querySelector('[data-field="description"]').value.trim();
+        const id = row.dataset.segmentId;
         segments.push({ id, name, description });
       });
       return segments;
     }
 
-    function addSegment() { const segs = getSegmentsFromDOM(); segs.push({ id: 'new_' + Date.now(), name: '', description: '' }); renderSegments(segs); }
+    function addSegment() { const segs = getSegmentsFromDOM(); segs.push({ id: 'segment_' + Storage.generateId(), name: '', description: '' }); renderSegments(segs); }
     function removeSegment(idx) { const segs = getSegmentsFromDOM(); segs.splice(idx, 1); renderSegments(segs); }
     function resetSegments() { if (confirm('Reset segments to defaults?')) { renderSegments(Storage._defaultSegments()); Toast.info('Segments reset (save to apply)'); } }
     function resetShowContext() { if (confirm('Reset show context prompt to defaults?')) { document.getElementById('showContext').value = Storage._defaultShowContext(); Toast.info('Context reset (save to apply)'); } }

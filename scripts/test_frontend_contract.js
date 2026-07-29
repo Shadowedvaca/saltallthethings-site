@@ -49,6 +49,15 @@ async function main() {
   assert.doesNotMatch(showManagement, /lastModified/);
   assert.match(jokesPage, /!config\.claudeApiKeyConfigured/);
   assert.match(jokesPage, /!config\.openaiApiKeyConfigured/);
+  assert.match(configPage, /row\.dataset\.segmentId = seg\.id/);
+  assert.match(configPage, /const id = row\.dataset\.segmentId/);
+  assert.match(configPage, /segment_.*Storage\.generateId\(\)/);
+  assert.match(showManagement, /data-segment-id=/);
+  assert.match(showManagement, /var segmentId = segEl\.dataset\.segmentId/);
+  assert.doesNotMatch(
+    showManagement,
+    /segmentId:\s*segName\.toLowerCase/,
+  );
 
   const successful = loadStorage(async (_url, options) => {
     const ideas = JSON.parse(options.body);

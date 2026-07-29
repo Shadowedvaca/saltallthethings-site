@@ -169,6 +169,28 @@ async def test_idea_preserves_created_at_on_update(db_client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_idea_section_name_edit_preserves_segment_identity(
+    db_client: AsyncClient,
+):
+    await db_client.put("/api/data/ideas", json=[IDEA], headers=_headers())
+    edited = {
+        **IDEA,
+        "outline": [
+            {
+                **IDEA["outline"][0],
+                "segmentName": "Renamed Historical Section",
+            }
+        ],
+    }
+    await db_client.put("/api/data/ideas", json=[edited], headers=_headers())
+    saved = (
+        await db_client.get("/api/data/ideas", headers=_headers())
+    ).json()[0]["outline"][0]
+    assert saved["segmentId"] == IDEA["outline"][0]["segmentId"]
+    assert saved["segmentName"] == "Renamed Historical Section"
+
+
+@pytest.mark.asyncio
 async def test_legacy_ai_model_is_migrated_to_provider(db_client: AsyncClient):
     legacy = {
         **IDEA,
@@ -311,3 +333,59 @@ async def test_non_admin_cannot_replace_api_key(db_client: AsyncClient):
         headers=_headers(),
     )
     assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_config_rejects_empty_or_duplicate_show_sections(
+    db_client: AsyncClient,
+):
+    empty = await db_client.put(
+        "/api/data/config",
+        json={"segments": []},
+        headers=_headers(),
+    )
+    assert empty.status_code == 422
+    assert "at least one show section" in empty.json()["detail"]
+
+    duplicate = await db_client.put(
+        "/api/data/config",
+        json={
+            "segments": [
+                {"id": "same", "name": "First"},
+                {"id": "same", "name": "Second"},
+            ]
+        },
+        headers=_headers(),
+    )
+    assert duplicate.status_code == 422
+    assert "duplicate show section id" in duplicate.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_config_section_changes_do_not_rewrite_existing_outlines(
+    db_client: AsyncClient,
+):
+    await db_client.put("/api/data/ideas", json=[IDEA], headers=_headers())
+    original = (
+        await db_client.get("/api/data/ideas", headers=_headers())
+    ).json()[0]["outline"]
+
+    config_response = await db_client.put(
+        "/api/data/config",
+        json={
+            "segments": [
+                {
+                    "id": "custom",
+                    "name": "A New Future Section",
+                    "description": "Applies to newly generated outlines only",
+                }
+            ]
+        },
+        headers=_headers(),
+    )
+    assert config_response.status_code == 200
+
+    after = (
+        await db_client.get("/api/data/ideas", headers=_headers())
+    ).json()[0]["outline"]
+    assert after == original

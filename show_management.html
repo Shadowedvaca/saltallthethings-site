@@ -716,9 +716,10 @@
 
       // Editable outline
       html += '<div onclick="event.stopPropagation()">'
-        + '<label class="text-xs text-muted" style="display:block; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Show Outline</label>';
+        + '<label class="text-xs text-muted" style="display:block; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Show Outline</label>'
+        + '<p class="text-xs text-muted mb-sm">Section identity and order are fixed for this episode. Names and talking points may be edited.</p>';
       (idea.outline || []).forEach(function(seg, si) {
-        html += '<div class="outline-segment" data-seg-index="' + si + '">'
+        html += '<div class="outline-segment" data-seg-index="' + si + '" data-segment-id="' + esc(seg.segmentId) + '">'
           + '<div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">'
           + '<input type="text" class="edit-field edit-field-sm" data-edit-seg-name="' + si + '" value="' + esc(seg.segmentName) + '" style="font-weight:600; color: var(--ice-bright);">'
           + '</div>';
@@ -832,11 +833,17 @@
         var si = segEl.dataset.segIndex;
         var nameEl = segEl.querySelector('[data-edit-seg-name="' + si + '"]');
         var segName = nameEl ? nameEl.value.trim() : '';
+        var segmentId = segEl.dataset.segmentId;
         var tpInputs = segEl.querySelectorAll('[data-edit-tp]');
         var talkingPoints = [];
         tpInputs.forEach(function(tpInp) { var v = tpInp.value.trim(); if (v) talkingPoints.push(v); });
-        if (segName) outline.push({ segmentId: segName.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 20), segmentName: segName, talkingPoints: talkingPoints });
+        if (!segName) {
+          Toast.error('Every outline section needs a name.');
+          return;
+        }
+        outline.push({ segmentId: segmentId, segmentName: segName, talkingPoints: talkingPoints });
       });
+      if (outline.length !== segEls.length) return;
 
       // Raw notes
       var rawEl = container.querySelector('[data-edit-rawnotes]');

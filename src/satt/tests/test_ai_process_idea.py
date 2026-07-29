@@ -69,7 +69,12 @@ _VALID_IDEA_RESPONSE = {
             "segmentId": "opening",
             "segmentName": "Opening Hook / Intro",
             "talkingPoints": ["Point one", "Point two"],
-        }
+        },
+        {
+            "segmentId": "main",
+            "segmentName": "Main Topic",
+            "talkingPoints": ["Core point", "Closing question"],
+        },
     ],
 }
 
@@ -98,7 +103,10 @@ async def test_process_idea_claude_success(client: AsyncClient):
     data = resp.json()
     assert data["titles"] == _VALID_IDEA_RESPONSE["titles"]
     assert data["summary"] == _VALID_IDEA_RESPONSE["summary"]
-    assert isinstance(data["outline"], list)
+    assert [section["segmentId"] for section in data["outline"]] == [
+        "opening",
+        "main",
+    ]
 
 
 @pytest.mark.asyncio
@@ -219,3 +227,81 @@ async def test_process_idea_prompt_contains_raw_notes(client: AsyncClient):
     assert resp.status_code == 200
     assert len(captured_calls) == 1
     assert "MARKER_TEXT_FOR_TEST" in captured_calls[0]["user"]
+    assert "id='opening'" in captured_calls[0]["system"]
+    assert "id='main'" in captured_calls[0]["system"]
+
+
+@pytest.mark.asyncio
+async def test_process_idea_repairs_reordered_missing_output_once(client: AsyncClient):
+    app.dependency_overrides[get_db] = _override_get_db
+    malformed = {
+        **_VALID_IDEA_RESPONSE,
+        "outline": [_VALID_IDEA_RESPONSE["outline"][1]],
+    }
+    repaired = {
+        **_VALID_IDEA_RESPONSE,
+        "outline": list(reversed(_VALID_IDEA_RESPONSE["outline"])),
+    }
+    mock_call = AsyncMock(
+        side_effect=[json.dumps(malformed), json.dumps(repaired)]
+    )
+
+    with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=_fake_config())):
+        with patch("satt.routes.ai.call_ai", new=mock_call):
+            response = await client.post(
+                "/api/ai/process-idea",
+                json={"rawNotes": "Repair this outline."},
+                headers={"Authorization": f"Bearer {_token()}"},
+            )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 200
+    assert mock_call.await_count == 2
+    assert "missing configured outline sections" in mock_call.await_args_list[1].args[1]
+    assert [section["segmentId"] for section in response.json()["outline"]] == [
+        "opening",
+        "main",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_process_idea_rejects_invalid_output_after_one_repair(client: AsyncClient):
+    app.dependency_overrides[get_db] = _override_get_db
+    invalid = json.dumps(
+        {
+            **_VALID_IDEA_RESPONSE,
+            "outline": [_VALID_IDEA_RESPONSE["outline"][0]],
+        }
+    )
+    mock_call = AsyncMock(side_effect=[invalid, invalid])
+
+    with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=_fake_config())):
+        with patch("satt.routes.ai.call_ai", new=mock_call):
+            response = await client.post(
+                "/api/ai/process-idea",
+                json={"rawNotes": "Still invalid."},
+                headers={"Authorization": f"Bearer {_token()}"},
+            )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 502
+    assert mock_call.await_count == 2
+    assert "invalid outline after one repair attempt" in response.json()["error"]
+
+
+@pytest.mark.asyncio
+async def test_process_idea_rejects_empty_section_configuration(client: AsyncClient):
+    app.dependency_overrides[get_db] = _override_get_db
+    config = _fake_config()
+    config["segments"] = []
+
+    with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=config)):
+        response = await client.post(
+            "/api/ai/process-idea",
+            json={"rawNotes": "No configured sections."},
+            headers={"Authorization": f"Bearer {_token()}"},
+        )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 422
+    assert "configure at least one show section" in response.json()["error"]

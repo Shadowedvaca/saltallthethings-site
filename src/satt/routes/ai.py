@@ -27,10 +27,16 @@ from satt.gdrive import (
     move_file,
     upload_file_to_folder,
 )
+from satt.outline_contract import (
+    OutlineContractError,
+    normalize_configured_segments,
+    normalize_generated_outline,
+)
 from satt.prompts import (
     build_generate_art_direction_prompts,
     build_generate_jokes_prompts,
     build_process_idea_prompts,
+    build_process_idea_repair_prompt,
 )
 
 router = APIRouter()
@@ -41,7 +47,7 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 
 
-def _parse_idea_response(text: str) -> dict:
+def _parse_idea_response(text: str, configured_segments: list[dict]) -> dict:
     cleaned = text.strip()
     if cleaned.startswith("```json"):
         cleaned = cleaned[7:]
@@ -61,7 +67,10 @@ def _parse_idea_response(text: str) -> dict:
     return {
         "titles": parsed["titles"],
         "summary": parsed["summary"],
-        "outline": parsed["outline"],
+        "outline": normalize_generated_outline(
+            parsed["outline"],
+            configured_segments,
+        ),
     }
 
 
@@ -103,6 +112,13 @@ async def process_idea(
 
     config = await get_config(db)
     ai_model = config.get("aiModel", "claude")
+    try:
+        configured_segments = normalize_configured_segments(config.get("segments"))
+    except OutlineContractError as error:
+        return JSONResponse(
+            status_code=422,
+            content={"error": f"Invalid show section configuration: {error}"},
+        )
 
     if ai_model == "claude" and not config.get("claudeApiKey"):
         return JSONResponse(
@@ -125,12 +141,27 @@ async def process_idea(
         )
 
     try:
-        result = _parse_idea_response(text)
-    except (json.JSONDecodeError, ValueError) as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": f"AI API error: Failed to parse response: {e}"},
-        )
+        result = _parse_idea_response(text, configured_segments)
+    except (json.JSONDecodeError, ValueError) as first_error:
+        repair_prompt = build_process_idea_repair_prompt(text, str(first_error))
+        try:
+            repaired_text = await call_ai(system_prompt, repair_prompt, config)
+            result = _parse_idea_response(repaired_text, configured_segments)
+        except (
+            httpx.HTTPStatusError,
+            httpx.RequestError,
+            json.JSONDecodeError,
+            ValueError,
+        ) as error:
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "error": (
+                        "AI returned an invalid outline after one repair attempt: "
+                        f"{error}"
+                    )
+                },
+            )
 
     return JSONResponse(content=result)
 
