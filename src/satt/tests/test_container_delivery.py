@@ -106,6 +106,10 @@ def test_entrypoint_validates_isolation_before_migrations():
     migration = entrypoint.index("alembic upgrade head")
     application = entrypoint.index('exec "$@"')
     assert settings_validation < migration < application
+    migration_environment = (
+        REPOSITORY_ROOT / "src/satt/migrations/env.py"
+    ).read_text(encoding="utf-8")
+    assert "async with connectable.begin() as connection:" in migration_environment
     assert "set -eu" in entrypoint
 
 
@@ -144,6 +148,7 @@ def test_ci_database_helper_cannot_target_external_hosts():
     assert 'os.environ.get("GITHUB_ACTIONS") != "true"' in source
     assert '"TEST_DATABASE_URL": migration_url' in source
     assert '"DATABASE_URL": guard_url' in source
+    assert '"current", "--check-heads"' in source
 
 
 def test_development_deploy_is_manual_immutable_and_isolated():

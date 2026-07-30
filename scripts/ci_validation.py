@@ -59,7 +59,10 @@ def main() -> int:
 
     migration_environment = base_environment | {"DATABASE_URL": migration_url}
     _run([sys.executable, "-m", "alembic", "upgrade", "head"], migration_environment)
-    _run([sys.executable, "-m", "alembic", "current"], migration_environment)
+    _run(
+        [sys.executable, "-m", "alembic", "current", "--check-heads"],
+        migration_environment,
+    )
 
     test_environment = base_environment | {
         "DATABASE_URL": guard_url,
