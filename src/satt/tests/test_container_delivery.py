@@ -67,12 +67,13 @@ def test_nonproduction_compose_definitions_are_isolated():
     )
 
     assert development["name"] == "satt-development"
-    database_healthcheck = (
-        yaml.safe_load((REPOSITORY_ROOT / "compose.yaml").read_text(encoding="utf-8"))
-        ["services"]["database"]["healthcheck"]["test"][1]
-    )
-    assert "postmaster.pid" in database_healthcheck
-    assert '= \"1\" && pg_isready' in database_healthcheck
+    for compose_name in ("compose.yaml", "compose.ci.yaml"):
+        database_healthcheck = (
+            yaml.safe_load((REPOSITORY_ROOT / compose_name).read_text(encoding="utf-8"))
+            ["services"]["database"]["healthcheck"]["test"][1]
+        )
+        assert "postmaster.pid" in database_healthcheck, compose_name
+        assert '= \"1\" && pg_isready' in database_healthcheck, compose_name
     assert development["services"]["app"]["image"] == "satt:development"
     assert (
         development["services"]["app"]["ports"][0]
