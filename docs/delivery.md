@@ -37,6 +37,22 @@ GitHub environment, and secret provisioning requires explicit authorization.
 The detailed bootstrap, validation, cleanup, and rollback procedure is in
 `docs/development-environment.md`.
 
+## Isolated test implementation
+
+SATT test uses `/opt/satt-platform` on `my-web-apps-test`, loopback port `8300`,
+Compose project `satt-test`, and database volume `satt-test-postgres`.
+`deploy-test.yml` runs only for a pushed commit on `main`, verifies
+`github.sha`, and deploys that exact commit after the cumulative pull request
+receives separate merge approval.
+
+The deployment performs a bounded pre-deploy backup, runs migrations, verifies
+local and public environment/version/commit metadata, verifies the final
+Alembic revision, and runs an ephemeral authentication/integration smoke test
+that removes its temporary identity. Test OAuth values are empty and
+non-production external-service opt-in is false. The detailed bootstrap,
+validation, reset, cleanup, and rollback procedure is in
+`docs/test-environment.md`.
+
 The repository is currently transitioning to this contract under milestone
 `Cleanup & DevOps Foundation`. Until issue #14 completes, the legacy direct
 production workflow is an acknowledged risk, not an authorized release path.

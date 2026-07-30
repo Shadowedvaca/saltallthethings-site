@@ -66,6 +66,21 @@ The manual workflow requires the configured secret names `DEV_HOST`,
 See `docs/development-environment.md` for bootstrap, isolation, backup, smoke,
 cleanup, and rollback procedures.
 
+SATT test uses:
+
+- SSH alias `my-web-apps-test`;
+- repository path `/opt/satt-platform`;
+- Compose project `satt-test`;
+- loopback binding `127.0.0.1:8300`;
+- database volume `satt-test-postgres`; and
+- GitHub environment `test`.
+
+`deploy-test.yml` runs only for the exact pushed `main` commit after separate
+merge approval. It uses `TEST_HOST`, `DEPLOY_SSH_KEY`, and
+`TEST_SSH_KNOWN_HOSTS`, performs bounded backup/migration/health/integration
+checks, and cannot operate on development or production. See
+`docs/test-environment.md`.
+
 ---
 
 ## Normal Feature Flow

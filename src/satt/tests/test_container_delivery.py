@@ -9,6 +9,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 COMPOSE_FILES = tuple(REPOSITORY_ROOT.glob("compose*.yaml"))
 WORKFLOW_PATH = REPOSITORY_ROOT / ".github/workflows/pull-request-validation.yml"
 DEV_WORKFLOW_PATH = REPOSITORY_ROOT / ".github/workflows/deploy-dev.yml"
+TEST_WORKFLOW_PATH = REPOSITORY_ROOT / ".github/workflows/deploy-test.yml"
 
 
 def test_container_context_excludes_sensitive_and_unrelated_files():
@@ -92,6 +93,23 @@ def test_nonproduction_compose_definitions_are_isolated():
     ):
         assert development["services"]["app"]["environment"][credential] == ""
     assert test["name"] == "satt-test"
+    assert test["services"]["app"]["image"] == "satt:test"
+    assert (
+        test["services"]["app"]["ports"][0]
+        == "127.0.0.1:${SATT_APP_PORT:?SATT_APP_PORT is required}:8200"
+    )
+    assert (
+        test["services"]["app"]["environment"][
+            "ALLOW_NONPRODUCTION_EXTERNAL_SERVICES"
+        ]
+        == "false"
+    )
+    for credential in (
+        "GOOGLE_OAUTH_CLIENT_ID",
+        "GOOGLE_OAUTH_CLIENT_SECRET",
+        "GOOGLE_OAUTH_REFRESH_TOKEN",
+    ):
+        assert test["services"]["app"]["environment"][credential] == ""
     assert development["volumes"]["satt_postgres"]["name"] != test["volumes"][
         "satt_postgres"
     ]["name"]
@@ -218,3 +236,50 @@ def test_registered_legacy_workflow_bootstraps_development_safely():
         "if: github.event_name == 'push' && github.ref == 'refs/heads/main'"
         in source
     )
+
+
+def test_test_deploy_uses_only_the_approved_main_commit_and_isolated_test():
+    source = TEST_WORKFLOW_PATH.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(source)
+
+    assert workflow["permissions"] == {"contents": "read"}
+    assert workflow["on"] == {"push": {"branches": ["main"]}}
+    assert "workflow_dispatch:" not in source
+    assert "environment: test" in source
+    assert 'test "$GITHUB_REF" = "refs/heads/main"' in source
+    assert 'test "$sha" = "$GITHUB_SHA"' in source
+
+    action_uses = re.findall(r"uses:\s*([^\s#]+)", source)
+    assert action_uses
+    for action in action_uses:
+        revision = action.rsplit("@", 1)[1]
+        assert re.fullmatch(r"[0-9a-f]{40}", revision)
+
+    for required in (
+        "TEST_HOST",
+        "DEPLOY_SSH_KEY",
+        "TEST_SSH_KNOWN_HOSTS",
+        'git checkout --detach "$deploy_sha"',
+        'test "$(git rev-parse HEAD)" = "$deploy_sha"',
+        "/opt/satt-platform",
+        "-f compose.test.yaml",
+        "http://127.0.0.1:8300/api/health",
+        "https://test.saltallthethings.com/api/health",
+        'assert data["environment"]=="test"',
+        'assert data["version"]=="0.0.1"',
+        "select version_num from satt.alembic_version",
+        "satt.scripts.environment_smoke",
+        "logs --no-color --tail 100 app database",
+        "< /dev/null | gzip -c",
+        "set -euo pipefail",
+    ):
+        assert required in source
+
+    for forbidden in (
+        "DEV_HOST",
+        "PROD_HOST",
+        "dev.saltallthethings.com",
+        "https://saltallthethings.com/api/health",
+        "docker image prune",
+    ):
+        assert forbidden not in source
