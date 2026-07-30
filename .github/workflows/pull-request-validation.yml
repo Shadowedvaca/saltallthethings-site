@@ -91,6 +91,15 @@ jobs:
         run: |
           docker compose -f compose.ci.yaml exec -T app python -c \
             "import json, os, urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8200/api/health', timeout=2)); assert data['status']=='ok'; assert data['environment']=='test'; assert data['version']=='0.0.1'; assert data['commit']==os.environ['COMMIT_SHA']; assert set(data)=={'status','environment','version','commit','timestamp'}"
+      - name: Verify final container database migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision="$(
+            docker compose -f compose.ci.yaml exec -T database \
+              sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from satt.alembic_version"'
+          )"
+          test "$revision" = "0006"
 
       - name: Show bounded diagnostics on failure
         if: failure()

@@ -126,6 +126,7 @@ def test_pull_request_workflow_has_minimal_permissions_and_pinned_actions():
     assert workflow["permissions"] == {"contents": "read"}
     assert "push:" not in source
     assert "workflow_dispatch:" not in source
+    assert "select version_num from satt.alembic_version" in source
 
     action_uses = re.findall(r"uses:\s*([^\s#]+)", source)
     assert action_uses
