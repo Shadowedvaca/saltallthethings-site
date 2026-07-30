@@ -190,6 +190,7 @@ def test_development_deploy_is_manual_immutable_and_isolated():
         'assert data["environment"]=="development"',
         'assert data["version"]=="0.0.1"',
         "logs --no-color --tail 100 app database",
+        "< /dev/null | gzip -c",
         "set -euo pipefail",
     ):
         assert required in source

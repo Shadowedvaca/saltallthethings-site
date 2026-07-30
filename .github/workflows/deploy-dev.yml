@@ -118,7 +118,7 @@ jobs:
             backup="/opt/satt-platform/backups/pre-deploy-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
             compose exec -T database \
               sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' \
-              | gzip -c > "$backup"
+              < /dev/null | gzip -c > "$backup"
             chmod 0600 "$backup"
             find /opt/satt-platform/backups \
               -maxdepth 1 -type f -name 'pre-deploy-*.sql.gz' -mtime +14 -delete
