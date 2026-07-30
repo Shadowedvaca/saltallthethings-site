@@ -49,7 +49,7 @@ is reserved on both servers so environment definitions remain symmetric.
 |---|---|---|---|
 | `8100` | Pull All The Things | `dev.pullallthethings.com` | `test.pullallthethings.com` |
 | `8200` | Shadowedvaca site | `dev.shadowedvaca.com` | `test.shadowedvaca.com` |
-| `8300` | Salt All The Things | `dev.saltallthethings.com` | reserved for issue #12 |
+| `8300` | Salt All The Things | `dev.saltallthethings.com` | `test.saltallthethings.com` |
 
 SATT development uses:
 
