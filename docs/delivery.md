@@ -166,3 +166,10 @@ external AI, OAuth, or Drive credentials.
 `# Salt All The Things X.Y.Z` heading. The running application, validation
 tools, production tag, and GitHub Release must report the same version and
 commit.
+
+`scripts/validate_release.py` enforces the version, tag, filename, heading,
+required-section, placeholder, and credential-safety contract in pull-request
+validation without publishing. A separately approved `prod-vX.Y.Z` tag invokes
+`publish-release.yml`, which publishes only the matching curated note and does
+not deploy an application. Version increments, hotfixes, and rollback behavior
+are documented in `docs/versioning-and-releases.md`.

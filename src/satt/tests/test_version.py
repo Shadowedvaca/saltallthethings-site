@@ -7,7 +7,10 @@ from satt.version import APP_VERSION
 
 
 def test_authoritative_version_matches_fastapi_metadata():
-    assert APP_VERSION == "0.0.1"
+    repository_root = Path(__file__).resolve().parents[3]
+    assert APP_VERSION == (
+        repository_root / "VERSION"
+    ).read_text(encoding="utf-8").strip()
     assert app.version == APP_VERSION
 
 

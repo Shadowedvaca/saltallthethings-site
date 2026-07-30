@@ -39,6 +39,10 @@ The repository is still transitioning from its legacy direct-production
 workflow. Do not merge, tag, deploy, or alter infrastructure based only on this
 README; follow [docs/delivery.md](docs/delivery.md).
 
+Semantic version changes, curated notes, tag validation, GitHub Release
+publication, hotfixes, and rollback versions are described in
+[docs/versioning-and-releases.md](docs/versioning-and-releases.md).
+
 ### Container runtime
 
 `Dockerfile` is the production runtime definition. It installs locked runtime

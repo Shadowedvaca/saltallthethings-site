@@ -10,6 +10,7 @@ COMPOSE_FILES = tuple(REPOSITORY_ROOT.glob("compose*.yaml"))
 WORKFLOW_PATH = REPOSITORY_ROOT / ".github/workflows/pull-request-validation.yml"
 DEV_WORKFLOW_PATH = REPOSITORY_ROOT / ".github/workflows/deploy-dev.yml"
 TEST_WORKFLOW_PATH = REPOSITORY_ROOT / ".github/workflows/deploy-test.yml"
+RELEASE_WORKFLOW_PATH = REPOSITORY_ROOT / ".github/workflows/publish-release.yml"
 
 
 def test_container_context_excludes_sensitive_and_unrelated_files():
@@ -150,6 +151,8 @@ def test_pull_request_workflow_has_minimal_permissions_and_pinned_actions():
     assert "push:" not in source
     assert "workflow_dispatch:" not in source
     assert "select version_num from satt.alembic_version" in source
+    assert "python scripts/validate_release.py" in source
+    assert "Validate current release contract without publishing" in source
 
     action_uses = re.findall(r"uses:\s*([^\s#]+)", source)
     assert action_uses
@@ -202,11 +205,13 @@ def test_development_deploy_is_manual_immutable_and_isolated():
         'sha="$(git rev-parse HEAD)"',
         'git checkout --detach "$deploy_sha"',
         'test "$(git rev-parse HEAD)" = "$deploy_sha"',
+        "version=\"$(tr -d '\\r\\n' < VERSION)\"",
+        "DEPLOY_VERSION: ${{ steps.release.outputs.version }}",
         "/opt/satt-platform",
         "http://127.0.0.1:8300/api/health",
         "https://dev.saltallthethings.com/api/health",
         'assert data["environment"]=="development"',
-        'assert data["version"]=="0.0.1"',
+        'assert data["version"]==expected_version',
         "logs --no-color --tail 100 app database",
         "< /dev/null | gzip -c",
         "set -euo pipefail",
@@ -261,14 +266,17 @@ def test_test_deploy_uses_only_the_approved_main_commit_and_isolated_test():
         "TEST_SSH_KNOWN_HOSTS",
         'git checkout --detach "$deploy_sha"',
         'test "$(git rev-parse HEAD)" = "$deploy_sha"',
+        "version=\"$(tr -d '\\r\\n' < VERSION)\"",
+        "DEPLOY_VERSION: ${{ steps.release.outputs.version }}",
         "/opt/satt-platform",
         "-f compose.test.yaml",
         "http://127.0.0.1:8300/api/health",
         "https://test.saltallthethings.com/api/health",
         'assert data["environment"]=="test"',
-        'assert data["version"]=="0.0.1"',
+        'assert data["version"]==expected_version',
         "select version_num from satt.alembic_version",
         "satt.scripts.environment_smoke",
+        '--expected-version "$expected_version"',
         "logs --no-color --tail 100 app database",
         "< /dev/null | gzip -c",
         "set -euo pipefail",
@@ -281,5 +289,34 @@ def test_test_deploy_uses_only_the_approved_main_commit_and_isolated_test():
         "dev.saltallthethings.com",
         "https://saltallthethings.com/api/health",
         "docker image prune",
+    ):
+        assert forbidden not in source
+
+
+def test_release_workflow_validates_tag_and_publishes_only_curated_notes():
+    source = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(source)
+
+    assert workflow["on"] == {"push": {"tags": ["prod-v*"]}}
+    assert workflow["permissions"] == {"contents": "write"}
+    assert "environment: production" not in source
+    assert "python scripts/validate_release.py" in source
+    assert '--tag "$RELEASE_TAG"' in source
+    assert 'git merge-base --is-ancestor "$GITHUB_SHA" origin/main' in source
+    assert 'gh release create "$RELEASE_TAG"' in source
+    assert 'gh release edit "$RELEASE_TAG"' in source
+    assert '--notes-file "$RELEASE_NOTES"' in source
+
+    action_uses = re.findall(r"uses:\s*([^\s#]+)", source)
+    assert action_uses
+    for action in action_uses:
+        revision = action.rsplit("@", 1)[1]
+        assert re.fullmatch(r"[0-9a-f]{40}", revision)
+
+    for forbidden in (
+        "PROD_HOST",
+        "DEPLOY_SSH_KEY",
+        "ssh ",
+        "docker compose",
     ):
         assert forbidden not in source

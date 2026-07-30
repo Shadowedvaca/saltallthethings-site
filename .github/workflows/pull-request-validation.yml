@@ -54,6 +54,9 @@ jobs:
       - name: Compile Python
         run: python -m compileall -q src/satt
 
+      - name: Validate current release contract without publishing
+        run: python scripts/validate_release.py
+
       - name: Validate migrations and run the full safe suite
         run: python scripts/ci_validation.py
 
@@ -78,6 +81,13 @@ jobs:
       - name: Check out the proposed commit
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Validate current release contract without publishing
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/validate_release.py --github-output "$GITHUB_OUTPUT"
+
       - name: Build the clean production image
         run: docker compose -f compose.ci.yaml build --pull app
 
@@ -88,9 +98,12 @@ jobs:
         run: docker compose -f compose.ci.yaml up -d --wait
 
       - name: Verify immutable runtime metadata
+        env:
+          EXPECTED_VERSION: ${{ steps.release.outputs.version }}
         run: |
           docker compose -f compose.ci.yaml exec -T app python -c \
-            "import json, os, urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8200/api/health', timeout=2)); assert data['status']=='ok'; assert data['environment']=='test'; assert data['version']=='0.0.1'; assert data['commit']==os.environ['COMMIT_SHA']; assert set(data)=={'status','environment','version','commit','timestamp'}"
+            "import json, os, sys, urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8200/api/health', timeout=2)); assert data['status']=='ok'; assert data['environment']=='test'; assert data['version']==sys.argv[1]; assert data['commit']==os.environ['COMMIT_SHA']; assert set(data)=={'status','environment','version','commit','timestamp'}" \
+            "$EXPECTED_VERSION"
       - name: Verify final container database migration
         shell: bash
         run: |
