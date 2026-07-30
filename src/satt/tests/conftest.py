@@ -93,7 +93,10 @@ async def test_schema():
         await conn.execute(text("CREATE SCHEMA IF NOT EXISTS satt"))
         await conn.run_sync(Base.metadata.create_all)
         await conn.execute(
-            text("INSERT INTO satt.data_revision (id, revision) VALUES (1, 0)")
+            text(
+                "INSERT INTO satt.data_revision (id, revision) VALUES (1, 0) "
+                "ON CONFLICT (id) DO UPDATE SET revision = EXCLUDED.revision"
+            )
         )
     yield
     async with engine.begin() as conn:

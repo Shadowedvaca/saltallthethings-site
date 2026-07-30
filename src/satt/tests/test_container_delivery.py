@@ -149,6 +149,10 @@ def test_ci_database_helper_cannot_target_external_hosts():
     assert '"TEST_DATABASE_URL": migration_url' in source
     assert '"DATABASE_URL": guard_url' in source
     assert '"current", "--check-heads"' in source
+    test_fixture = (
+        REPOSITORY_ROOT / "src/satt/tests/conftest.py"
+    ).read_text(encoding="utf-8")
+    assert "ON CONFLICT (id) DO UPDATE" in test_fixture
 
 
 def test_development_deploy_is_manual_immutable_and_isolated():
