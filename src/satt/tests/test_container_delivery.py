@@ -162,6 +162,12 @@ def test_pull_request_workflow_has_minimal_permissions_and_pinned_actions():
     assert "select version_num from satt.alembic_version" in source
     assert "python scripts/validate_release.py" in source
     assert "Validate current release contract without publishing" in source
+    assert "Exercise isolated migration rollback and recovery" in source
+    assert "--entrypoint alembic app downgrade 0005" in source
+    assert 'test "$revision" = "0005"' in source
+    assert "--entrypoint alembic app upgrade head" in source
+    assert 'test "$revision" = "0006"' in source
+    assert "docker compose -f compose.ci.yaml up -d --wait app" in source
 
     action_uses = re.findall(r"uses:\s*([^\s#]+)", source)
     assert action_uses

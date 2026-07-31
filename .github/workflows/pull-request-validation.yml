@@ -114,6 +114,32 @@ jobs:
           )"
           test "$revision" = "0006"
 
+      - name: Exercise isolated migration rollback and recovery
+        shell: bash
+        env:
+          EXPECTED_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          docker compose -f compose.ci.yaml stop app
+          docker compose -f compose.ci.yaml run --rm --no-deps \
+            --entrypoint alembic app downgrade 0005
+          revision="$(
+            docker compose -f compose.ci.yaml exec -T database \
+              sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from satt.alembic_version"'
+          )"
+          test "$revision" = "0005"
+
+          docker compose -f compose.ci.yaml run --rm --no-deps \
+            --entrypoint alembic app upgrade head
+          revision="$(
+            docker compose -f compose.ci.yaml exec -T database \
+              sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from satt.alembic_version"'
+          )"
+          test "$revision" = "0006"
+          docker compose -f compose.ci.yaml up -d --wait app
+          docker compose -f compose.ci.yaml exec -T app python -c \
+            "import json, os, sys, urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8200/api/health', timeout=2)); assert data['status']=='ok'; assert data['environment']=='test'; assert data['version']==sys.argv[1]; assert data['commit']==os.environ['COMMIT_SHA']" \
+            "$EXPECTED_VERSION"
       - name: Show bounded diagnostics on failure
         if: failure()
         run: docker compose -f compose.ci.yaml logs --no-color --tail 100
