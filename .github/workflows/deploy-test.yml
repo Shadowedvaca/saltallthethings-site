@@ -108,9 +108,11 @@ jobs:
           fi
 
           failure_logs() {
+            status=$?
             echo "==> Bounded SATT test diagnostics"
             compose ps || true
             compose logs --no-color --tail 100 app database || true
+            return "$status"
           }
           trap failure_logs EXIT
 
