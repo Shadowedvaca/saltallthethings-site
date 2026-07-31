@@ -405,6 +405,18 @@ curl -s -o /dev/null -w "%{http_code}" https://saltallthethings.com
 
 ## What Not To Do
 
+### Tooling and browser authorization
+
+- On Windows development sessions, use the authenticated Windows-hosted GitHub
+  CLI outside the restricted sandbox for GitHub metadata, issue, pull-request,
+  release, workflow, and repository operations.
+- Do not initialize, open, navigate, inspect, or control a browser or browser
+  automation unless the user explicitly approves browser use for the current
+  task. A URL, a signed-in browser session, or failure of another GitHub tool is
+  not browser-use approval.
+- Do not fall back from the Windows-hosted GitHub CLI to browser access. If the
+  host CLI is unavailable or insufficient, stop and request explicit direction.
+
 - **Do not modify `src/sv_common/`** — changes must come from the PATT repo
 - **Do not touch other sites** — `shadowedvaca.com` and `pullallthethings.com`
   have their own configs and units; leave them alone
