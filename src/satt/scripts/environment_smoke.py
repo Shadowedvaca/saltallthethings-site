@@ -88,6 +88,234 @@ def _expect_status(response: httpx.Response, expected: int, label: str) -> None:
     )
 
 
+def _headers(token: str, revision: int | None = None) -> dict[str, str]:
+    headers = {"Authorization": f"Bearer {token}"}
+    if revision is not None:
+        headers["If-Match"] = str(revision)
+    return headers
+
+
+async def _latest_state(client: httpx.AsyncClient, token: str) -> dict:
+    response = await client.get("/api/export", headers=_headers(token))
+    _expect_status(response, 200, "Song Bank smoke export")
+    state = response.json()
+    _require(isinstance(state.get("revision"), int), "export returned no data revision")
+    _require(isinstance(state.get("songs"), list), "export returned no song array")
+    return state
+
+
+async def _cleanup_song_records(
+    client: httpx.AsyncClient,
+    token: str,
+    *,
+    song_ids: tuple[str, str],
+    idea_id: str,
+) -> None:
+    """Remove only unique smoke records, reloading once on a revision conflict."""
+    for song_id in song_ids:
+        for attempt in (1, 2):
+            state = await _latest_state(client, token)
+            if not any(song.get("id") == song_id for song in state["songs"]):
+                break
+            response = await client.delete(
+                f"/api/songs/{song_id}",
+                headers=_headers(token, state["revision"]),
+            )
+            if response.status_code == 409 and attempt == 1:
+                continue
+            _expect_status(response, 200, f"cleanup song {song_id}")
+            break
+
+    for attempt in (1, 2):
+        state = await _latest_state(client, token)
+        if not any(idea.get("id") == idea_id for idea in state["ideas"]):
+            return
+        response = await client.delete(
+            f"/api/ideas/{idea_id}",
+            headers=_headers(token, state["revision"]),
+        )
+        if response.status_code == 409 and attempt == 1:
+            continue
+        _expect_status(response, 200, f"cleanup idea {idea_id}")
+        return
+    raise SmokeFailure("temporary Song Bank idea cleanup did not complete")
+
+
+async def _exercise_song_bank(client: httpx.AsyncClient, token: str) -> None:
+    """Exercise the isolated Song Bank lifecycle with uniquely named records."""
+    suffix = secrets.token_hex(8)
+    idea_id = f"deploy-smoke-idea-{suffix}"
+    song_ids = (f"deploy-smoke-song-a-{suffix}", f"deploy-smoke-song-b-{suffix}")
+    private_sentinel = f"private-song-smoke-{suffix}"
+
+    try:
+        state = await _latest_state(client, token)
+        invalid = await client.put(
+            "/api/data/songs",
+            json=[
+                *state["songs"],
+                {
+                    "id": f"deploy-smoke-invalid-{suffix}",
+                    "artist": "Smoke Artist",
+                    "title": "Invalid URL",
+                    "youtubeUrl": "https://example.invalid/not-youtube",
+                    "privateNotes": private_sentinel,
+                    "status": "unused",
+                    "assignedIdeaId": None,
+                },
+            ],
+            headers=_headers(token, state["revision"]),
+        )
+        _expect_status(invalid, 422, "invalid Song Bank URL")
+        unchanged = await _latest_state(client, token)
+        _require(
+            unchanged["revision"] == state["revision"],
+            "rejected Song Bank write changed the data revision",
+        )
+
+        idea = {
+            "id": idea_id,
+            "titles": ["Deployment smoke idea"],
+            "selectedTitle": "Deployment smoke idea",
+            "summary": "Temporary non-production Song Bank validation",
+            "outline": [],
+            "status": "processed",
+        }
+        response = await client.put(
+            "/api/data/ideas",
+            json=[*state["ideas"], idea],
+            headers=_headers(token, state["revision"]),
+        )
+        _expect_status(response, 200, "temporary Song Bank idea creation")
+        state = response.json()["state"]
+
+        songs = [
+            {
+                "id": song_ids[0],
+                "artist": "Smoke Artist A",
+                "title": "Smoke Song A",
+                "youtubeUrl": "https://youtu.be/abcdefghijk",
+                "privateNotes": private_sentinel,
+                "status": "unused",
+                "assignedIdeaId": None,
+            },
+            {
+                "id": song_ids[1],
+                "artist": "Smoke Artist B",
+                "title": "Smoke Song B",
+                "youtubeUrl": "https://www.youtube.com/watch?v=lmnopqrstuv",
+                "privateNotes": private_sentinel,
+                "status": "unused",
+                "assignedIdeaId": None,
+            },
+        ]
+        response = await client.put(
+            "/api/data/songs",
+            json=[*state["songs"], *songs],
+            headers=_headers(token, state["revision"]),
+        )
+        _expect_status(response, 200, "temporary Song Bank creation")
+        state = response.json()["state"]
+        pre_assignment_revision = state["revision"]
+
+        first = await client.put(
+            f"/api/songs/{song_ids[0]}/assignment",
+            json={"ideaId": idea_id},
+            headers=_headers(token, state["revision"]),
+        )
+        _expect_status(first, 200, "first Song Bank assignment")
+        state = first.json()["state"]
+
+        stale = await client.put(
+            f"/api/songs/{song_ids[1]}/assignment",
+            json={"ideaId": idea_id},
+            headers=_headers(token, pre_assignment_revision),
+        )
+        _expect_status(stale, 409, "stale Song Bank assignment")
+
+        replacement = await client.put(
+            f"/api/songs/{song_ids[1]}/assignment",
+            json={"ideaId": idea_id},
+            headers=_headers(token, state["revision"]),
+        )
+        _expect_status(replacement, 200, "replacement Song Bank assignment")
+        state = replacement.json()["state"]
+        by_id = {song["id"]: song for song in state["songs"]}
+        _require(by_id[song_ids[0]]["status"] == "unused", "replaced song stayed used")
+        _require(
+            by_id[song_ids[1]]["assignedIdeaId"] == idea_id,
+            "replacement song did not persist its idea",
+        )
+
+        reloaded = await _latest_state(client, token)
+        by_id = {song["id"]: song for song in reloaded["songs"]}
+        _require(
+            by_id[song_ids[1]]["privateNotes"] == private_sentinel,
+            "private Song Bank notes did not survive reload",
+        )
+        public_episodes = await client.get("/public/episodes")
+        _expect_status(public_episodes, 200, "public episodes during Song Bank smoke")
+        _require(
+            private_sentinel not in public_episodes.text,
+            "private Song Bank notes appeared in a public response",
+        )
+
+        retired = await client.put(
+            f"/api/songs/{song_ids[1]}/status",
+            json={"status": "retired"},
+            headers=_headers(token, reloaded["revision"]),
+        )
+        _expect_status(retired, 200, "Song Bank retirement")
+        state = retired.json()["state"]
+        retired_song = next(song for song in state["songs"] if song["id"] == song_ids[1])
+        _require(retired_song["status"] == "retired", "song did not retire")
+        _require(retired_song["assignedIdeaId"] is None, "retired song stayed assigned")
+
+        restored = await client.put(
+            f"/api/songs/{song_ids[1]}/status",
+            json={"status": "unused"},
+            headers=_headers(token, state["revision"]),
+        )
+        _expect_status(restored, 200, "Song Bank restoration")
+        state = restored.json()["state"]
+        reassigned = await client.put(
+            f"/api/songs/{song_ids[1]}/assignment",
+            json={"ideaId": idea_id},
+            headers=_headers(token, state["revision"]),
+        )
+        _expect_status(reassigned, 200, "restored Song Bank assignment")
+        state = reassigned.json()["state"]
+
+        deleted_idea = await client.delete(
+            f"/api/ideas/{idea_id}",
+            headers=_headers(token, state["revision"]),
+        )
+        _expect_status(deleted_idea, 200, "Song Bank idea deletion")
+        state = deleted_idea.json()["state"]
+        freed_song = next(song for song in state["songs"] if song["id"] == song_ids[1])
+        _require(freed_song["status"] == "unused", "idea deletion did not free song")
+        _require(freed_song["assignedIdeaId"] is None, "idea deletion left assignment")
+
+        for song_id in song_ids:
+            response = await client.delete(
+                f"/api/songs/{song_id}",
+                headers=_headers(token, state["revision"]),
+            )
+            _expect_status(response, 200, f"temporary Song Bank deletion {song_id}")
+            state = response.json()["state"]
+        _require(
+            all(song.get("id") not in song_ids for song in state["songs"]),
+            "temporary Song Bank records survived deletion",
+        )
+    finally:
+        await _cleanup_song_records(
+            client,
+            token,
+            song_ids=song_ids,
+            idea_id=idea_id,
+        )
+
+
 async def run_smoke(
     *,
     base_url: str,
@@ -145,6 +373,7 @@ async def run_smoke(
                 headers={"Authorization": f"Bearer {token}"},
             )
             _expect_status(authenticated_export, 200, "authenticated export")
+            await _exercise_song_bank(client, token)
 
             for attempt in (1, 2):
                 login = await client.post(

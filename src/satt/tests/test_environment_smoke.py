@@ -1,6 +1,7 @@
 """Safety tests for the non-production deployment smoke helper."""
 
 from unittest.mock import patch
+from pathlib import Path
 
 import pytest
 
@@ -77,3 +78,15 @@ def test_smoke_refuses_cross_tier_or_external_service_targets(
     ):
         with pytest.raises(SmokeFailure, match=message):
             validate_target(base_url, expected_environment)
+
+
+def test_deployment_smoke_exercises_song_lifecycle_without_external_services():
+    source = (
+        Path(__file__).resolve().parents[1] / "scripts" / "environment_smoke.py"
+    ).read_text(encoding="utf-8")
+    assert "/api/data/songs" in source
+    assert "/api/songs/{song_ids[0]}/assignment" in source
+    assert "/api/songs/{song_ids[1]}/status" in source
+    assert "/api/ideas/{idea_id}" in source
+    assert "private_sentinel not in public_episodes.text" in source
+    assert "https://example.invalid/not-youtube" in source
