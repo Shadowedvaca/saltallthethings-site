@@ -33,10 +33,12 @@ from satt.crud import (
 from satt.database import get_db
 from satt.joke_contract import JokeContractError
 from satt.outline_contract import OutlineContractError, normalize_configured_segments
+from satt.song_contract import SongContractError
+from satt.song_crud import get_songs, replace_songs
 
 router = APIRouter()
 
-_ALLOWED_KEYS = {"config", "ideas", "jokes", "showSlots", "assignments"}
+_ALLOWED_KEYS = {"config", "ideas", "jokes", "songs", "showSlots", "assignments"}
 _CONFIG_SECRET_KEYS = ("claudeApiKey", "openaiApiKey")
 
 
@@ -141,10 +143,11 @@ async def _guard_revision(db: AsyncSession, if_match: str | None) -> None:
 
 
 async def _export_state(db: AsyncSession) -> dict:
-    config, ideas, jokes, show_slots, assignments, revision = (
+    config, ideas, jokes, songs, show_slots, assignments, revision = (
         await get_config(db),
         await get_ideas(db),
         await get_jokes(db),
+        await get_songs(db),
         await get_show_slots(db),
         await get_assignments(db),
         await get_data_revision(db),
@@ -153,6 +156,7 @@ async def _export_state(db: AsyncSession) -> dict:
         "config": _public_config(config),
         "ideas": ideas,
         "jokes": jokes,
+        "songs": songs,
         "showSlots": show_slots,
         "assignments": assignments,
         "revision": revision,
@@ -190,6 +194,8 @@ async def get_data(
         return await get_ideas(db)
     if key == "jokes":
         return await get_jokes(db)
+    if key == "songs":
+        return await get_songs(db)
     if key == "showSlots":
         return await get_show_slots(db)
     return await get_assignments(db)
@@ -231,6 +237,14 @@ async def put_data(
         except JokeContractError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
         saved = await get_jokes(db)
+    elif key == "songs":
+        if not isinstance(body, list):
+            raise HTTPException(status_code=422, detail="songs must be an array")
+        try:
+            await replace_songs(db, body)
+        except SongContractError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        saved = await get_songs(db)
     elif key == "showSlots":
         if not isinstance(body, list):
             raise HTTPException(status_code=422, detail="showSlots must be an array")
@@ -266,6 +280,7 @@ async def bulk_import(
         "config": dict,
         "ideas": list,
         "jokes": list,
+        "songs": list,
         "showSlots": list,
         "assignments": dict,
     }
@@ -289,6 +304,11 @@ async def bulk_import(
         try:
             await replace_jokes(db, body["jokes"])
         except JokeContractError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+    if "songs" in body:
+        try:
+            await replace_songs(db, body["songs"])
+        except SongContractError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
     if "showSlots" in body:
         await replace_show_slots(db, body["showSlots"])
@@ -354,6 +374,7 @@ async def delete_one_idea(
         {
             "ideas": state["ideas"],
             "jokes": state["jokes"],
+            "songs": state["songs"],
             "assignments": state["assignments"],
         },
     )

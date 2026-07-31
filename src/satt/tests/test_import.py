@@ -53,6 +53,19 @@ IMPORT_PAYLOAD = {
             "createdAt": "2026-01-15T00:00:00Z",
         }
     ],
+    "songs": [
+        {
+            "id": "import_song_1",
+            "artist": "Import Artist",
+            "title": "Import Song",
+            "youtubeUrl": "https://youtu.be/abcdefghijk",
+            "privateNotes": "Private import notes",
+            "status": "unused",
+            "assignedIdeaId": None,
+            "createdAt": "2026-01-15T00:00:00Z",
+            "updatedAt": "2026-01-15T00:00:00Z",
+        }
+    ],
     "showSlots": [
         {
             "id": "import_slot_1",
@@ -92,6 +105,8 @@ async def test_import_round_trip(db_client: AsyncClient):
     assert body["ideas"][0]["id"] == "import_idea_1"
     assert len(body["jokes"]) == 1
     assert body["jokes"][0]["id"] == "import_joke_1"
+    assert len(body["songs"]) == 1
+    assert body["songs"][0]["id"] == "import_song_1"
     assert len(body["showSlots"]) == 1
     assert body["showSlots"][0]["id"] == "import_slot_1"
     assert body["assignments"] == {"import_slot_1": "import_idea_1"}

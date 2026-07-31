@@ -85,6 +85,7 @@ function state(revision, overrides = {}) {
     config: {},
     ideas: [],
     jokes: [],
+    songs: [],
     showSlots: [],
     assignments: {},
     revision,
@@ -222,13 +223,16 @@ async function testAtomicScheduleAndImportRoutes() {
   });
   await harness.storage.init();
   assert.equal(await harness.storage.assignIdeaToSlot("idea-1", "slot-1"), true);
-  assert.equal(await harness.storage.importAll({ ideas: [], showSlots: [], assignments: {} }), true);
+  assert.equal(await harness.storage.assignSongToIdea("song-1", "idea-1"), true);
+  assert.equal(await harness.storage.importAll({ ideas: [], songs: [], showSlots: [], assignments: {} }), true);
   assert.equal(mutations[0].url, "/api/schedule/slot-1/assignment");
   assert.equal(mutations[0].options.method, "PUT");
-  assert.equal(mutations[1].url, "/api/import");
+  assert.equal(mutations[1].url, "/api/songs/song-1/assignment");
   assert.equal(mutations[1].options.method, "PUT");
-  assert.deepEqual(JSON.parse(mutations[1].options.body), {
-    ideas: [], showSlots: [], assignments: {},
+  assert.equal(mutations[2].url, "/api/import");
+  assert.equal(mutations[2].options.method, "PUT");
+  assert.deepEqual(JSON.parse(mutations[2].options.body), {
+    ideas: [], songs: [], showSlots: [], assignments: {},
   });
 }
 

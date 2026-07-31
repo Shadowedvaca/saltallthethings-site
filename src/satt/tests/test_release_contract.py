@@ -67,9 +67,9 @@ def test_repository_release_contract_is_valid():
 
     release = validate_release(repository_root)
 
-    assert release.version == "0.0.3"
-    assert release.tag == "prod-v0.0.3"
-    assert release.notes_path.name == "0.0.3.md"
+    assert release.version == "0.0.4"
+    assert release.tag == "prod-v0.0.4"
+    assert release.notes_path.name == "0.0.4.md"
 
 
 def test_matching_production_tag_is_valid(tmp_path):
