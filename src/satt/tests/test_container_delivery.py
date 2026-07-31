@@ -168,6 +168,10 @@ def test_pull_request_workflow_has_minimal_permissions_and_pinned_actions():
     assert "app alembic upgrade head" in source
     assert 'test "$revision" = "0006"' in source
     assert "docker compose -f compose.ci.yaml up -d --wait app" in source
+    assert "Exercise isolated runtime recovery after health mismatch" in source
+    assert "COMMIT_SHA=recovery-prior" in source
+    assert "COMMIT_SHA=recovery-candidate" in source
+    assert "forced-health-mismatch" in source
 
     action_uses = re.findall(r"uses:\s*([^\s#]+)", source)
     assert action_uses

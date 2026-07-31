@@ -140,6 +140,38 @@ jobs:
           docker compose -f compose.ci.yaml exec -T app python -c \
             "import json, os, sys, urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8200/api/health', timeout=2)); assert data['status']=='ok'; assert data['environment']=='test'; assert data['version']==sys.argv[1]; assert data['commit']==os.environ['COMMIT_SHA']" \
             "$EXPECTED_VERSION"
+
+      - name: Exercise isolated runtime recovery after health mismatch
+        shell: bash
+        env:
+          EXPECTED_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          COMMIT_SHA=recovery-prior \
+            docker compose -f compose.ci.yaml up -d --force-recreate --wait app
+          COMMIT_SHA=recovery-prior \
+            docker compose -f compose.ci.yaml exec -T app python -c \
+              "import json, os, sys, urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8200/api/health', timeout=2)); assert data['status']=='ok'; assert data['environment']=='test'; assert data['version']==sys.argv[1]; assert data['commit']==os.environ['COMMIT_SHA']" \
+              "$EXPECTED_VERSION"
+
+          docker compose -f compose.ci.yaml stop app
+          COMMIT_SHA=recovery-candidate \
+            docker compose -f compose.ci.yaml up -d --force-recreate --wait app
+          if COMMIT_SHA=recovery-candidate \
+            docker compose -f compose.ci.yaml exec -T app python -c \
+              "import json, sys, urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8200/api/health', timeout=2)); assert data['commit']==sys.argv[1]" \
+              forced-health-mismatch; then
+            echo "The forced post-start health mismatch unexpectedly passed" >&2
+            exit 1
+          fi
+
+          docker compose -f compose.ci.yaml stop app
+          COMMIT_SHA=recovery-prior \
+            docker compose -f compose.ci.yaml up -d --force-recreate --wait app
+          COMMIT_SHA=recovery-prior \
+            docker compose -f compose.ci.yaml exec -T app python -c \
+              "import json, os, sys, urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8200/api/health', timeout=2)); assert data['status']=='ok'; assert data['environment']=='test'; assert data['version']==sys.argv[1]; assert data['commit']==os.environ['COMMIT_SHA']" \
+              "$EXPECTED_VERSION"
       - name: Show bounded diagnostics on failure
         if: failure()
         run: docker compose -f compose.ci.yaml logs --no-color --tail 100
