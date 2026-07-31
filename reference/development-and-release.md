@@ -40,9 +40,9 @@ obtain separate, explicit production-release approval immediately before
 creating or pushing the tag. Report the tag, SHA, workflow result, health
 checks, logs, and manual production verification.
 
-The legacy branch-push production behavior remains an acknowledged transition
-risk until the Foundation release work replaces it. It is not an authorized
-release path.
+Ordinary branch pushes and merges cannot deploy production. The validated
+production tag workflow publishes its curated GitHub Release only after the
+production deployment and public verification job succeeds.
 
 Hotfixes keep the same evidence and approval boundaries. Any shortened test
 path must be explicitly proposed, approved, documented with risk, and followed

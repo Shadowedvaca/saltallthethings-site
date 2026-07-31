@@ -197,6 +197,7 @@ commit.
 `scripts/validate_release.py` enforces the version, tag, filename, heading,
 required-section, placeholder, and credential-safety contract in pull-request
 validation without publishing. A separately approved `prod-vX.Y.Z` tag invokes
-`publish-release.yml`, which publishes only the matching curated note and does
-not deploy an application. Version increments, hotfixes, and rollback behavior
-are documented in `docs/versioning-and-releases.md`.
+`deploy-prod.yml`. Only after its production deployment and public verification
+job succeeds does a separate least-privilege job call `publish-release.yml` to
+publish the matching curated note. Version increments, hotfixes, and rollback
+behavior are documented in `docs/versioning-and-releases.md`.

@@ -270,9 +270,9 @@ not authorize merge, test deployment, production tagging, production
 deployment, server or DNS changes, GitHub environment changes, or repository
 secret changes.
 
-The legacy push-to-`main` production workflow remains only as a documented
-transition risk until Foundation issue #14 performs the approved cutover. Do
-not use it as the release procedure for Foundation work.
+The registered deployment entry point is manual development-only. Production
+runs only from an explicitly approved validated `prod-vX.Y.Z` tag through
+`deploy-prod.yml`; ordinary branch pushes and merges cannot deploy production.
 
 ---
 

@@ -273,14 +273,32 @@ def test_production_deploy_is_tag_only_immutable_and_recoverable():
     workflow = yaml.safe_load(source)
 
     assert workflow["on"] == {"push": {"tags": ["prod-v*"]}}
-    assert workflow["permissions"] == {"contents": "read"}
-    assert "environment: production" in source
+    assert workflow["permissions"] == {}
     assert "branches:" not in source
     assert "workflow_dispatch:" not in source
+
+    deploy = workflow["jobs"]["deploy"]
+    assert deploy["environment"] == "production"
+    assert deploy["permissions"] == {"contents": "read"}
+    assert deploy["outputs"] == {
+        "release_sha": "${{ steps.release.outputs.sha }}",
+        "release_tag": "${{ steps.release.outputs.tag }}",
+    }
+    publish = workflow["jobs"]["publish"]
+    assert publish["needs"] == "deploy"
+    assert publish["permissions"] == {"contents": "write"}
+    assert publish["uses"] == "./.github/workflows/publish-release.yml"
+    assert publish["with"] == {
+        "release_sha": "${{ needs.deploy.outputs.release_sha }}",
+        "release_tag": "${{ needs.deploy.outputs.release_tag }}",
+    }
 
     action_uses = re.findall(r"uses:\s*([^\s#]+)", source)
     assert action_uses
     for action in action_uses:
+        if action.startswith("./"):
+            assert action == "./.github/workflows/publish-release.yml"
+            continue
         revision = action.rsplit("@", 1)[1]
         assert re.fullmatch(r"[0-9a-f]{40}", revision)
 
@@ -374,16 +392,49 @@ def test_test_deploy_uses_only_the_approved_main_commit_and_isolated_test():
         assert forbidden not in source
 
 
-def test_release_workflow_validates_tag_and_publishes_only_curated_notes():
+def test_canonical_guidance_matches_current_production_gate():
+    canonical_paths = (
+        REPOSITORY_ROOT / "reference/ai-context.md",
+        REPOSITORY_ROOT / "reference/development-and-release.md",
+    )
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in canonical_paths)
+    assert "legacy push-to-`main` production workflow remains" not in combined
+    assert "legacy branch-push production behavior remains" not in combined
+    assert (
+        "ordinary branch pushes and merges cannot deploy production" in combined.lower()
+    )
+
+    versioning = (REPOSITORY_ROOT / "docs/versioning-and-releases.md").read_text(
+        encoding="utf-8"
+    )
+    normalized_versioning = " ".join(versioning.split())
+    assert (
+        "only then invokes the separate GitHub Release publisher"
+        in normalized_versioning
+    )
+    assert (
+        "A failed or unapproved production deployment cannot create"
+        in normalized_versioning
+    )
+
+
+def test_release_workflow_runs_only_after_verified_production():
     source = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
     workflow = yaml.safe_load(source)
 
-    assert workflow["on"] == {"push": {"tags": ["prod-v*"]}}
+    assert "push:" not in source
+    call = workflow["on"]["workflow_call"]
+    assert set(call["inputs"]) == {"release_sha", "release_tag"}
+    for value in call["inputs"].values():
+        assert value["required"] is True
+        assert value["type"] == "string"
     assert workflow["permissions"] == {"contents": "write"}
     assert "environment: production" not in source
     assert "python scripts/validate_release.py" in source
     assert '--tag "$RELEASE_TAG"' in source
-    assert 'git merge-base --is-ancestor "$GITHUB_SHA" origin/main' in source
+    assert 'test "$(git rev-parse HEAD)" = "$RELEASE_SHA"' in source
+    assert 'test "$(git rev-list -n 1 "$RELEASE_TAG")" = "$RELEASE_SHA"' in source
+    assert 'git merge-base --is-ancestor "$RELEASE_SHA" origin/main' in source
     assert 'gh release create "$RELEASE_TAG"' in source
     assert 'gh release edit "$RELEASE_TAG"' in source
     assert '--notes-file "$RELEASE_NOTES"' in source

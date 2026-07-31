@@ -5,8 +5,7 @@ name: Deploy production
     tags:
       - "prod-v*"
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: satt-production-deploy
@@ -18,6 +17,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production
+    permissions:
+      contents: read
+    outputs:
+      release_sha: ${{ steps.release.outputs.sha }}
+      release_tag: ${{ steps.release.outputs.tag }}
     env:
       PROD_HOST: ${{ secrets.PROD_HOST }}
 
@@ -257,3 +261,13 @@ jobs:
         if: always()
         shell: bash
         run: rm -f "$HOME/.ssh/deploy_key" "$HOME/.ssh/known_hosts"
+
+  publish:
+    name: Publish verified production release
+    needs: deploy
+    permissions:
+      contents: write
+    uses: ./.github/workflows/publish-release.yml
+    with:
+      release_sha: ${{ needs.deploy.outputs.release_sha }}
+      release_tag: ${{ needs.deploy.outputs.release_tag }}

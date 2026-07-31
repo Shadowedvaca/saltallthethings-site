@@ -58,11 +58,13 @@ git tag prod-vX.Y.Z <tested-main-commit>
 git push origin prod-vX.Y.Z
 ```
 
-The GitHub Release workflow checks out the exact tag commit, confirms that it is
-contained in `main`, validates the version/tag/notes contract, and creates or
-updates the matching GitHub Release using only
-`docs/releases/X.Y.Z.md`. It never deploys an application and does not read
-deployment secrets. Issue #14 owns the separate production deployment cutover.
+The production workflow checks out the exact tag commit, confirms that it is
+contained in `main`, validates the version/tag/notes contract, deploys and
+verifies that exact commit, and only then invokes the separate GitHub Release
+publisher. The reusable publisher receives only the verified tag and commit,
+uses a job-scoped contents token, publishes only `docs/releases/X.Y.Z.md`, and
+cannot read deployment secrets or run application deployment commands. A failed
+or unapproved production deployment cannot create or update the Release.
 
 Tags are permanent: never force-push, delete and recreate, or point an existing
 release tag at a different commit. A workflow rerun may update the GitHub

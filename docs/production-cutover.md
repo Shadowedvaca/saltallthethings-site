@@ -115,6 +115,10 @@ The workflow performs this sequence:
     exact tagged commit. Diagnostics are limited to 100 SATT application lines.
 12. Store only the current tag/commit and prior SATT runtime identifiers in a
     root-only state directory.
+13. After the deployment job and independent public health check succeed, invoke
+    the separate least-privilege publisher to revalidate the exact tag/commit
+    and create or update the curated GitHub Release. A failed deployment cannot
+    publish a release.
 
 A failure after the old runtime stops triggers automatic recovery. On the first
 cutover the new container is removed, the previous checkout is restored, and
