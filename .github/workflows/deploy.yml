@@ -1,8 +1,6 @@
-name: Legacy deployment bootstrap
+name: Development deployment bootstrap
 
-on:
-  push:
-    branches: [main]
+"on":
   workflow_dispatch:
     inputs:
       branch:
@@ -16,50 +14,7 @@ permissions:
 jobs:
   deploy-development:
     name: Bootstrap development workflow from feature branch
-    if: github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/deploy-dev.yml
     with:
       branch: ${{ inputs.branch }}
     secrets: inherit
-
-  legacy-production:
-    name: Legacy direct production deployment
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Set up SSH
-        shell: bash
-        env:
-          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
-          STAGING_SSH_KNOWN_HOSTS: ${{ secrets.STAGING_SSH_KNOWN_HOSTS }}
-        run: |
-          set -euo pipefail
-          install -d -m 0700 "$HOME/.ssh"
-          printf '%s\n' "$STAGING_SSH_KEY" > "$HOME/.ssh/deploy_key"
-          printf '%s\n' "$STAGING_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 0600 "$HOME/.ssh/deploy_key" "$HOME/.ssh/known_hosts"
-
-      - name: Deploy legacy production service
-        shell: bash
-        run: |
-          set -euo pipefail
-          ssh \
-            -i "$HOME/.ssh/deploy_key" \
-            -o BatchMode=yes \
-            -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes \
-            root@5.78.114.224 bash <<'ENDSSH'
-          set -e
-          cd /opt/satt-platform
-          git pull
-          cp ./*.html static/
-          cp -r css/ js/ images/ static/
-          systemctl restart satt
-          systemctl is-active satt
-          ENDSSH
-
-      - name: Remove runner SSH material
-        if: always()
-        shell: bash
-        run: rm -f "$HOME/.ssh/deploy_key" "$HOME/.ssh/known_hosts"

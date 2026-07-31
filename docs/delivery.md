@@ -53,9 +53,34 @@ non-production external-service opt-in is false. The detailed bootstrap,
 validation, reset, cleanup, and rollback procedure is in
 `docs/test-environment.md`.
 
-The repository is currently transitioning to this contract under milestone
-`Cleanup & DevOps Foundation`. Until issue #14 completes, the legacy direct
-production workflow is an acknowledged risk, not an authorized release path.
+The repository is implementing this contract under milestone
+`Cleanup & DevOps Foundation`. The registered `deploy.yml` entry point is now
+manual development-only; it has no branch-push trigger and no production job.
+Production deployment is isolated in tag-only `deploy-prod.yml` and remains
+unauthorized until the release-integration, test, and production approval gates
+are complete.
+
+## Production cutover implementation
+
+`deploy-prod.yml` runs only for `prod-v*`, validates the authoritative version,
+curated notes, exact tag target, and `main` ancestry, and uses the protected
+GitHub `production` environment. It checks out the immutable tag and deploys the
+frontend and backend together from the same standalone production image.
+
+The production Compose definition contains only the stable
+`satt-production-app` container and connects to the preserved host database; it
+must never be combined with the base Compose database definition. The workflow
+verifies a secret-safe custom-format backup, compares one-way authentication and
+stable-data fingerprints across migrations, checks migration heads and exact
+health metadata, and automatically restores the prior SATT runtime when a
+cutover-stage check fails. Diagnostics are bounded to the SATT application.
+
+The first cutover keeps the existing SATT systemd runtime and reverse-proxy path
+available for 24 hours. Database restore is deliberately not automatic because
+it is destructive and requires separate approval against the exact failed
+release. The complete preflight, cutover, verification, and recovery procedure
+is in `docs/production-cutover.md`. No production tag or operation is authorized
+by committing that procedure.
 
 ## Foundation branch and approval contract
 
@@ -96,6 +121,8 @@ Repository or environment configuration uses these names:
 - `PROD_HOST`
 - `DEPLOY_SSH_KEY`
 - `DEV_SSH_KNOWN_HOSTS`
+- `TEST_SSH_KNOWN_HOSTS`
+- `PROD_SSH_KNOWN_HOSTS`
 
 Secret values are never printed, committed, returned to browsers, or copied into
 release notes. Verification is limited to name/presence, configured-status

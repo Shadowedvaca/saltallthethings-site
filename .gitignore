@@ -27,6 +27,8 @@ __pycache__/
 *.pyc
 *.pyo
 .env
+.env.*
+.production-state/
 .pytest_cache/
 *.egg-info/
 

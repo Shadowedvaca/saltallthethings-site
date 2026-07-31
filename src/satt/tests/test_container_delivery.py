@@ -11,6 +11,7 @@ WORKFLOW_PATH = REPOSITORY_ROOT / ".github/workflows/pull-request-validation.yml
 DEV_WORKFLOW_PATH = REPOSITORY_ROOT / ".github/workflows/deploy-dev.yml"
 TEST_WORKFLOW_PATH = REPOSITORY_ROOT / ".github/workflows/deploy-test.yml"
 RELEASE_WORKFLOW_PATH = REPOSITORY_ROOT / ".github/workflows/publish-release.yml"
+PROD_WORKFLOW_PATH = REPOSITORY_ROOT / ".github/workflows/deploy-prod.yml"
 
 
 def test_container_context_excludes_sensitive_and_unrelated_files():
@@ -31,11 +32,17 @@ def test_container_context_excludes_sensitive_and_unrelated_files():
     assert "requirements.lock" in dockerfile
 
 
+def test_production_environment_and_state_are_not_trackable():
+    ignored = (REPOSITORY_ROOT / ".gitignore").read_text(encoding="utf-8")
+    assert ".env.*" in ignored
+    assert ".production-state/" in ignored
+
+
 def test_environment_example_contains_placeholders_only():
     values = {}
-    for line in (REPOSITORY_ROOT / ".env.example").read_text(
-        encoding="utf-8"
-    ).splitlines():
+    for line in (
+        (REPOSITORY_ROOT / ".env.example").read_text(encoding="utf-8").splitlines()
+    ):
         if line and not line.startswith("#") and "=" in line:
             key, value = line.split("=", 1)
             values[key] = value
@@ -70,12 +77,11 @@ def test_nonproduction_compose_definitions_are_isolated():
 
     assert development["name"] == "satt-development"
     for compose_name in ("compose.yaml", "compose.ci.yaml"):
-        database_healthcheck = (
-            yaml.safe_load((REPOSITORY_ROOT / compose_name).read_text(encoding="utf-8"))
-            ["services"]["database"]["healthcheck"]["test"][1]
-        )
+        database_healthcheck = yaml.safe_load(
+            (REPOSITORY_ROOT / compose_name).read_text(encoding="utf-8")
+        )["services"]["database"]["healthcheck"]["test"][1]
         assert "postmaster.pid" in database_healthcheck, compose_name
-        assert '= \"1\" && pg_isready' in database_healthcheck, compose_name
+        assert '= "1" && pg_isready' in database_healthcheck, compose_name
     assert development["services"]["app"]["image"] == "satt:development"
     assert (
         development["services"]["app"]["ports"][0]
@@ -100,9 +106,7 @@ def test_nonproduction_compose_definitions_are_isolated():
         == "127.0.0.1:${SATT_APP_PORT:?SATT_APP_PORT is required}:8200"
     )
     assert (
-        test["services"]["app"]["environment"][
-            "ALLOW_NONPRODUCTION_EXTERNAL_SERVICES"
-        ]
+        test["services"]["app"]["environment"]["ALLOW_NONPRODUCTION_EXTERNAL_SERVICES"]
         == "false"
     )
     for credential in (
@@ -111,31 +115,36 @@ def test_nonproduction_compose_definitions_are_isolated():
         "GOOGLE_OAUTH_REFRESH_TOKEN",
     ):
         assert test["services"]["app"]["environment"][credential] == ""
-    assert development["volumes"]["satt_postgres"]["name"] != test["volumes"][
-        "satt_postgres"
-    ]["name"]
+    assert (
+        development["volumes"]["satt_postgres"]["name"]
+        != test["volumes"]["satt_postgres"]["name"]
+    )
     assert "database" not in production["services"]
+    production_app = production["services"]["app"]
+    assert production_app["container_name"] == "satt-production-app"
+    assert production_app["image"] == "${SATT_IMAGE:?SATT_IMAGE is required}"
+    assert production_app["extra_hosts"] == ["host.docker.internal:host-gateway"]
 
 
 def test_entrypoint_validates_isolation_before_migrations():
-    entrypoint = (
-        REPOSITORY_ROOT / "scripts/container-entrypoint.sh"
-    ).read_text(encoding="utf-8")
+    entrypoint = (REPOSITORY_ROOT / "scripts/container-entrypoint.sh").read_text(
+        encoding="utf-8"
+    )
     settings_validation = entrypoint.index("get_settings")
     migration = entrypoint.index("alembic upgrade head")
     application = entrypoint.index('exec "$@"')
     assert settings_validation < migration < application
-    migration_environment = (
-        REPOSITORY_ROOT / "src/satt/migrations/env.py"
-    ).read_text(encoding="utf-8")
+    migration_environment = (REPOSITORY_ROOT / "src/satt/migrations/env.py").read_text(
+        encoding="utf-8"
+    )
     assert "async with connectable.begin() as connection:" in migration_environment
     assert "set -eu" in entrypoint
 
 
 def test_alembic_bootstraps_version_table_schema_on_fresh_database():
-    migration_environment = (
-        REPOSITORY_ROOT / "src/satt/migrations/env.py"
-    ).read_text(encoding="utf-8")
+    migration_environment = (REPOSITORY_ROOT / "src/satt/migrations/env.py").read_text(
+        encoding="utf-8"
+    )
     online_migration = migration_environment.split(
         "def do_run_migrations(connection):", 1
     )[1]
@@ -162,17 +171,15 @@ def test_pull_request_workflow_has_minimal_permissions_and_pinned_actions():
 
 
 def test_ci_database_helper_cannot_target_external_hosts():
-    source = (REPOSITORY_ROOT / "scripts/ci_validation.py").read_text(
-        encoding="utf-8"
-    )
+    source = (REPOSITORY_ROOT / "scripts/ci_validation.py").read_text(encoding="utf-8")
     assert '{"127.0.0.1", "localhost"}' in source
     assert 'os.environ.get("GITHUB_ACTIONS") != "true"' in source
     assert '"TEST_DATABASE_URL": migration_url' in source
     assert '"DATABASE_URL": guard_url' in source
     assert '"current", "--check-heads"' in source
-    test_fixture = (
-        REPOSITORY_ROOT / "src/satt/tests/conftest.py"
-    ).read_text(encoding="utf-8")
+    test_fixture = (REPOSITORY_ROOT / "src/satt/tests/conftest.py").read_text(
+        encoding="utf-8"
+    )
     assert "ON CONFLICT (id) DO UPDATE" in test_fixture
 
 
@@ -227,20 +234,94 @@ def test_development_deploy_is_manual_immutable_and_isolated():
         assert forbidden not in source
 
 
-def test_registered_legacy_workflow_bootstraps_development_safely():
+def test_registered_workflow_is_manual_development_only():
     source = (REPOSITORY_ROOT / ".github/workflows/deploy.yml").read_text(
         encoding="utf-8"
     )
     workflow = yaml.safe_load(source)
 
     assert workflow["permissions"] == {"contents": "read"}
+    assert workflow["on"] == {
+        "workflow_dispatch": {
+            "inputs": {
+                "branch": {
+                    "description": (
+                        "Explicit codex/* branch to deploy to isolated development"
+                    ),
+                    "required": True,
+                    "type": "string",
+                }
+            }
+        }
+    }
     assert "uses: ./.github/workflows/deploy-dev.yml" in source
     assert "branch: ${{ inputs.branch }}" in source
-    assert "if: github.event_name == 'workflow_dispatch'" in source
-    assert (
-        "if: github.event_name == 'push' && github.ref == 'refs/heads/main'"
-        in source
-    )
+    for forbidden in (
+        "push:",
+        "main",
+        "legacy-production",
+        "STAGING_SSH_KEY",
+        "STAGING_SSH_KNOWN_HOSTS",
+        "git pull",
+        "systemctl restart",
+    ):
+        assert forbidden not in source
+
+
+def test_production_deploy_is_tag_only_immutable_and_recoverable():
+    source = PROD_WORKFLOW_PATH.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(source)
+
+    assert workflow["on"] == {"push": {"tags": ["prod-v*"]}}
+    assert workflow["permissions"] == {"contents": "read"}
+    assert "environment: production" in source
+    assert "branches:" not in source
+    assert "workflow_dispatch:" not in source
+
+    action_uses = re.findall(r"uses:\s*([^\s#]+)", source)
+    assert action_uses
+    for action in action_uses:
+        revision = action.rsplit("@", 1)[1]
+        assert re.fullmatch(r"[0-9a-f]{40}", revision)
+
+    for required in (
+        "PROD_HOST",
+        "DEPLOY_SSH_KEY",
+        "PROD_SSH_KNOWN_HOSTS",
+        "python scripts/validate_release.py",
+        '--tag "$GITHUB_REF_NAME"',
+        'test "$sha" = "$tag_sha"',
+        'git merge-base --is-ancestor "$sha" origin/main',
+        "main:refs/remotes/origin/main",
+        'git checkout --detach "$deploy_tag"',
+        'test "$(git rev-parse HEAD)" = "$deploy_sha"',
+        "-f compose.production.yaml",
+        "python3 scripts/production_backup.py",
+        "satt.scripts.production_fingerprint",
+        'test "$pre_fingerprint" = "$post_fingerprint"',
+        "alembic current --check-heads",
+        "systemctl stop",
+        "systemctl start",
+        'git checkout --detach "$previous_sha"',
+        "docker logs --tail 100 satt-production-app",
+        'data["environment"]=="production"',
+        "https://saltallthethings.com/api/health",
+        "set -euo pipefail",
+    ):
+        assert required in source
+
+    for forbidden in (
+        "DEV_HOST",
+        "TEST_HOST",
+        "STAGING_SSH_KEY",
+        "STAGING_SSH_KNOWN_HOSTS",
+        "git pull",
+        "docker image prune",
+        "compose.yaml",
+        "compose.test.yaml",
+        "compose.development.yaml",
+    ):
+        assert forbidden not in source
 
 
 def test_test_deploy_uses_only_the_approved_main_commit_and_isolated_test():

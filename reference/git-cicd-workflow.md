@@ -220,8 +220,8 @@ When setting up CI/CD for a new project, the three-workflow pattern should mirro
 | `deploy-test.yml` | `push: branches: [main]` | test environment |
 | `deploy-prod.yml` | `push: tags: ['prod-v*']` | production environment |
 
-Each workflow should: checkout the branch/tag → build → copy to server → restart container → health check.
+Each workflow must preserve its environment boundary and exact source commit. Production additionally requires release validation, a verified backup, safe migrations, continuity fingerprints, bounded health checks, and recovery of only the prior application runtime as documented in `docs/production-cutover.md`.
 
 ---
 
-*Last updated: 2026-07-28*
+*Last updated: 2026-07-30*

@@ -35,9 +35,12 @@ The standard GitHub configuration names are `DEV_HOST`, `TEST_HOST`,
 `PROD_HOST`, and `DEPLOY_SSH_KEY`. Values remain in GitHub/server-side
 configuration and are verified only by name and presence.
 
-The repository is still transitioning from its legacy direct-production
-workflow. Do not merge, tag, deploy, or alter infrastructure based only on this
-README; follow [docs/delivery.md](docs/delivery.md).
+The legacy push-to-`main` production job has been removed. Production is now
+represented only by the validated tag-gated workflow, but it is not configured
+or authorized merely because the workflow exists. Do not merge, tag, deploy, or
+alter infrastructure based only on this README; follow
+[docs/delivery.md](docs/delivery.md) and the separately authorized
+[production cutover runbook](docs/production-cutover.md).
 
 Semantic version changes, curated notes, tag validation, GitHub Release
 publication, hotfixes, and rollback versions are described in

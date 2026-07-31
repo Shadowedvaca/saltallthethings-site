@@ -2,11 +2,12 @@ name: satt-production
 
 services:
   app:
+    container_name: satt-production-app
     build:
       context: .
       args:
         VCS_REF: ${COMMIT_SHA:?COMMIT_SHA is required}
-    image: ${SATT_IMAGE:-satt:production}
+    image: ${SATT_IMAGE:?SATT_IMAGE is required}
     restart: unless-stopped
     init: true
     environment:
@@ -22,6 +23,8 @@ services:
       GOOGLE_OAUTH_REFRESH_TOKEN: ${GOOGLE_OAUTH_REFRESH_TOKEN:-}
     ports:
       - "127.0.0.1:${SATT_APP_PORT:?SATT_APP_PORT is required}:8200"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "python", "-c", "import json, urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8200/api/health', timeout=2)); raise SystemExit(0 if data.get('status') == 'ok' else 1)"]
       interval: 10s
