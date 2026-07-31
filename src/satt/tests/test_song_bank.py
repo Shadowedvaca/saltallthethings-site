@@ -166,6 +166,71 @@ async def test_assignment_replacement_move_and_free_survive_reload(
 
 
 @pytest.mark.asyncio
+async def test_assignment_routes_reject_missing_records_without_mutation(
+    db_client: AsyncClient,
+):
+    await db_client.put(
+        "/api/data/ideas", json=[_idea("existing-song-idea")], headers=_headers()
+    )
+    await db_client.put(
+        "/api/data/songs", json=[_song("existing-song")], headers=_headers()
+    )
+
+    missing_song = await db_client.put(
+        "/api/songs/missing-song/assignment",
+        json={"ideaId": "existing-song-idea"},
+        headers=_headers(),
+    )
+    missing_idea = await db_client.put(
+        "/api/songs/existing-song/assignment",
+        json={"ideaId": "missing-song-idea"},
+        headers=_headers(),
+    )
+
+    assert missing_song.status_code == 404
+    assert "Song not found" in missing_song.json()["detail"]
+    assert missing_idea.status_code == 404
+    assert "Idea not found" in missing_idea.json()["detail"]
+    [song] = (await db_client.get("/api/data/songs", headers=_headers())).json()
+    assert song["status"] == "unused"
+    assert song["assignedIdeaId"] is None
+
+
+@pytest.mark.asyncio
+async def test_stale_assignment_cannot_replace_newer_episode_song(
+    db_client: AsyncClient,
+):
+    await db_client.put(
+        "/api/data/ideas", json=[_idea("stale-assignment-idea")], headers=_headers()
+    )
+    await db_client.put(
+        "/api/data/songs",
+        json=[_song("fresh-assignment-song"), _song("stale-assignment-song")],
+        headers=_headers(),
+    )
+    revision = (await db_client.get("/api/export", headers=_headers())).json()[
+        "revision"
+    ]
+
+    fresh = await db_client.put(
+        "/api/songs/fresh-assignment-song/assignment",
+        json={"ideaId": "stale-assignment-idea"},
+        headers=_headers(**{"If-Match": str(revision)}),
+    )
+    stale = await db_client.put(
+        "/api/songs/stale-assignment-song/assignment",
+        json={"ideaId": "stale-assignment-idea"},
+        headers=_headers(**{"If-Match": str(revision)}),
+    )
+
+    assert fresh.status_code == 200
+    assert stale.status_code == 409
+    songs = (await db_client.get("/api/data/songs", headers=_headers())).json()
+    assigned = [song for song in songs if song["assignedIdeaId"]]
+    assert [song["id"] for song in assigned] == ["fresh-assignment-song"]
+
+
+@pytest.mark.asyncio
 async def test_retire_frees_assignment_and_retired_song_cannot_be_assigned(
     db_client: AsyncClient,
 ):

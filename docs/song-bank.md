@@ -59,6 +59,22 @@ or change episode assignment state. Navigation, form labels, live status/error
 messages, filter state, and responsive layouts support keyboard and narrow-
 screen use.
 
+## Episode assignment and preparation
+
+Processed and scheduled ideas in `show_management.html` list only `unused`
+songs as assignment choices. An assigned song shows its artist, title, validated
+YouTube link, and private talking points. Hosts can replace it with another
+unused song or remove it from the episode; both actions use the atomic Song
+lifecycle endpoints, and replacement/removal requires confirmation.
+
+The full-screen authenticated show display repeats the assigned song and its
+private talking points alongside the existing joke, summary, and outline. No
+song data is copied into the idea record, and private notes remain absent from
+public episode responses. Retired songs and songs used by another idea are not
+offered. If another session changes or deletes a choice, revision conflict
+handling reloads the current server state and the episode view reports that the
+requested change was not applied.
+
 ## Import, export, and rollback
 
 Authenticated export includes `songs`; browser import accepts it as an optional

@@ -18,6 +18,7 @@ ENVIRONMENT_SENSITIVE_BROWSER_FILES = (
     "js/ai-service.js",
     "js/postproduction.js",
     "js/site-config.js",
+    "js/show-song.js",
     "js/songs.js",
     "js/storage.js",
 )

@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
 const SongBankPage = require("../js/songs.js");
+const SongPreparation = require("../js/show-song.js");
 
 function domHarness() {
   const elements = new Map();
@@ -322,6 +323,67 @@ function testSongManagementPageContract() {
   assert.match(markup, /rel="noopener noreferrer"/);
 }
 
+function testEpisodeSongPreparationContract() {
+  const songs = [
+    {
+      id: "assigned-song",
+      artist: "Assigned <Artist>",
+      title: "Current & Song",
+      youtubeUrl: "https://youtu.be/abcdefghijk",
+      privateNotes: "Private <script>note</script>",
+      status: "used",
+      assignedIdeaId: "idea-1",
+    },
+    {
+      id: "available-song",
+      artist: "Available Artist",
+      title: "Available Song",
+      youtubeUrl: "https://youtu.be/lmnopqrstuv",
+      privateNotes: "Available notes",
+      status: "unused",
+      assignedIdeaId: null,
+    },
+    {
+      id: "other-used-song",
+      artist: "Other Artist",
+      title: "Already Used",
+      youtubeUrl: "https://youtu.be/zyxwvutsrqp",
+      privateNotes: "Other private notes",
+      status: "used",
+      assignedIdeaId: "idea-2",
+    },
+    {
+      id: "retired-song",
+      artist: "Retired Artist",
+      title: "Retired Song",
+      youtubeUrl: "https://youtu.be/qwertyuiopa",
+      privateNotes: "Retired private notes",
+      status: "retired",
+      assignedIdeaId: null,
+    },
+  ];
+  assert.equal(SongPreparation.songForIdea(songs, "idea-1").id, "assigned-song");
+  assert.deepEqual(
+    SongPreparation.availableSongs(songs).map((song) => song.id),
+    ["available-song"],
+  );
+  const picker = SongPreparation.renderPicker("idea-1", songs);
+  assert.match(picker, /Assigned &lt;Artist&gt;/);
+  assert.match(picker, /Private &lt;script&gt;note&lt;\/script&gt;/);
+  assert.match(picker, /Replace song/);
+  assert.match(picker, /Available Artist/);
+  assert.doesNotMatch(picker, /Already Used|Retired Song|Other private notes|Retired private notes/);
+  assert.match(picker, /data-song-action="assign"/);
+  assert.match(picker, /data-song-action="remove"/);
+  assert.match(picker, /rel="noopener noreferrer"/);
+
+  const preparation = SongPreparation.renderPreparation(songs[0]);
+  assert.match(preparation, /Episode Song/);
+  assert.match(preparation, /Private &lt;script&gt;note&lt;\/script&gt;/);
+  assert.doesNotMatch(preparation, /<script>/);
+  assert.equal(SongPreparation.renderPreparation(null), "");
+}
+
 async function main() {
   const showManagement = fs.readFileSync("show_management.html", "utf8");
   const jokesPage = fs.readFileSync("jokes.html", "utf8");
@@ -345,6 +407,14 @@ async function main() {
   assert.match(showManagement, /await Storage\.updateIdea\(ideaId/);
   assert.match(showManagement, /await Storage\.assignJokeToIdea\(jokeId, ideaId\)/);
   assert.match(showManagement, /await Storage\.freeJoke\(jokeId\)/);
+  assert.match(showManagement, /js\/show-song\.js/);
+  assert.match(showManagement, /SongPreparation\.renderPicker\(idea\.id, Storage\.getSongs\(\)\)/);
+  assert.match(showManagement, /SongPreparation\.renderPreparation\(assignedSong\)/);
+  assert.match(showManagement, /await Storage\.assignSongToIdea\(songId, ideaId\)/);
+  assert.match(showManagement, /await Storage\.freeSong\(songId\)/);
+  assert.match(showManagement, /Replace .* with/);
+  assert.match(showManagement, /Remove .* from this episode/);
+  assert.match(showManagement, /The latest server data is shown/);
   assert.match(showManagement, /await Storage\.deleteIdea\(ideaId\)/);
   assert.match(showManagement, /await Storage\.assignIdeaToSlot\(ideaId, slotId\)/);
   assert.match(showManagement, /await Storage\.unassignSlot\(slotId\)/);
@@ -368,6 +438,7 @@ async function main() {
   await testAtomicScheduleAndImportRoutes();
   await testSongManagementStorageRoutes();
   testSongManagementPageContract();
+  testEpisodeSongPreparationContract();
 }
 
 main().catch((error) => {

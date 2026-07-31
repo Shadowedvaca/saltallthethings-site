@@ -353,6 +353,7 @@ async def run_smoke(
                 "/",
                 "/register.html",
                 "/songs.html",
+                "/js/show-song.js",
                 "/js/songs.js",
                 "/public/homepage",
             ):
@@ -367,6 +368,11 @@ async def run_smoke(
                     _require(
                         "validateSongInput" in response.text,
                         "deployed Song Bank script is incomplete",
+                    )
+                elif path == "/js/show-song.js":
+                    _require(
+                        "renderPreparation" in response.text,
+                        "deployed episode Song preparation script is incomplete",
                     )
 
             unauthorized = await client.get("/api/export")

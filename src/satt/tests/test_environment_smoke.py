@@ -91,5 +91,7 @@ def test_deployment_smoke_exercises_song_lifecycle_without_external_services():
     assert "private_sentinel not in public_episodes.text" in source
     assert "https://example.invalid/not-youtube" in source
     assert '"/songs.html"' in source
+    assert '"/js/show-song.js"' in source
     assert '"/js/songs.js"' in source
     assert '"validateSongInput" in response.text' in source
+    assert '"renderPreparation" in response.text' in source
