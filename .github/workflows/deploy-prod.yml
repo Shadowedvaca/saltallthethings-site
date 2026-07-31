@@ -130,8 +130,6 @@ jobs:
           )"
           test "$database_host" = "host.docker.internal"
 
-          compose build --pull app
-
           if systemctl is-active --quiet "$systemd_service"; then
             current_runtime="systemd"
           elif docker ps --format '{{.Names}}' | grep -qx satt-production-app; then
@@ -142,6 +140,19 @@ jobs:
             echo "ERROR: no recognized SATT production runtime is active"
             exit 1
           fi
+
+          set -a
+          . "$environment_file"
+          set +a
+          python3 scripts/production_backup.py --tag "$deploy_tag"
+
+          compose build --pull app
+
+          pre_fingerprint="$(
+            compose run --rm --no-deps --entrypoint python app \
+              -m satt.scripts.production_fingerprint \
+              < /dev/null
+          )"
 
           recover() {
             status="$?"
@@ -172,17 +183,6 @@ jobs:
             docker stop satt-production-app >/dev/null
           fi
           cutover_started="true"
-
-          set -a
-          . "$environment_file"
-          set +a
-          python3 scripts/production_backup.py --tag "$deploy_tag"
-
-          pre_fingerprint="$(
-            compose run --rm --no-deps --entrypoint python app \
-              -m satt.scripts.production_fingerprint \
-              < /dev/null
-          )"
 
           compose up -d --wait --remove-orphans app
           compose exec -T app alembic current --check-heads < /dev/null

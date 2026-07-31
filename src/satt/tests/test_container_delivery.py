@@ -359,6 +359,13 @@ def test_production_deploy_is_tag_only_immutable_and_recoverable():
     ):
         assert forbidden not in source
 
+    backup = source.index("python3 scripts/production_backup.py")
+    build = source.index("compose build --pull app")
+    fingerprint = source.index('pre_fingerprint="$(')
+    stop = source.index('systemctl stop "$systemd_service"')
+    start = source.index("compose up -d --wait --remove-orphans app")
+    assert backup < build < fingerprint < stop < start
+
 
 def test_test_deploy_uses_only_the_approved_main_commit_and_isolated_test():
     source = TEST_WORKFLOW_PATH.read_text(encoding="utf-8")

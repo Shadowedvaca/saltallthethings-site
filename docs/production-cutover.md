@@ -96,16 +96,17 @@ The workflow performs this sequence:
 2. Establish strict SSH trust from the protected production environment.
 3. On the production host, validate tools, mode-`0600` configuration, exact tag
    checkout, standalone Compose expansion, and the local database boundary.
-4. Build the immutable frontend/backend image before interrupting the current
-   runtime.
-5. Identify either the active legacy SATT systemd unit for the first cutover or
+4. Identify either the active legacy SATT systemd unit for the first cutover or
    the exact prior SATT container image for a later release.
-6. Stop only that SATT runtime. Do not disable or delete the systemd unit.
-7. Create a custom-format PostgreSQL backup in the root-only release backup
+5. Create a custom-format PostgreSQL backup in the root-only release backup
    directory, verify it with `pg_restore --list`, and report only its filename
-   and SHA-256.
-8. Capture pre-migration authentication and stable-data counts and SHA-256
+   and SHA-256. This is the first production state-changing operation after
+   read-only preflight and happens before image build or runtime interruption.
+6. Build the immutable frontend/backend image.
+7. Capture pre-migration authentication and stable-data counts and SHA-256
    fingerprints without printing any contents.
+8. Stop only the current SATT runtime. Do not disable or delete the systemd
+   unit.
 9. Start the exact tagged image. Its entrypoint applies Alembic migrations, then
    the workflow verifies all migration heads.
 10. Recompute and compare authentication and stable-data fingerprints. Expected
