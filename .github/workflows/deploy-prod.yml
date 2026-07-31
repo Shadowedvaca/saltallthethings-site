@@ -145,8 +145,9 @@ jobs:
 
           recover() {
             status="$?"
+            trap - EXIT
             if test "$status" -eq 0 || test "$cutover_started" != "true"; then
-              return "$status"
+              exit "$status"
             fi
             echo "Production verification failed; restoring the prior runtime"
             compose down --remove-orphans || true
@@ -161,7 +162,7 @@ jobs:
                   -f compose.production.yaml \
                   up -d --wait --no-build app || true
             fi
-            return "$status"
+            exit "$status"
           }
           trap recover EXIT
 
@@ -179,14 +180,15 @@ jobs:
 
           pre_fingerprint="$(
             compose run --rm --no-deps --entrypoint python app \
-              -m satt.scripts.production_fingerprint
+              -m satt.scripts.production_fingerprint \
+              < /dev/null
           )"
 
           compose up -d --wait --remove-orphans app
-          compose exec -T app alembic current --check-heads
+          compose exec -T app alembic current --check-heads < /dev/null
 
           post_fingerprint="$(
-            compose exec -T app python -m satt.scripts.production_fingerprint
+            compose exec -T app python -m satt.scripts.production_fingerprint < /dev/null
           )"
           test "$pre_fingerprint" = "$post_fingerprint"
           echo "Production authentication and data fingerprints match"

@@ -109,10 +109,11 @@ jobs:
 
           failure_logs() {
             status=$?
+            trap - EXIT
             echo "==> Bounded SATT test diagnostics"
             compose ps || true
             compose logs --no-color --tail 100 app database || true
-            return "$status"
+            exit "$status"
           }
           trap failure_logs EXIT
 
@@ -131,7 +132,8 @@ jobs:
 
           revision="$(
             compose exec -T database \
-              sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from satt.alembic_version"'
+              sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from satt.alembic_version"' \
+              < /dev/null
           )"
           test "$revision" = "0006"
 
@@ -140,7 +142,8 @@ jobs:
             --base-url http://127.0.0.1:8200 \
             --expected-environment test \
             --expected-version "$expected_version" \
-            --expected-commit "$deploy_sha"
+            --expected-commit "$deploy_sha" \
+            < /dev/null
 
           trap - EXIT
           echo "Test deploy verified at commit $deploy_sha"
