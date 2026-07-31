@@ -61,9 +61,9 @@ docker compose -f compose.yaml -f compose.local.yaml up --build --wait
 
 Development and test use `compose.development.yaml` and `compose.test.yaml`
 with separately supplied database components, secrets, host port, and commit.
-Their named database volumes are distinct. `compose.production.yaml` contains
-only the application service and never provisions a development or test
-database on the production host.
+Their named database volumes are distinct. `compose.production.yaml` contains a
+private SATT application/PostgreSQL pair with its own named production volume;
+the database publishes no host port and is never shared with development or test.
 
 Do not print expanded Compose configuration: interpolation can contain
 secret-bearing values. Validate configuration by exit status, configured

@@ -12,6 +12,10 @@ DEV_WORKFLOW_PATH = REPOSITORY_ROOT / ".github/workflows/deploy-dev.yml"
 TEST_WORKFLOW_PATH = REPOSITORY_ROOT / ".github/workflows/deploy-test.yml"
 RELEASE_WORKFLOW_PATH = REPOSITORY_ROOT / ".github/workflows/publish-release.yml"
 PROD_WORKFLOW_PATH = REPOSITORY_ROOT / ".github/workflows/deploy-prod.yml"
+PROD_SCRIPT_PATH = REPOSITORY_ROOT / "scripts/production_deploy.sh"
+PROD_NIGHTLY_BACKUP_PATH = (
+    REPOSITORY_ROOT / "scripts/production_nightly_backup.sh"
+)
 
 
 def test_container_context_excludes_sensitive_and_unrelated_files():
@@ -22,6 +26,8 @@ def test_container_context_excludes_sensitive_and_unrelated_files():
         "*.xlsx",
         "settings-backup",
         "cloudflare-backup.json",
+        ".production-assets",
+        ".production-state",
     ):
         assert expected in ignored
 
@@ -36,6 +42,31 @@ def test_production_environment_and_state_are_not_trackable():
     ignored = (REPOSITORY_ROOT / ".gitignore").read_text(encoding="utf-8")
     assert ".env.*" in ignored
     assert ".production-state/" in ignored
+    assert ".production-assets/" in ignored
+
+
+def test_production_nightly_backup_is_private_verified_and_bounded():
+    source = PROD_NIGHTLY_BACKUP_PATH.read_text(encoding="utf-8")
+
+    for required in (
+        "satt-production-postgres",
+        "--schema=satt",
+        "pg_restore --list",
+        "/opt/backups/satt-db/nightly",
+        "-mtime +14",
+        'test -z "${DATABASE_URL:-}"',
+        "--env-file",
+        "compose.production.yaml",
+    ):
+        assert required in source
+
+    for forbidden in (
+        "TEST_DATABASE_URL",
+        "docker volume rm",
+        "down --volumes",
+        "postgresql://",
+    ):
+        assert forbidden not in source
 
 
 def test_environment_example_contains_placeholders_only():
@@ -48,6 +79,7 @@ def test_environment_example_contains_placeholders_only():
             values[key] = value
 
     assert values["DATABASE_URL"] == ""
+    assert values["LEGACY_DATABASE_URL"] == ""
     assert values["SATT_DB_PASSWORD"] == ""
     assert values["GOOGLE_OAUTH_CLIENT_SECRET"] == ""
     assert values["GOOGLE_OAUTH_REFRESH_TOKEN"] == ""
@@ -119,11 +151,33 @@ def test_nonproduction_compose_definitions_are_isolated():
         development["volumes"]["satt_postgres"]["name"]
         != test["volumes"]["satt_postgres"]["name"]
     )
-    assert "database" not in production["services"]
+    assert set(production["services"]) == {"app", "database"}
+    production_database = production["services"]["database"]
+    assert production_database["container_name"] == "satt-production-database"
+    assert production_database["image"] == "postgres:16-alpine"
+    assert "ports" not in production_database
+    assert production_database["volumes"] == [
+        "satt_production_postgres:/var/lib/postgresql/data"
+    ]
+    assert "postmaster.pid" in production_database["healthcheck"]["test"][1]
+    assert production["volumes"]["satt_production_postgres"]["name"] == (
+        "satt-production-postgres"
+    )
+    assert production["volumes"]["satt_production_postgres"]["name"] not in {
+        development["volumes"]["satt_postgres"]["name"],
+        test["volumes"]["satt_postgres"]["name"],
+    }
     production_app = production["services"]["app"]
     assert production_app["container_name"] == "satt-production-app"
     assert production_app["image"] == "${SATT_IMAGE:?SATT_IMAGE is required}"
-    assert production_app["extra_hosts"] == ["host.docker.internal:host-gateway"]
+    assert production_app["depends_on"] == {
+        "database": {"condition": "service_healthy"}
+    }
+    assert production_app["environment"]["SATT_DB_HOST"] == "database"
+    assert "DATABASE_URL" not in production_app["environment"]
+    assert "extra_hosts" not in production_app
+    assert production_app["networks"] == ["satt"]
+    assert production_database["networks"] == ["satt"]
 
 
 def test_entrypoint_validates_isolation_before_migrations():
@@ -168,6 +222,9 @@ def test_pull_request_workflow_has_minimal_permissions_and_pinned_actions():
     assert "app alembic upgrade head" in source
     assert 'test "$revision" = "0006"' in source
     assert "docker compose -f compose.ci.yaml up -d --wait app" in source
+    assert "Exercise isolated production backup restore" in source
+    assert "pg_dump --format=custom --schema=satt" in source
+    assert "pg_restore --exit-on-error" in source
     assert "Exercise isolated runtime recovery after health mismatch" in source
     assert "COMMIT_SHA=recovery-prior" in source
     assert "COMMIT_SHA=recovery-candidate" in source
@@ -288,6 +345,9 @@ def test_registered_workflow_is_manual_development_only():
 
 def test_production_deploy_is_tag_only_immutable_and_recoverable():
     source = PROD_WORKFLOW_PATH.read_text(encoding="utf-8")
+    deploy_script = PROD_SCRIPT_PATH.read_text(encoding="utf-8")
+    nightly_backup = PROD_NIGHTLY_BACKUP_PATH.read_text(encoding="utf-8")
+    combined = source + deploy_script + nightly_backup
     workflow = yaml.safe_load(source)
 
     assert workflow["on"] == {"push": {"tags": ["prod-v*"]}}
@@ -331,10 +391,17 @@ def test_production_deploy_is_tag_only_immutable_and_recoverable():
         "main:refs/remotes/origin/main",
         'git checkout --detach "$deploy_tag"',
         'test "$(git rev-parse HEAD)" = "$deploy_sha"',
+        "bash scripts/production_deploy.sh",
+        "scripts/production_nightly_backup.sh",
+        "rollback-cron",
         "-f compose.production.yaml",
         "python3 scripts/production_backup.py",
+        '--phase "$phase"',
+        "--schema=satt",
         "satt.scripts.production_fingerprint",
-        'test "$pre_fingerprint" = "$post_fingerprint"',
+        'test "$source_state" = "$restored_state"',
+        'test "$source_state" = "$post_state"',
+        "pg_restore --exit-on-error",
         "alembic current --check-heads",
         'status="$?"',
         "trap - EXIT",
@@ -348,7 +415,7 @@ def test_production_deploy_is_tag_only_immutable_and_recoverable():
         "https://saltallthethings.com/api/health",
         "set -euo pipefail",
     ):
-        assert required in source
+        assert required in combined
 
     for forbidden in (
         "DEV_HOST",
@@ -360,16 +427,20 @@ def test_production_deploy_is_tag_only_immutable_and_recoverable():
         "compose.yaml",
         "compose.test.yaml",
         "compose.development.yaml",
+        "docker volume rm",
+        "down --volumes",
     ):
-        assert forbidden not in source
+        assert forbidden not in combined
 
-    backup = source.index("python3 scripts/production_backup.py")
-    build = source.index("compose build --pull app")
-    fingerprint = source.index('pre_fingerprint="$(')
-    stop = source.index('systemctl stop "$systemd_service"')
-    start = source.index("compose up -d --wait --remove-orphans app")
-    assert backup < build < fingerprint < stop < start
-
+    preflight = deploy_script.index('preflight_backup="$(')
+    build = deploy_script.index("compose build --pull app")
+    stop = deploy_script.index('systemctl stop "$systemd_service"')
+    final = deploy_script.index('final_backup="$(')
+    restore = deploy_script.index("pg_restore --exit-on-error")
+    start = deploy_script.index("compose up -d --wait --remove-orphans app")
+    static = deploy_script.index('mv "$candidate_static" "$repository/static"')
+    public = deploy_script.index("https://saltallthethings.com/api/health")
+    assert preflight < build < stop < final < restore < start < static < public
 
 def test_test_deploy_uses_only_the_approved_main_commit_and_isolated_test():
     source = TEST_WORKFLOW_PATH.read_text(encoding="utf-8")

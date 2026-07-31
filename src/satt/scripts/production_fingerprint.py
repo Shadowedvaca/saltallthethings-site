@@ -7,7 +7,9 @@ from datetime import date, datetime
 from decimal import Decimal
 import hashlib
 import json
+import os
 from typing import Any
+from urllib.parse import quote
 
 from sqlalchemy import text
 
@@ -52,6 +54,34 @@ DATA_QUERIES = {
         FROM satt.assignments ORDER BY slot_id
     """,
 }
+
+
+def configure_private_database_url() -> None:
+    """Build the private container URL without exposing its components."""
+
+    if os.environ.get("DATABASE_URL"):
+        return
+
+    names = (
+        "SATT_DB_HOST",
+        "SATT_DB_PORT",
+        "SATT_DB_NAME",
+        "SATT_DB_USER",
+        "SATT_DB_PASSWORD",
+    )
+    values = {name: os.environ.get(name, "") for name in names}
+    if any(not value for value in values.values()):
+        raise RuntimeError(
+            "production fingerprint is missing private database configuration"
+        )
+
+    os.environ["DATABASE_URL"] = "postgresql+asyncpg://{}:{}@{}:{}/{}".format(
+        quote(values["SATT_DB_USER"], safe=""),
+        quote(values["SATT_DB_PASSWORD"], safe=""),
+        values["SATT_DB_HOST"],
+        values["SATT_DB_PORT"],
+        quote(values["SATT_DB_NAME"], safe=""),
+    )
 
 
 def _json_value(value: Any) -> Any:
@@ -114,6 +144,7 @@ async def fingerprint_production() -> dict[str, Any]:
 
 
 def main() -> int:
+    configure_private_database_url()
     result = asyncio.run(fingerprint_production())
     print(json.dumps(result, sort_keys=True))
     return 0

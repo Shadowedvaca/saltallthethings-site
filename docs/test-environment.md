@@ -87,7 +87,7 @@ names:
    already exists;
 6. builds the shared image and starts only the `satt-test` services;
 7. waits for Compose health and verifies local/public metadata report `test`,
-   version `0.0.1`, and the exact commit;
+   version `0.0.2`, and the exact commit;
 8. verifies Alembic revision `0006`;
 9. runs ephemeral registration, login/reload, protected export, public-route,
    and unauthenticated-rejection checks and removes the temporary identity; and
@@ -113,7 +113,7 @@ runs only after the cumulative pull request receives separate merge approval.
 After each approved `main` deployment:
 
 1. Verify `/api/health` reports status `ok`, environment `test`, version
-   `0.0.1`, and the exact merge commit.
+   `0.0.2`, and the exact merge commit.
 2. Verify migration revision `0006` and both Compose services are healthy.
 3. Verify public pages and public API routes.
 4. Sign in with a test-only account and verify protected pages, persistence,
