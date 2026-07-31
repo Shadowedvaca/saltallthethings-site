@@ -439,7 +439,7 @@ Locate the call: `grep -n "generate_invite_code" src/satt/routes/auth.py` and up
 
 ```bash
 cd /opt/satt-platform
-TEST_DATABASE_URL=postgresql+asyncpg://satt_user:SaltSalty7x@localhost:5432/satt_test_db \
+TEST_DATABASE_URL=postgresql+asyncpg://satt_user:<rotated-password>@localhost:5432/satt_test_db \
   PYTHONPATH=src venv/bin/pytest src/satt/tests/ -v
 ```
 

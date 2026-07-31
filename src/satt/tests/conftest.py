@@ -92,6 +92,12 @@ async def test_schema():
     async with engine.begin() as conn:
         await conn.execute(text("CREATE SCHEMA IF NOT EXISTS satt"))
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(
+            text(
+                "INSERT INTO satt.data_revision (id, revision) VALUES (1, 0) "
+                "ON CONFLICT (id) DO UPDATE SET revision = EXCLUDED.revision"
+            )
+        )
     yield
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
@@ -128,15 +134,49 @@ async def db_session(test_schema) -> AsyncGenerator[AsyncSession, None]:
             pass
 
 
+class VersionedAsyncClient(AsyncClient):
+    """Test client that behaves like the browser for guarded data mutations."""
+
+    _guarded_prefixes = (
+        "/api/data/",
+        "/api/import",
+        "/api/jokes/",
+        "/api/ideas/",
+        "/api/schedule/",
+    )
+
+    async def request(self, method, url, **kwargs):
+        path = str(url)
+        is_mutation = method.upper() in {"PUT", "POST", "PATCH", "DELETE"}
+        headers = dict(kwargs.get("headers") or {})
+        has_if_match = any(key.lower() == "if-match" for key in headers)
+        if (
+            is_mutation
+            and any(prefix in path for prefix in self._guarded_prefixes)
+            and not has_if_match
+        ):
+            auth_headers = {
+                key: value
+                for key, value in headers.items()
+                if key.lower() == "authorization"
+            }
+            export = await super().request("GET", "/api/export", headers=auth_headers)
+            if export.status_code == 200:
+                headers["If-Match"] = str(export.json()["revision"])
+                kwargs["headers"] = headers
+        return await super().request(method, url, **kwargs)
+
+
 @pytest_asyncio.fixture
 async def db_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     """AsyncClient wired to the test DB session."""
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
-        yield db_session
+        async with db_session.begin_nested():
+            yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
-    async with AsyncClient(
+    async with VersionedAsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
         yield ac

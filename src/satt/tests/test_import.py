@@ -74,7 +74,10 @@ async def test_import_returns_ok(db_client: AsyncClient):
         "/api/import", json=IMPORT_PAYLOAD, headers=_headers()
     )
     assert response.status_code == 200
-    assert response.json() == {"ok": True}
+    body = response.json()
+    assert body["ok"] is True
+    assert body["revision"] > 0
+    assert body["state"]["assignments"] == {"import_slot_1": "import_idea_1"}
 
 
 @pytest.mark.asyncio

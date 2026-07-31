@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import json
 
+from satt.outline_contract import normalize_configured_segments
+
 
 def build_process_idea_prompts(config: dict, raw_notes: str) -> tuple[str, str]:
     """Returns (system_prompt, user_prompt) for the process-idea endpoint."""
-    segments = config.get("segments") or []
+    segments = normalize_configured_segments(config.get("segments"))
     segment_list = "\n".join(
-        f"{i + 1}. {s['name']}{(' — ' + s['description']) if s.get('description') else ''}"
+        f"{i + 1}. id={s['id']!r}; name={s['name']!r}"
+        f"{('; description=' + repr(s['description'])) if s['description'] else ''}"
         for i, s in enumerate(segments)
     )
     title_count = config.get("titleCount") or 3
@@ -31,8 +34,8 @@ def build_process_idea_prompts(config: dict, raw_notes: str) -> tuple[str, str]:
         '  "summary": "A 2-3 sentence clean summary of what this episode is about.",\n'
         '  "outline": [\n'
         "    {\n"
-        '      "segmentId": "opening",\n'
-        '      "segmentName": "Opening Hook / Intro",\n'
+        f'      "segmentId": {json.dumps(segments[0]["id"])},\n'
+        f'      "segmentName": {json.dumps(segments[0]["name"])},\n'
         '      "talkingPoints": [\n'
         '        "First conversation prompt or topic to discuss",\n'
         '        "Second conversation prompt"\n'
@@ -44,6 +47,8 @@ def build_process_idea_prompts(config: dict, raw_notes: str) -> tuple[str, str]:
         f"- Generate exactly {title_count} title options. Titles should be catchy, on-brand (salty, fun, WoW-themed), and hint at the main topic.\n"
         "- The summary should be clean and compelling — good enough for a podcast description.\n"
         "- The outline must include ALL segments listed above, in order.\n"
+        "- Copy each configured segment ID exactly. Never invent or duplicate an ID.\n"
+        "- Copy each configured segment name exactly.\n"
         "- Each segment should have 2-5 talking points that are natural conversation starters, not lecture bullets.\n"
         "- Talking points should be phrased as discussion prompts between two friends.\n"
         "- Return ONLY valid JSON. No explanation, no markdown fences, no preamble."
@@ -57,23 +62,41 @@ def build_process_idea_prompts(config: dict, raw_notes: str) -> tuple[str, str]:
     return system_prompt, user_prompt
 
 
+def build_process_idea_repair_prompt(
+    invalid_response: str,
+    validation_error: str,
+) -> str:
+    """Request one bounded correction without changing the original contract."""
+    bounded_response = invalid_response[:8000]
+    return (
+        "Your previous response did not satisfy the required outline contract.\n"
+        f"Validation error: {validation_error}\n\n"
+        "Return a corrected response using the exact JSON structure, configured "
+        "segment IDs, names, and order from the system instructions. Include every "
+        "configured segment exactly once with 2-5 non-empty talking points. Return "
+        "only JSON.\n\n"
+        f"Previous response:\n{bounded_response}"
+    )
+
+
 def build_generate_jokes_prompts(
-    config: dict, used_jokes: list[str], theme_hint: str
+    config: dict, banked_jokes: list[str], theme_hint: str
 ) -> tuple[str, str]:
     """Returns (system_prompt, user_prompt) for the generate-jokes endpoint."""
     joke_context = config.get("jokeContext") or ""
     joke_count = config.get("jokeCount") or 5
 
-    used_list = "\n".join(f"- {j}" for j in used_jokes)
-    used_section = (
-        f"ALREADY USED JOKES (do NOT repeat these or anything too similar):\n{used_list}\n"
-        if used_list
+    banked_list = "\n".join(f"- {j}" for j in banked_jokes)
+    banked_section = (
+        "ALREADY BANKED JOKES (do NOT repeat these or anything too similar):\n"
+        f"{banked_list}\n"
+        if banked_list
         else ""
     )
 
     system_prompt = (
         f"{joke_context}\n\n"
-        f"{used_section}"
+        f"{banked_section}"
         "Return ONLY a JSON array of strings, each being one joke. "
         'No markdown, no backticks, no explanation. Example: ["joke one", "joke two"]\n'
         f"Generate exactly {joke_count} jokes."

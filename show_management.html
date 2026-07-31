@@ -464,7 +464,7 @@
 
       // Split into three groups:
       // 1) Scheduled for today or future (by recording date ascending)
-      // 2) Unscheduled (by lastModified/createdAt descending)
+      // 2) Unscheduled (by server-maintained modification/creation time descending)
       // 3) Past episodes (recording date before today, by recording date descending)
       var futureScheduled = [];
       var unscheduled = [];
@@ -487,10 +487,10 @@
         return a.slot.recordDate.localeCompare(b.slot.recordDate);
       });
 
-      // Sort unscheduled: by lastModified or createdAt descending
+      // Sort unscheduled: by canonical server timestamps descending
       unscheduled.sort(function(a, b) {
-        var aDate = a.idea.lastModified || a.idea.createdAt || '';
-        var bDate = b.idea.lastModified || b.idea.createdAt || '';
+        var aDate = a.idea.updatedAt || a.idea.createdAt || '';
+        var bDate = b.idea.updatedAt || b.idea.createdAt || '';
         return bDate.localeCompare(aDate);
       });
 
@@ -716,9 +716,10 @@
 
       // Editable outline
       html += '<div onclick="event.stopPropagation()">'
-        + '<label class="text-xs text-muted" style="display:block; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Show Outline</label>';
+        + '<label class="text-xs text-muted" style="display:block; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Show Outline</label>'
+        + '<p class="text-xs text-muted mb-sm">Section identity and order are fixed for this episode. Names and talking points may be edited.</p>';
       (idea.outline || []).forEach(function(seg, si) {
-        html += '<div class="outline-segment" data-seg-index="' + si + '">'
+        html += '<div class="outline-segment" data-seg-index="' + si + '" data-segment-id="' + esc(seg.segmentId) + '">'
           + '<div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">'
           + '<input type="text" class="edit-field edit-field-sm" data-edit-seg-name="' + si + '" value="' + esc(seg.segmentName) + '" style="font-weight:600; color: var(--ice-bright);">'
           + '</div>';
@@ -807,7 +808,7 @@
       if (card && !card.classList.contains('expanded')) card.classList.add('expanded');
     }
 
-    function saveEdits(ideaId) {
+    async function saveEdits(ideaId) {
       var container = document.getElementById('expanded-' + ideaId);
       if (!container) return;
 
@@ -832,11 +833,17 @@
         var si = segEl.dataset.segIndex;
         var nameEl = segEl.querySelector('[data-edit-seg-name="' + si + '"]');
         var segName = nameEl ? nameEl.value.trim() : '';
+        var segmentId = segEl.dataset.segmentId;
         var tpInputs = segEl.querySelectorAll('[data-edit-tp]');
         var talkingPoints = [];
         tpInputs.forEach(function(tpInp) { var v = tpInp.value.trim(); if (v) talkingPoints.push(v); });
-        if (segName) outline.push({ segmentId: segName.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 20), segmentName: segName, talkingPoints: talkingPoints });
+        if (!segName) {
+          Toast.error('Every outline section needs a name.');
+          return;
+        }
+        outline.push({ segmentId: segmentId, segmentName: segName, talkingPoints: talkingPoints });
       });
+      if (outline.length !== segEls.length) return;
 
       // Raw notes
       var rawEl = container.querySelector('[data-edit-rawnotes]');
@@ -846,15 +853,15 @@
       var imageEl = container.querySelector('[data-edit-image-id]');
       var imageFileId = imageEl ? imageEl.value.trim() : '';
 
-      Storage.updateIdea(ideaId, {
+      var saved = await Storage.updateIdea(ideaId, {
         titles: titles,
         selectedTitle: selectedTitle,
         summary: summary,
         outline: outline,
         rawNotes: rawNotes,
-        imageFileId: imageFileId || null,
-        lastModified: new Date().toISOString()
+        imageFileId: imageFileId || null
       });
+      if (!saved) return;
 
       editingIdeas.delete(ideaId);
       renderIdeasList();
@@ -897,21 +904,20 @@
     // ============================================
     function toggleIdeaExpand(ideaId) { document.getElementById('idea-' + ideaId).classList.toggle('expanded'); }
 
-    function selectTitle(ideaId, titleIndex) {
+    async function selectTitle(ideaId, titleIndex) {
       var ideas = Storage.getIdeas();
       var idea = ideas.find(function(i) { return i.id === ideaId; });
-      if (idea && idea.titles) { Storage.updateIdea(ideaId, { selectedTitle: idea.titles[titleIndex] }); renderIdeasList(); }
+      if (idea && idea.titles && await Storage.updateIdea(ideaId, { selectedTitle: idea.titles[titleIndex] })) renderIdeasList();
     }
 
-    function selectJokeForIdea(ideaId, jokeId) {
-      Storage.freeJokesForIdea(ideaId);
-      Storage.markJokeUsed(jokeId, ideaId);
+    async function selectJokeForIdea(ideaId, jokeId) {
+      if (!await Storage.assignJokeToIdea(jokeId, ideaId)) return;
       renderIdeasList();
       Toast.success('Joke assigned to show!');
     }
 
-    function clearJokeFromIdea(ideaId, jokeId) {
-      Storage.markJokeUnused(jokeId);
+    async function clearJokeFromIdea(ideaId, jokeId) {
+      if (!await Storage.freeJoke(jokeId)) return;
       renderIdeasList();
       Toast.info('Joke freed up.');
     }
@@ -930,10 +936,13 @@
         var idea = {
           id: newId, rawNotes: notes, titles: result.titles,
           selectedTitle: result.titles[0], summary: result.summary, outline: result.outline,
-          status: 'processed', aiModel: config.aiModel, createdAt: new Date().toISOString(),
+          status: 'processed',
+          aiProvider: config.aiModel,
+          aiModelId: config.aiModel === 'openai' ? config.openaiModelId : config.claudeModelId,
+          createdAt: new Date().toISOString(),
           imageFileId: null
         };
-        Storage.addIdea(idea);
+        if (!await Storage.addIdea(idea)) return;
         document.getElementById('ideaNotes').value = '';
         lastProcessedId = newId;
         editingIdeas.add(newId);
@@ -943,14 +952,16 @@
       finally { document.getElementById('composerOverlay').classList.add('hidden'); document.getElementById('processBtn').disabled = false; }
     }
 
-    function saveDraft() {
+    async function saveDraft() {
       var notes = document.getElementById('ideaNotes').value.trim();
       if (!notes) { Toast.error('Write some notes first!'); return; }
-      Storage.addIdea({
+      var saved = await Storage.addIdea({
         id: Storage.generateId(), rawNotes: notes, titles: [], selectedTitle: null,
-        summary: null, outline: [], status: 'draft', aiModel: null, createdAt: new Date().toISOString(),
+        summary: null, outline: [], status: 'draft', aiProvider: null, aiModelId: null,
+        createdAt: new Date().toISOString(),
         imageFileId: null
       });
+      if (!saved) return;
       document.getElementById('ideaNotes').value = '';
       renderIdeasList();
       Toast.success('Draft saved!');
@@ -965,7 +976,16 @@
       Toast.info('Processing idea with AI...');
       try {
         var result = await AIService.processIdea(idea.rawNotes);
-        Storage.updateIdea(ideaId, { titles: result.titles, selectedTitle: result.titles[0], summary: result.summary, outline: result.outline, status: 'processed', aiModel: config.aiModel });
+        var saved = await Storage.updateIdea(ideaId, {
+          titles: result.titles,
+          selectedTitle: result.titles[0],
+          summary: result.summary,
+          outline: result.outline,
+          status: 'processed',
+          aiProvider: config.aiModel,
+          aiModelId: config.aiModel === 'openai' ? config.openaiModelId : config.claudeModelId
+        });
+        if (!saved) return;
         lastProcessedId = ideaId;
         editingIdeas.add(ideaId);
         renderIdeasList();
@@ -973,12 +993,9 @@
       } catch (err) { Toast.error('Processing failed: ' + err.message); }
     }
 
-    function deleteIdea(ideaId) {
+    async function deleteIdea(ideaId) {
       if (!confirm('Delete this idea?')) return;
-      var slotId = Storage.getSlotForIdea(ideaId);
-      if (slotId) Storage.unassignSlot(slotId);
-      Storage.freeJokesForIdea(ideaId);
-      Storage.deleteIdea(ideaId);
+      if (!await Storage.deleteIdea(ideaId)) return;
       editingIdeas.delete(ideaId);
       renderIdeasList();
       Toast.info('Idea deleted.');
@@ -1221,18 +1238,21 @@
     function onDragEnd(e) { draggedIdeaId = null; e.target.classList.remove('dragging'); }
     function onDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; e.currentTarget.classList.add('drag-over'); }
     function onDragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
-    function onDrop(e, slotId) {
+    async function onDrop(e, slotId) {
       e.preventDefault(); e.currentTarget.classList.remove('drag-over');
       var ideaId = e.dataTransfer.getData('text/plain') || draggedIdeaId;
       if (!ideaId || !slotId) return;
       var currentAssignment = Storage.getIdeaForSlot(slotId);
-      if (currentAssignment) { if (!confirm('This slot already has an idea. Replace it?')) return; Storage.unassignSlot(slotId); }
-      Storage.assignIdeaToSlot(ideaId, slotId);
+      if (currentAssignment && !confirm('This slot already has an idea. Replace it?')) return;
+      if (!await Storage.assignIdeaToSlot(ideaId, slotId)) return;
       renderScheduleBoard(); renderIdeasList();
       var slot = ShowEngine.getSlotById(slotId);
       Toast.success('Assigned to ' + slot.episodeNumber + ' (record ' + ShowEngine.formatDateShort(slot.recordDate) + ')');
     }
-    function unassignShow(slotId) { Storage.unassignSlot(slotId); renderScheduleBoard(); renderIdeasList(); Toast.info('Show unassigned.'); }
+    async function unassignShow(slotId) {
+      if (!await Storage.unassignSlot(slotId)) return;
+      renderScheduleBoard(); renderIdeasList(); Toast.info('Show unassigned.');
+    }
 
     function updateReleaseDate(slotId, newDate) {
       ShowEngine.setReleaseDate(slotId, newDate);

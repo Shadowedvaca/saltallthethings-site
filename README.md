@@ -3,7 +3,10 @@
 Website and internal production tools for the *Salt All The Things* WoW podcast.
 
 **Production:** https://saltallthethings.com
-**Staging:** https://salt.shadowedvaca.com
+
+The Foundation milestone is establishing isolated development and test
+environments. See `docs/delivery.md` for the authoritative rollout state and
+approval gates.
 
 ---
 
@@ -18,26 +21,53 @@ Website and internal production tools for the *Salt All The Things* WoW podcast.
 
 ---
 
-## Deploy
+## Delivery
 
-### Static files (automatic)
+The post-Foundation contract promotes one immutable frontend/backend commit:
 
-Push to `main` — GitHub Actions SSHes into the server, runs `git pull`, copies
-static files to `/opt/satt-platform/static/`, and restarts the `satt` service.
+1. Manually deploy the shared feature branch to isolated development.
+2. After explicit merge approval, deploy the approved `main` commit to isolated
+   test.
+3. After separate production approval, deploy only the matching immutable
+   `prod-vX.Y.Z` tag.
 
-Required GitHub secrets:
-- `STAGING_SSH_KEY` — private key for `root@5.78.114.224`
-- `STAGING_SSH_KNOWN_HOSTS` — server host fingerprint
+The standard GitHub configuration names are `DEV_HOST`, `TEST_HOST`,
+`PROD_HOST`, and `DEPLOY_SSH_KEY`. Values remain in GitHub/server-side
+configuration and are verified only by name and presence.
 
-### Backend (manual)
+The legacy push-to-`main` production job has been removed. Production is now
+represented only by the validated tag-gated workflow, but it is not configured
+or authorized merely because the workflow exists. Do not merge, tag, deploy, or
+alter infrastructure based only on this README; follow
+[docs/delivery.md](docs/delivery.md) and the separately authorized
+[production cutover runbook](docs/production-cutover.md).
 
-```bash
-ssh hetzner
-cd /opt/satt-platform
-git pull
-PYTHONPATH=src alembic upgrade head   # only if there are schema changes
-sudo systemctl restart satt
+Semantic version changes, curated notes, tag validation, GitHub Release
+publication, hotfixes, and rollback versions are described in
+[docs/versioning-and-releases.md](docs/versioning-and-releases.md).
+
+### Container runtime
+
+`Dockerfile` is the production runtime definition. It installs locked runtime
+dependencies, runs as an unprivileged user, validates environment/data
+ownership, applies Alembic migrations, and then starts FastAPI. The same image
+contains the explicitly public frontend and backend.
+
+For a disposable local environment:
+
+```powershell
+docker compose -f compose.yaml -f compose.local.yaml up --build --wait
 ```
+
+Development and test use `compose.development.yaml` and `compose.test.yaml`
+with separately supplied database components, secrets, host port, and commit.
+Their named database volumes are distinct. `compose.production.yaml` contains
+only the application service and never provisions a development or test
+database on the production host.
+
+Do not print expanded Compose configuration: interpolation can contain
+secret-bearing values. Validate configuration by exit status, configured
+presence, or one-way fingerprint only.
 
 ---
 
@@ -48,26 +78,39 @@ sudo systemctl restart satt
 ```bash
 python -m venv venv
 venv/Scripts/activate        # Windows
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 
-# Needs a local Postgres instance or tunnel to the server
-cp .env.example .env         # fill in DATABASE_URL, SECRET_KEY
-PYTHONPATH=src uvicorn satt.main:app --reload
+# Needs an explicitly isolated local Postgres instance
+Copy-Item .env.example .env  # fill in local-only DATABASE_URL and SECRET_KEY
+$env:PYTHONPATH='src'
+uvicorn satt.main:app --reload --port 8200
 ```
 
 ### Frontend
 
-Open the HTML files directly in a browser or serve them statically.
-The JS hardcodes `https://saltallthethings.com/api` as the API base —
-override in `js/storage.js` and `js/ai-service.js` if pointing at a local backend.
+Open `http://localhost:8200`. In the local environment FastAPI serves only the
+explicit public HTML, CSS, JavaScript, and image assets; it does not expose
+`.env`, backend source, or repository metadata. Browser API calls use
+same-origin `/api` and `/public` paths in every environment.
+
+The Docker-based local runtime is preferred when Docker is available because
+it also validates the entrypoint, fresh-database migration, and health contract.
 
 ### Tests
 
 ```bash
-PYTHONPATH=src pytest src/satt/tests/ -v
+TEST_DATABASE_URL=<isolated-test-database-url> PYTHONPATH=src \
+  pytest src/satt/tests/ -v
 ```
 
-Tests use a separate `satt_test` Postgres schema. Never run against production.
+Database-backed tests require an explicit isolated `TEST_DATABASE_URL`, skip
+when it is absent, and refuse to run when it matches `DATABASE_URL`. Never run
+them against production.
+
+Pull requests run the complete database suite against an ephemeral
+loopback-only PostgreSQL service and separately build and inspect the production
+image against a fresh isolated container database. The workflow has read-only
+repository permission and no deployment trigger or production configuration.
 
 ---
 
@@ -86,16 +129,20 @@ Tests use a separate `satt_test` Postgres schema. Never run against production.
 
 ## Environment variables
 
-Stored in `/opt/satt-platform/.env` on the server:
+Each deployment supplies its own server-side `.env`. Canonical settings are:
 
-```
-DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/satt_db
-SECRET_KEY=<hex string>
-ENVIRONMENT=production
-SITE_URL=https://saltallthethings.com
-CORS_ORIGINS=https://saltallthethings.com,https://salt.shadowedvaca.com
-AI_REQUEST_TIMEOUT=60
-```
+| Tier | `ENVIRONMENT` / `DATABASE_ENVIRONMENT` | `SITE_URL` and allowed CORS origin |
+|---|---|---|
+| Local | `local` | `http://localhost:8200` |
+| Development | `development` | `https://dev.saltallthethings.com` |
+| Test | `test` | `https://test.saltallthethings.com` |
+| Production | `production` | `https://saltallthethings.com` |
+
+`DATABASE_ENVIRONMENT` must match `ENVIRONMENT`. Non-production refuses the
+production origin and refuses configured Google OAuth credentials unless
+`ALLOW_NONPRODUCTION_EXTERNAL_SERVICES=true` is deliberately set for an
+authorized smoke test. Each non-production environment still requires its own
+database, credentials, and Drive resources.
 
 AI API keys are **not** in `.env` — they are stored in `satt.config` in Postgres
 and managed through the Config page.

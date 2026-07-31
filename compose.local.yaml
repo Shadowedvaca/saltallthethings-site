@@ -1,0 +1,10 @@
+name: satt-local
+
+services:
+  app:
+    ports:
+      - "127.0.0.1:8200:8200"
+
+volumes:
+  satt_postgres:
+    name: satt-local-postgres

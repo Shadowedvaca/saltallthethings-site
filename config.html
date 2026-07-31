@@ -180,7 +180,7 @@
       <!-- Show Segments -->
       <div class="card card-elevated mb-lg">
         <h2 class="mb-md">Show Segments</h2>
-        <p class="text-sm text-secondary mb-md">The segments of each episode. The AI uses these to structure the show outline. Drag to reorder.</p>
+        <p class="text-sm text-secondary mb-md">The sections of each new episode outline. Drag to reorder. Renaming preserves the stable section ID, and configuration changes never rewrite existing episode outlines.</p>
         <div id="segmentsList"></div>
         <div class="mt-md flex gap-sm">
           <button class="btn btn-secondary btn-sm" onclick="addSegment()">+ Add Segment</button>
@@ -294,10 +294,10 @@
       toggleProviderSettings();
     }
 
-    function saveConfig() {
+    async function saveConfig() {
       // Merge with existing config to preserve server-managed fields
       // (artStyleBible, artArchetypes, artLog, imageFileId, etc.)
-      const existing = Storage.getConfig();
+      const existing = Storage._clone(Storage.getConfig());
       const config = Object.assign({}, existing, {
         aiModel: document.getElementById('aiModel').value,
         claudeApiKey: document.getElementById('claudeApiKey').value,
@@ -317,7 +317,7 @@
         jokeContext: document.getElementById('jokeContext').value,
         segments: getSegmentsFromDOM()
       });
-      Storage.saveConfig(config);
+      if (!await Storage.saveConfig(config)) return;
       Toast.success('Configuration saved!');
       document.getElementById('saveStatus').textContent = 'Saved ' + new Date().toLocaleTimeString();
     }
@@ -328,7 +328,7 @@
       btn.textContent = 'Analyzing...';
       try {
         const token = Auth.getToken();
-        const resp = await fetch('https://saltallthethings.com/api/ai/analyze-reference-style', {
+        const resp = await fetch('/api/ai/analyze-reference-style', {
           method: 'POST',
           headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }
         });
@@ -349,18 +349,18 @@
 
     async function saveStyleDescription() {
       const desc = document.getElementById('referenceStyleDescription').value.trim();
-      const existing = Storage.getConfig();
+      const existing = Storage._clone(Storage.getConfig());
       existing.referenceStyleDescription = desc;
-      Storage.saveConfig(existing);
+      if (!await Storage.saveConfig(existing)) return;
       await Storage.init();
       Toast.success('Style description saved.');
     }
 
     async function clearStyleDescription() {
       if (!confirm('Clear the saved style description? Art direction will fall back to the style bible text only.')) return;
-      const existing = Storage.getConfig();
+      const existing = Storage._clone(Storage.getConfig());
       delete existing.referenceStyleDescription;
-      Storage.saveConfig(existing);
+      if (!await Storage.saveConfig(existing)) return;
       await Storage.init();
       document.getElementById('referenceStyleDescription').value = '';
       document.getElementById('styleDescriptionWrap').style.display = 'none';
@@ -389,6 +389,7 @@
         row.className = 'flex gap-sm items-center mb-sm';
         row.draggable = true;
         row.dataset.index = idx;
+        row.dataset.segmentId = seg.id;
         row.style.cssText = 'padding: 8px 12px; background: var(--bg-surface); border-radius: var(--radius-md); border: 1px solid var(--border-subtle); cursor: grab;';
         row.innerHTML = `
           <span class="text-muted" style="min-width: 24px; font-size: 0.75rem;">${idx + 1}.</span>
@@ -413,15 +414,15 @@
       const rows = document.querySelectorAll('#segmentsList .flex.items-center');
       const segments = [];
       rows.forEach((row) => {
-        const name = row.querySelector('[data-field="name"]').value;
-        const description = row.querySelector('[data-field="description"]').value;
-        const id = name.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').substring(0, 20);
+        const name = row.querySelector('[data-field="name"]').value.trim();
+        const description = row.querySelector('[data-field="description"]').value.trim();
+        const id = row.dataset.segmentId;
         segments.push({ id, name, description });
       });
       return segments;
     }
 
-    function addSegment() { const segs = getSegmentsFromDOM(); segs.push({ id: 'new_' + Date.now(), name: '', description: '' }); renderSegments(segs); }
+    function addSegment() { const segs = getSegmentsFromDOM(); segs.push({ id: 'segment_' + Storage.generateId(), name: '', description: '' }); renderSegments(segs); }
     function removeSegment(idx) { const segs = getSegmentsFromDOM(); segs.splice(idx, 1); renderSegments(segs); }
     function resetSegments() { if (confirm('Reset segments to defaults?')) { renderSegments(Storage._defaultSegments()); Toast.info('Segments reset (save to apply)'); } }
     function resetShowContext() { if (confirm('Reset show context prompt to defaults?')) { document.getElementById('showContext').value = Storage._defaultShowContext(); Toast.info('Context reset (save to apply)'); } }
@@ -439,22 +440,29 @@
     function importData(event) {
       const file = event.target.files[0]; if (!file) return;
       const reader = new FileReader();
-      reader.onload = (e) => {
+      reader.onload = async (e) => {
         try {
           const data = JSON.parse(e.target.result);
-          if (confirm(`Import data from ${data.exportDate || 'unknown date'}? This will overwrite current data.`)) { Storage.importAll(data); loadConfig(); Toast.success('Data imported!'); }
+          if (confirm(`Import data from ${data.exportDate || 'unknown date'}? This will overwrite current data.`)) {
+            if (!await Storage.importAll(data)) return;
+            loadConfig();
+            Toast.success('Data imported!');
+          }
         } catch (err) { Toast.error('Failed to parse import file: ' + err.message); }
       };
       reader.readAsText(file); event.target.value = '';
     }
 
-    function clearAllData() {
+    async function clearAllData() {
       if (confirm('This will delete ALL data including ideas, schedule, and config. Are you sure?')) {
         if (confirm('Really? This cannot be undone.')) {
-          Storage.saveIdeas([]);
-          Storage.saveJokes([]);
-          Storage.saveShowSlots([]);
-          Storage.saveAssignments({});
+          var cleared = await Storage.importAll({
+            ideas: [],
+            jokes: [],
+            showSlots: [],
+            assignments: {}
+          });
+          if (!cleared) return;
           loadConfig(); Toast.info('All data cleared.');
         }
       }
@@ -473,7 +481,7 @@
       btn.disabled = true;
       btn.textContent = 'Updating...';
       try {
-        var resp = await fetch('https://salt.shadowedvaca.com/api/users/me/password', {
+        var resp = await fetch('/api/users/me/password', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + Auth.getToken() },
           body: JSON.stringify({ currentPassword: current, newPassword: next })
@@ -496,7 +504,7 @@
       var container = document.getElementById('userList');
       container.innerHTML = '<span class="text-muted text-sm">Loading...</span>';
       try {
-        var resp = await fetch('https://salt.shadowedvaca.com/api/users', {
+        var resp = await fetch('/api/users', {
           headers: { 'Authorization': 'Bearer ' + Auth.getToken() }
         });
         if (!resp.ok) return;
@@ -552,7 +560,7 @@
       if (!confirm('Reset password for ' + username + '?')) return;
 
       try {
-        var resp = await fetch('https://salt.shadowedvaca.com/api/users/' + userId + '/reset-password', {
+        var resp = await fetch('/api/users/' + userId + '/reset-password', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + Auth.getToken() },
           body: JSON.stringify({ newPassword: newPw })
@@ -575,7 +583,7 @@
       resultEl.style.display = 'none';
 
       try {
-        var resp = await fetch('https://salt.shadowedvaca.com/api/auth/invite', {
+        var resp = await fetch('/api/auth/invite', {
           method: 'POST',
           headers: { 'Authorization': 'Bearer ' + Auth.getToken() }
         });

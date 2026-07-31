@@ -3,38 +3,36 @@
 
    In-memory cache + FastAPI backend.
    All reads are synchronous from cache.
-   All writes update cache immediately, then
-   push to API in the background.
+   Writes update the cache optimistically, then
+   resolve only after the API acknowledges them.
    ============================================ */
 
 const Storage = {
-  _apiUrl: 'https://saltallthethings.com/api',
-  _cache: {},               // in-memory data store
+  _apiUrl: '/api',
+  _cache: {},
+  _serverState: null,
   _ready: false,
-  _syncing: {},             // track in-flight saves per key
+  _revision: null,
+  _syncing: Promise.resolve(),
+  _writeGeneration: 0,
+  _pendingWrites: 0,
+  _statusTimer: null,
+  _beforeUnloadRegistered: false,
 
-  // ---- Initialization ----
+  // Full-array writes remain supported for ideas, jokes, slots, and
+  // assignments, but every mutation is serialized globally and guarded by
+  // the exact revision returned by /api/export. A stale page is reloaded and
+  // its queued writes are cancelled instead of overwriting newer server data.
   async init() {
     const token = this._getToken();
     if (!token) throw new Error('Not authenticated');
-
+    this._registerBeforeUnload();
     try {
-      const resp = await fetch(this._apiUrl + '/export', {
-        headers: { 'Authorization': 'Bearer ' + token }
-      });
-      if (resp.status === 401) throw new Error('Invalid credentials');
-      if (!resp.ok) throw new Error('API error: ' + resp.status);
-      const data = await resp.json();
-
-      // Populate cache
-      this._cache.config = data.config || null;
-      this._cache.ideas = data.ideas || [];
-      this._cache.jokes = data.jokes || [];
-      this._cache.showSlots = data.showSlots || [];
-      this._cache.assignments = data.assignments || {};
+      await this._reloadLatest();
       this._ready = true;
-
+      this._setStatus('saved', 'All changes saved');
     } catch (err) {
+      this._setStatus('failed', 'Unable to load saved data', () => this.init());
       console.error('Storage.init failed:', err);
       throw err;
     }
@@ -44,57 +42,199 @@ const Storage = {
     return typeof Auth !== 'undefined' ? Auth.getToken() : null;
   },
 
-  // ---- Core get/set (synchronous from cache) ----
+  _applyState(state) {
+    if (!state) return;
+    if (Object.prototype.hasOwnProperty.call(state, 'config')) this._cache.config = state.config || null;
+    if (Object.prototype.hasOwnProperty.call(state, 'ideas')) this._cache.ideas = state.ideas || [];
+    if (Object.prototype.hasOwnProperty.call(state, 'jokes')) this._cache.jokes = state.jokes || [];
+    if (Object.prototype.hasOwnProperty.call(state, 'showSlots')) this._cache.showSlots = state.showSlots || [];
+    if (Object.prototype.hasOwnProperty.call(state, 'assignments')) this._cache.assignments = state.assignments || {};
+    if (Number.isInteger(state.revision)) this._revision = state.revision;
+    if (Number.isInteger(state.revision)) {
+      this._serverState = {
+        config: this._clone(this._cache.config),
+        ideas: this._clone(this._cache.ideas),
+        jokes: this._clone(this._cache.jokes),
+        showSlots: this._clone(this._cache.showSlots),
+        assignments: this._clone(this._cache.assignments),
+        revision: this._revision
+      };
+    }
+  },
+
+  _restoreServerState() {
+    if (!this._serverState) return;
+    var canonical = this._clone(this._serverState);
+    this._cache.config = canonical.config;
+    this._cache.ideas = canonical.ideas;
+    this._cache.jokes = canonical.jokes;
+    this._cache.showSlots = canonical.showSlots;
+    this._cache.assignments = canonical.assignments;
+    this._revision = canonical.revision;
+  },
+
+  async _reloadLatest() {
+    const token = this._getToken();
+    if (!token) throw new Error('Not authenticated');
+    const resp = await fetch(this._apiUrl + '/export', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (resp.status === 401) throw new Error('Invalid credentials');
+    if (!resp.ok) throw new Error('API error: ' + resp.status);
+    const data = await resp.json();
+    this._applyState(data);
+    return data;
+  },
+
   get(key) {
     return this._cache[key] !== undefined ? this._cache[key] : null;
   },
 
-  set(key, value) {
+  async set(key, value) {
     this._cache[key] = value;
-    this._pushToApi(key, value);
-    return true;
+    try {
+      await this._enqueueMutation(
+        () => this._request('/data/' + key, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(value)
+        }),
+        () => this.set(key, value)
+      );
+      return true;
+    } catch (err) {
+      console.error('API save failed for', key, err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to save ' + key + ': ' + err.message);
+      return false;
+    }
   },
 
-  _pushToApi(key, value) {
-    const token = this._getToken();
-    if (!token) return;
-
-    // Debounce: if already saving this key, mark as dirty
-    if (this._syncing[key]) {
-      this._syncing[key].dirty = true;
-      this._syncing[key].value = value;
-      return;
-    }
-
-    this._syncing[key] = { dirty: false, value: value };
-
-    fetch(this._apiUrl + '/data/' + key, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify(value)
-    })
-    .then(resp => {
-      if (!resp.ok) console.error('API save failed for', key, resp.status);
-    })
-    .catch(err => console.error('API save error for', key, err))
-    .finally(() => {
-      const pending = this._syncing[key];
-      delete this._syncing[key];
-      // If more writes came in while we were saving, save again
-      if (pending && pending.dirty) {
-        this._pushToApi(key, pending.value);
+  _enqueueMutation(run, retry) {
+    var generation = this._writeGeneration;
+    this._pendingWrites += 1;
+    this._setStatus('saving', 'Saving changes…');
+    var prior = this._syncing || Promise.resolve();
+    var operation = prior.catch(function() {}).then(async () => {
+      if (generation !== this._writeGeneration) {
+        var cancelled = new Error('A previous save failed; review the latest data before retrying.');
+        cancelled.status = 409;
+        cancelled.cancelled = true;
+        throw cancelled;
+      }
+      return run();
+    }).then((body) => {
+      this._applyState(body.state || body);
+      return body;
+    }).catch(async (err) => {
+      if (!err.cancelled) this._writeGeneration += 1;
+      if (err.status === 409 && !err.cancelled) {
+        try {
+          await this._reloadLatest();
+          this._setStatus('conflict', 'Newer server data loaded. Review your change and save again.');
+        } catch (reloadError) {
+          this._restoreServerState();
+          this._setStatus('failed', 'Conflict detected; reload failed', () => this._reloadLatest());
+        }
+      } else {
+        this._restoreServerState();
+        if (!err.cancelled) this._setStatus('failed', 'Save failed', retry);
+      }
+      throw err;
+    }).finally(() => {
+      this._pendingWrites = Math.max(0, this._pendingWrites - 1);
+      if (this._pendingWrites === 0 && generation === this._writeGeneration) {
+        this._setStatus('saved', 'All changes saved');
       }
     });
+    this._syncing = operation;
+    return operation;
   },
 
+  async _request(path, options) {
+    const token = this._getToken();
+    if (!token) throw new Error('Not authenticated');
+    var requestOptions = Object.assign({}, options || {});
+    requestOptions.headers = Object.assign(
+      { 'Authorization': 'Bearer ' + token },
+      requestOptions.headers || {}
+    );
+    if (requestOptions.method && requestOptions.method !== 'GET') {
+      if (!Number.isInteger(this._revision)) throw new Error('Data revision is unavailable; reload before saving.');
+      requestOptions.headers['If-Match'] = String(this._revision);
+    }
+    var resp = await fetch(this._apiUrl + path, requestOptions);
+    var body = await resp.json().catch(function() { return {}; });
+    if (!resp.ok) {
+      var detail = body.detail;
+      var message = detail && typeof detail === 'object' ? detail.message : detail;
+      var error = new Error(message || body.error || ('API error: ' + resp.status));
+      error.status = resp.status;
+      error.detail = detail;
+      throw error;
+    }
+    return body;
+  },
+
+  _ensureStatusElement() {
+    if (typeof document === 'undefined' || !document.body) return null;
+    var element = document.getElementById('save-status');
+    if (element) return element;
+    element = document.createElement('div');
+    element.id = 'save-status';
+    element.className = 'save-status saved';
+    element.setAttribute('role', 'status');
+    element.setAttribute('aria-live', 'polite');
+    document.body.appendChild(element);
+    return element;
+  },
+
+  _setStatus(kind, message, retry) {
+    var element = this._ensureStatusElement();
+    if (!element) return;
+    if (this._statusTimer) {
+      clearTimeout(this._statusTimer);
+      this._statusTimer = null;
+    }
+    element.className = 'save-status ' + kind;
+    element.textContent = message;
+    if (retry) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = 'Retry';
+      button.addEventListener('click', () => {
+        button.disabled = true;
+        retry();
+      });
+      element.appendChild(button);
+    }
+    if (kind === 'saved') {
+      this._statusTimer = setTimeout(function() {
+        element.classList.add('quiet');
+      }, 2500);
+    }
+  },
+
+  _registerBeforeUnload() {
+    if (this._beforeUnloadRegistered || typeof window === 'undefined') return;
+    window.addEventListener('beforeunload', (event) => {
+      if (this._pendingWrites <= 0) return;
+      event.preventDefault();
+      event.returnValue = '';
+    });
+    this._beforeUnloadRegistered = true;
+  },
+
+  _clone(value) {
+    return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+  },
   // ---- Config ----
   getConfig() {
     var stored = this.get('config');
     var defaults = {
       aiModel: 'claude',
-      claudeApiKey: '',
+      claudeApiKeyConfigured: false,
       claudeModelId: 'claude-sonnet-4-5-20250929',
-      openaiApiKey: '',
+      openaiApiKeyConfigured: false,
       openaiModelId: 'gpt-4o',
       titleCount: 3,
       jokeCount: 5,
@@ -147,16 +287,19 @@ const Storage = {
   },
 
   addJoke(joke) {
-    var jokes = this.getJokes();
+    var jokes = this._clone(this.getJokes());
     jokes.push(joke);
     return this.saveJokes(jokes);
   },
 
   updateJoke(jokeId, updates) {
-    var jokes = this.getJokes();
+    var jokes = this._clone(this.getJokes());
     var idx = jokes.findIndex(function(j) { return j.id === jokeId; });
     if (idx !== -1) {
       Object.assign(jokes[idx], updates);
+      if (updates.status && updates.status !== 'used') {
+        jokes[idx].usedByIdeaId = null;
+      }
       return this.saveJokes(jokes);
     }
     return false;
@@ -175,23 +318,36 @@ const Storage = {
     return this.getJokes().filter(function(j) { return j.status === 'used'; });
   },
 
-  markJokeUsed(jokeId, ideaId) {
-    return this.updateJoke(jokeId, { status: 'used', usedByIdeaId: ideaId });
+  async assignJokeToIdea(jokeId, ideaId) {
+    try {
+      await this._enqueueMutation(
+        () => this._request('/jokes/' + encodeURIComponent(jokeId) + '/assignment', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ideaId: ideaId })
+        }),
+        () => this.assignJokeToIdea(jokeId, ideaId)
+      );
+      return true;
+    } catch (err) {
+      console.error('Joke assignment failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to assign joke: ' + err.message);
+      return false;
+    }
   },
 
-  markJokeUnused(jokeId) {
-    return this.updateJoke(jokeId, { status: 'unused', usedByIdeaId: null });
-  },
-
-  freeJokesForIdea(ideaId) {
-    var jokes = this.getJokes();
-    jokes.forEach(function(j) {
-      if (j.usedByIdeaId === ideaId) {
-        j.status = 'unused';
-        j.usedByIdeaId = null;
-      }
-    });
-    return this.saveJokes(jokes);
+  async freeJoke(jokeId) {
+    try {
+      await this._enqueueMutation(
+        () => this._request('/jokes/' + encodeURIComponent(jokeId) + '/assignment', { method: 'DELETE' }),
+        () => this.freeJoke(jokeId)
+      );
+      return true;
+    } catch (err) {
+      console.error('Free joke failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to free joke: ' + err.message);
+      return false;
+    }
   },
 
   getJokeForIdea(ideaId) {
@@ -208,13 +364,13 @@ const Storage = {
   },
 
   addIdea(idea) {
-    var ideas = this.getIdeas();
+    var ideas = this._clone(this.getIdeas());
     ideas.push(idea);
     return this.saveIdeas(ideas);
   },
 
   updateIdea(ideaId, updates) {
-    var ideas = this.getIdeas();
+    var ideas = this._clone(this.getIdeas());
     var idx = ideas.findIndex(function(i) { return i.id === ideaId; });
     if (idx !== -1) {
       Object.assign(ideas[idx], updates);
@@ -223,9 +379,18 @@ const Storage = {
     return false;
   },
 
-  deleteIdea(ideaId) {
-    var ideas = this.getIdeas().filter(function(i) { return i.id !== ideaId; });
-    return this.saveIdeas(ideas);
+  async deleteIdea(ideaId) {
+    try {
+      await this._enqueueMutation(
+        () => this._request('/ideas/' + encodeURIComponent(ideaId), { method: 'DELETE' }),
+        () => this.deleteIdea(ideaId)
+      );
+      return true;
+    } catch (err) {
+      console.error('Delete idea failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to delete idea: ' + err.message);
+      return false;
+    }
   },
 
   // ---- Show Slots ----
@@ -246,23 +411,36 @@ const Storage = {
     return this.set('assignments', assignments);
   },
 
-  assignIdeaToSlot(ideaId, slotId) {
-    var assignments = this.getAssignments();
-    for (var sid in assignments) {
-      if (assignments[sid] === ideaId) delete assignments[sid];
+  async assignIdeaToSlot(ideaId, slotId) {
+    try {
+      await this._enqueueMutation(
+        () => this._request('/schedule/' + encodeURIComponent(slotId) + '/assignment', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ideaId: ideaId })
+        }),
+        () => this.assignIdeaToSlot(ideaId, slotId)
+      );
+      return true;
+    } catch (err) {
+      console.error('Schedule assignment failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to schedule idea: ' + err.message);
+      return false;
     }
-    assignments[slotId] = ideaId;
-    this.saveAssignments(assignments);
-    this.updateIdea(ideaId, { status: 'scheduled' });
   },
 
-  unassignSlot(slotId) {
-    var assignments = this.getAssignments();
-    var ideaId = assignments[slotId];
-    if (ideaId) {
-      delete assignments[slotId];
-      this.saveAssignments(assignments);
-      this.updateIdea(ideaId, { status: 'processed' });
+  async unassignSlot(slotId) {
+    if (!this.getAssignments()[slotId]) return true;
+    try {
+      await this._enqueueMutation(
+        () => this._request('/schedule/' + encodeURIComponent(slotId) + '/assignment', { method: 'DELETE' }),
+        () => this.unassignSlot(slotId)
+      );
+      return true;
+    } catch (err) {
+      console.error('Schedule unassignment failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to unschedule idea: ' + err.message);
+      return false;
     }
   },
 
@@ -294,11 +472,25 @@ const Storage = {
     };
   },
 
-  importAll(data) {
-    if (data.config) this.saveConfig(data.config);
-    if (data.ideas) this.saveIdeas(data.ideas);
-    if (data.jokes) this.saveJokes(data.jokes);
-    if (data.showSlots) this.saveShowSlots(data.showSlots);
-    if (data.assignments) this.saveAssignments(data.assignments);
+  async importAll(data) {
+    var payload = {};
+    ['config', 'ideas', 'jokes', 'showSlots', 'assignments'].forEach(function(key) {
+      if (Object.prototype.hasOwnProperty.call(data, key)) payload[key] = data[key];
+    });
+    try {
+      await this._enqueueMutation(
+        () => this._request('/import', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }),
+        () => this.importAll(payload)
+      );
+      return true;
+    } catch (err) {
+      console.error('Import failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to import data: ' + err.message);
+      return false;
+    }
   }
 };

@@ -8,12 +8,14 @@ from typing import Optional
 
 from sqlalchemy import (
     Boolean,
+    BigInteger,
     CheckConstraint,
     Date,
     ForeignKey,
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
@@ -88,6 +90,24 @@ class Config(Base):
 
 
 # ---------------------------------------------------------------------------
+# satt.data_revision
+# ---------------------------------------------------------------------------
+
+
+class DataRevision(Base):
+    __tablename__ = "data_revision"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="single_row"),
+        {"schema": "satt"},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, server_default="1")
+    revision: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default="0"
+    )
+
+
+# ---------------------------------------------------------------------------
 # satt.ideas
 # ---------------------------------------------------------------------------
 
@@ -104,6 +124,8 @@ class Idea(Base):
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="'draft'")
     image_file_id: Mapped[Optional[str]] = mapped_column(Text)
     raw_notes: Mapped[Optional[str]] = mapped_column(Text)
+    ai_provider: Mapped[Optional[str]] = mapped_column(Text)
+    ai_model_id: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )
@@ -122,11 +144,23 @@ class Idea(Base):
 
 class Joke(Base):
     __tablename__ = "jokes"
-    __table_args__ = {"schema": "satt"}
+    __table_args__ = (
+        UniqueConstraint("used_by_idea_id", name="uq_jokes_used_by_idea_id"),
+        CheckConstraint(
+            "status IN ('unused', 'used', 'retired')",
+            name="jokes_valid_status",
+        ),
+        CheckConstraint(
+            "(status = 'used' AND used_by_idea_id IS NOT NULL) OR "
+            "(status <> 'used' AND used_by_idea_id IS NULL)",
+            name="jokes_assignment_matches_status",
+        ),
+        {"schema": "satt"},
+    )
 
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="'active'")
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="'unused'")
     source: Mapped[str] = mapped_column(Text, nullable=False, server_default="'manual'")
     used_by_idea_id: Mapped[Optional[str]] = mapped_column(
         Text, ForeignKey("satt.ideas.id", ondelete="SET NULL")
@@ -168,7 +202,10 @@ class ShowSlot(Base):
 
 class Assignment(Base):
     __tablename__ = "assignments"
-    __table_args__ = {"schema": "satt"}
+    __table_args__ = (
+        UniqueConstraint("idea_id", name="uq_assignments_idea_id"),
+        {"schema": "satt"},
+    )
 
     slot_id: Mapped[str] = mapped_column(
         Text, ForeignKey("satt.show_slots.id", ondelete="CASCADE"), primary_key=True

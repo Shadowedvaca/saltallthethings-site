@@ -729,3 +729,37 @@ select {
     gap: var(--space-md);
   }
 }
+
+/* Persistent write state for conflict-safe browser saves. */
+.save-status {
+  position: fixed;
+  right: var(--space-md);
+  bottom: var(--space-md);
+  z-index: 100000;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  max-width: min(420px, calc(100vw - 2 * var(--space-md)));
+  padding: 10px 14px;
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  font-size: 0.82rem;
+  transition: opacity var(--transition-default);
+}
+.save-status.saving { border-color: var(--gold); }
+.save-status.saved { border-color: #4f8a63; }
+.save-status.conflict,
+.save-status.failed { border-color: #c75b5b; }
+.save-status.quiet { opacity: 0.45; }
+.save-status button {
+  padding: 4px 9px;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.save-status button:disabled { opacity: 0.5; cursor: wait; }

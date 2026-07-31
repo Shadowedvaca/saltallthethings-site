@@ -3,6 +3,9 @@
 import pytest
 from httpx import AsyncClient
 
+from satt.config import get_settings
+from satt.version import APP_VERSION
+
 
 @pytest.mark.asyncio
 async def test_health_returns_ok(client: AsyncClient):
@@ -10,7 +13,12 @@ async def test_health_returns_ok(client: AsyncClient):
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
+    assert body["environment"] == get_settings().environment
+    assert body["version"] == APP_VERSION
+    assert body["commit"] == get_settings().commit_sha
     assert "timestamp" in body
+
+    assert set(body) == {"status", "environment", "version", "commit", "timestamp"}
 
 
 @pytest.mark.asyncio

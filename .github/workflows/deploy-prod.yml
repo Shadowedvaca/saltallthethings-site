@@ -1,0 +1,275 @@
+name: Deploy production
+
+"on":
+  push:
+    tags:
+      - "prod-v*"
+
+permissions: {}
+
+concurrency:
+  group: satt-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy validated production tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      contents: read
+    outputs:
+      release_sha: ${{ steps.release.outputs.sha }}
+      release_tag: ${{ steps.release.outputs.tag }}
+    env:
+      PROD_HOST: ${{ secrets.PROD_HOST }}
+
+    steps:
+      - name: Check out immutable production tag
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Validate release and immutable commit
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_TYPE" = "tag"
+          python scripts/validate_release.py \
+            --tag "$GITHUB_REF_NAME" \
+            --github-output "$GITHUB_OUTPUT"
+          sha="$(git rev-parse HEAD)"
+          tag_sha="$(git rev-list -n 1 "$GITHUB_REF_NAME")"
+          test "$sha" = "$GITHUB_SHA"
+          test "$sha" = "$tag_sha"
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$sha" origin/main
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Configure strict SSH trust
+        shell: bash
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          PROD_SSH_KNOWN_HOSTS: ${{ secrets.PROD_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$PROD_HOST"
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$PROD_SSH_KNOWN_HOSTS"
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/deploy_key"
+          printf '%s\n' "$PROD_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/deploy_key" "$HOME/.ssh/known_hosts"
+          ssh-keygen -F "$PROD_HOST" -f "$HOME/.ssh/known_hosts" >/dev/null
+
+      - name: Deploy production release
+        shell: bash
+        env:
+          DEPLOY_SHA: ${{ steps.release.outputs.sha }}
+          DEPLOY_TAG: ${{ steps.release.outputs.tag }}
+          DEPLOY_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          ssh \
+            -i "$HOME/.ssh/deploy_key" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "root@$PROD_HOST" \
+            "bash -s -- '$DEPLOY_SHA' '$DEPLOY_TAG' '$DEPLOY_VERSION'" <<'REMOTE'
+          set -euo pipefail
+
+          deploy_sha="$1"
+          deploy_tag="$2"
+          expected_version="$3"
+          repository="/opt/satt-platform"
+          environment_file="$repository/.env.production"
+          state_dir="$repository/.production-state"
+          systemd_service="satt"
+          current_runtime=""
+          previous_sha=""
+          previous_image=""
+          cutover_started="false"
+
+          printf '%s\n' "$deploy_sha" | grep -Eq '^[0-9a-f]{40}$'
+          printf '%s\n' "$deploy_tag" | grep -Eq '^prod-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          test "$deploy_tag" = "prod-v$expected_version"
+          test -d "$repository/.git"
+          test -f "$environment_file"
+          test "$(stat -c '%a' "$environment_file")" = "600"
+          for command in docker git curl python3 pg_dump pg_restore systemctl; do
+            command -v "$command" >/dev/null
+          done
+
+          cd "$repository"
+          previous_sha="$(git rev-parse HEAD)"
+          git fetch --tags --no-force origin "$deploy_tag"
+          test "$(git rev-list -n 1 "$deploy_tag")" = "$deploy_sha"
+          git checkout --detach "$deploy_tag"
+          test "$(git rev-parse HEAD)" = "$deploy_sha"
+          test "$(tr -d '\r\n' < VERSION)" = "$expected_version"
+
+          compose() {
+            COMMIT_SHA="$deploy_sha" \
+              SATT_IMAGE="satt:production-$deploy_sha" \
+              docker compose \
+                --env-file "$environment_file" \
+                -f compose.production.yaml \
+                "$@"
+          }
+
+          compose config --quiet
+          database_host="$(
+            set -a
+            . "$environment_file"
+            set +a
+            python3 -c 'import os; from urllib.parse import urlsplit; print(urlsplit(os.environ["DATABASE_URL"].replace("postgresql+asyncpg://", "postgresql://", 1)).hostname or "")'
+          )"
+          test "$database_host" = "host.docker.internal"
+
+          if systemctl is-active --quiet "$systemd_service"; then
+            current_runtime="systemd"
+          elif docker ps --format '{{.Names}}' | grep -qx satt-production-app; then
+            current_runtime="container"
+            previous_image="$(docker inspect --format '{{.Config.Image}}' satt-production-app)"
+            printf '%s\n' "$previous_image" | grep -Eq '^satt:production-[0-9a-f]{40}$'
+          else
+            echo "ERROR: no recognized SATT production runtime is active"
+            exit 1
+          fi
+
+          set -a
+          . "$environment_file"
+          set +a
+          python3 scripts/production_backup.py --tag "$deploy_tag"
+
+          compose build --pull app
+
+          pre_fingerprint="$(
+            compose run --rm --no-deps --entrypoint python app \
+              -m satt.scripts.production_fingerprint \
+              < /dev/null
+          )"
+
+          recover() {
+            status="$?"
+            trap - EXIT
+            if test "$status" -eq 0 || test "$cutover_started" != "true"; then
+              exit "$status"
+            fi
+            echo "Production verification failed; restoring the prior runtime"
+            compose down --remove-orphans || true
+            if test "$current_runtime" = "systemd"; then
+              git checkout --detach "$previous_sha" || true
+              systemctl start "$systemd_service" || true
+            elif test -n "$previous_image"; then
+              COMMIT_SHA="${previous_image#satt:production-}" \
+                SATT_IMAGE="$previous_image" \
+                docker compose \
+                  --env-file "$environment_file" \
+                  -f compose.production.yaml \
+                  up -d --wait --no-build app || true
+            fi
+            exit "$status"
+          }
+          trap recover EXIT
+
+          if test "$current_runtime" = "systemd"; then
+            systemctl stop "$systemd_service"
+          else
+            docker stop satt-production-app >/dev/null
+          fi
+          cutover_started="true"
+
+          compose up -d --wait --remove-orphans app
+          compose exec -T app alembic current --check-heads < /dev/null
+
+          post_fingerprint="$(
+            compose exec -T app python -m satt.scripts.production_fingerprint < /dev/null
+          )"
+          test "$pre_fingerprint" = "$post_fingerprint"
+          echo "Production authentication and data fingerprints match"
+
+          local_health="$(
+            curl --fail --silent --show-error \
+              --retry 6 --retry-delay 2 --retry-connrefused \
+              http://127.0.0.1:8200/api/health
+          )"
+          printf '%s' "$local_health" | python3 -c \
+            'import json,sys; version,commit=sys.argv[1:3]; data=json.load(sys.stdin); assert data["status"]=="ok"; assert data["environment"]=="production"; assert data["version"]==version; assert data["commit"]==commit' \
+            "$expected_version" \
+            "$deploy_sha"
+
+          public_health="$(
+            curl --fail --silent --show-error \
+              --retry 6 --retry-delay 2 --retry-connrefused \
+              https://saltallthethings.com/api/health
+          )"
+          printf '%s' "$public_health" | python3 -c \
+            'import json,sys; version,commit=sys.argv[1:3]; data=json.load(sys.stdin); assert data["status"]=="ok"; assert data["environment"]=="production"; assert data["version"]==version; assert data["commit"]==commit' \
+            "$expected_version" \
+            "$deploy_sha"
+
+          install -d -m 0700 "$state_dir"
+          if test "$current_runtime" = "systemd"; then
+            git checkout --detach "$previous_sha"
+          fi
+          printf '%s\n' "$deploy_sha" > "$state_dir/current-commit"
+          printf '%s\n' "$deploy_tag" > "$state_dir/current-tag"
+          printf '%s\n' "$current_runtime" > "$state_dir/rollback-runtime"
+          printf '%s\n' "$previous_sha" > "$state_dir/rollback-commit"
+          if test -n "$previous_image"; then
+            printf '%s\n' "$previous_image" > "$state_dir/rollback-image"
+          fi
+          chmod 0600 "$state_dir"/*
+
+          trap - EXIT
+          echo "Production deploy verified at commit $deploy_sha"
+          REMOTE
+
+      - name: Verify public production health
+        shell: bash
+        env:
+          DEPLOY_SHA: ${{ steps.release.outputs.sha }}
+          DEPLOY_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --retry 10 --retry-delay 3 --retry-connrefused \
+            https://saltallthethings.com/api/health \
+            | python -c \
+              'import json,sys; version,commit=sys.argv[1:3]; data=json.load(sys.stdin); assert data["status"]=="ok"; assert data["environment"]=="production"; assert data["version"]==version; assert data["commit"]==commit' \
+              "$DEPLOY_VERSION" \
+              "$DEPLOY_SHA"
+
+      - name: Collect bounded diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh \
+            -i "$HOME/.ssh/deploy_key" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "root@$PROD_HOST" \
+            "docker ps --filter name=satt-production-app && docker logs --tail 100 satt-production-app" \
+            || true
+
+      - name: Remove runner SSH material
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/deploy_key" "$HOME/.ssh/known_hosts"
+
+  publish:
+    name: Publish verified production release
+    needs: deploy
+    permissions:
+      contents: write
+    uses: ./.github/workflows/publish-release.yml
+    with:
+      release_sha: ${{ needs.deploy.outputs.release_sha }}
+      release_tag: ${{ needs.deploy.outputs.release_tag }}

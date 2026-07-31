@@ -215,6 +215,15 @@
 
     async function generateJokes() {
       var theme = document.getElementById('jokeTheme').value.trim();
+      var config = Storage.getConfig();
+      if (config.aiModel === 'claude' && !config.claudeApiKeyConfigured) {
+        Toast.error('Claude API key not set. Go to Config.');
+        return;
+      }
+      if (config.aiModel === 'openai' && !config.openaiApiKeyConfigured) {
+        Toast.error('OpenAI API key not set. Go to Config.');
+        return;
+      }
       document.getElementById('genOverlay').classList.remove('hidden');
       document.getElementById('genBtn').disabled = true;
 
@@ -234,16 +243,16 @@
       }
     }
 
-    function acceptSuggestion(el, idx) {
+    async function acceptSuggestion(el, idx) {
       const text = el.dataset.text;
-      Storage.addJoke({
+      if (!await Storage.addJoke({
         id: Storage.generateId(),
         text: text,
         status: 'unused',
         source: 'ai-generated',
         usedByIdeaId: null,
         createdAt: new Date().toISOString()
-      });
+      })) return;
       el.style.opacity = '0.3';
       el.style.pointerEvents = 'none';
       el.innerHTML += ' <span style="color: var(--status-scheduled); font-weight: 600;">✓ Added</span>';
@@ -251,17 +260,17 @@
       Toast.success('Joke added to bank!');
     }
 
-    function addManualJoke() {
+    async function addManualJoke() {
       const text = document.getElementById('manualJoke').value.trim();
       if (!text) { Toast.error('Write a joke first!'); return; }
-      Storage.addJoke({
+      if (!await Storage.addJoke({
         id: Storage.generateId(),
         text: text,
         status: 'unused',
         source: 'manual',
         usedByIdeaId: null,
         createdAt: new Date().toISOString()
-      });
+      })) return;
       document.getElementById('manualJoke').value = '';
       renderJokes();
       Toast.success('Joke added!');
@@ -286,18 +295,29 @@
       document.getElementById('joke-edit-actions-' + id).classList.add('hidden');
     }
 
-    function saveJokeEdit(id) {
+    async function saveJokeEdit(id) {
       var newText = document.getElementById('joke-edit-' + id).value.trim();
       if (!newText) { Toast.error('Joke text cannot be empty.'); return; }
-      Storage.updateJoke(id, { text: newText });
+      if (!await Storage.updateJoke(id, { text: newText })) return;
       renderJokes();
       Toast.success('Joke updated.');
     }
 
-    function retireJoke(id) { Storage.updateJoke(id, { status: 'retired' }); renderJokes(); }
-    function unretireJoke(id) { Storage.updateJoke(id, { status: 'unused' }); renderJokes(); }
-    function freeJoke(id) { Storage.markJokeUnused(id); renderJokes(); }
-    function deleteJokeItem(id) { if (confirm('Delete this joke?')) { Storage.deleteJoke(id); renderJokes(); Toast.info('Joke deleted.'); } }
+    async function retireJoke(id) {
+      if (await Storage.updateJoke(id, { status: 'retired' })) renderJokes();
+    }
+    async function unretireJoke(id) {
+      if (await Storage.updateJoke(id, { status: 'unused' })) renderJokes();
+    }
+    async function freeJoke(id) {
+      if (await Storage.freeJoke(id)) renderJokes();
+    }
+    async function deleteJokeItem(id) {
+      if (confirm('Delete this joke?') && await Storage.deleteJoke(id)) {
+        renderJokes();
+        Toast.info('Joke deleted.');
+      }
+    }
 
     function formatDate(iso) {
       if (!iso) return '';

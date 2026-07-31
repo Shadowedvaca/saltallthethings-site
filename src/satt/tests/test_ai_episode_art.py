@@ -162,33 +162,47 @@ async def test_generate_episode_art_saves_image_file_id(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_generate_episode_art_deletes_old_file_on_regeneration(client: AsyncClient):
-    """When album_art.drive_file_id exists in asset_inventory, it should be deleted first."""
+async def test_generate_episode_art_archives_old_file_on_regeneration(client: AsyncClient):
+    """Existing album art should be moved into the episode archive folder."""
     app.dependency_overrides[get_db] = _override_get_db
-    deleted_ids: list = []
+    moved_files: list[dict] = []
 
-    async def capture_delete(token, file_id):
-        deleted_ids.append(file_id)
+    async def capture_move(token, file_id, new_parent_id, old_parent_id, new_name):
+        moved_files.append({
+            "fileId": file_id,
+            "newParentId": new_parent_id,
+            "oldParentId": old_parent_id,
+            "newName": new_name,
+        })
 
     with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=_fake_config())):
         with patch("satt.routes.ai.get_idea_and_slot", new=AsyncMock(return_value=(_FakeIdea(), _FakeSlotWithExistingArt()))):
             with patch("satt.routes.ai.call_gpt_image_1", new=AsyncMock(return_value=_FAKE_PNG)):
                 with patch("satt.routes.ai.get_settings", return_value=_fake_settings()):
                     with patch("satt.routes.ai.get_drive_access_token", new=AsyncMock(return_value="fake-token")):
-                        with patch("satt.routes.ai.delete_file", new=capture_delete):
-                            with patch("satt.routes.ai.upload_file_to_folder", new=AsyncMock(return_value=_NEW_FILE_ID)):
-                                with patch("satt.routes.ai.set_idea_image_file_id", new=AsyncMock()):
-                                    with patch("satt.routes.ai.build_asset_inventory", new=AsyncMock(return_value=_FAKE_INVENTORY)):
-                                        with patch("satt.routes.ai.set_asset_inventory", new=AsyncMock()):
-                                            resp = await client.post(
-                                                "/api/ai/generate-episode-art",
-                                                json={"ideaId": "idea-1", "imagePrompt": "Regenerated scene."},
-                                                headers=_auth_headers(),
-                                            )
+                        with patch("satt.routes.ai.find_or_create_folder", new=AsyncMock(return_value="archive-folder-id")):
+                            with patch("satt.routes.ai.move_file", new=capture_move):
+                                with patch("satt.routes.ai.upload_file_to_folder", new=AsyncMock(return_value=_NEW_FILE_ID)):
+                                    with patch("satt.routes.ai.set_idea_image_file_id", new=AsyncMock()):
+                                        with patch("satt.routes.ai.build_asset_inventory", new=AsyncMock(return_value=_FAKE_INVENTORY)):
+                                            with patch("satt.routes.ai.set_asset_inventory", new=AsyncMock()):
+                                                resp = await client.post(
+                                                    "/api/ai/generate-episode-art",
+                                                    json={"ideaId": "idea-1", "imagePrompt": "Regenerated scene."},
+                                                    headers=_auth_headers(),
+                                                )
 
     app.dependency_overrides.clear()
     assert resp.status_code == 200
-    assert "old-art-file-id" in deleted_ids
+    assert len(moved_files) == 1
+    moved_file = moved_files[0]
+    assert moved_file["fileId"] == "old-art-file-id"
+    assert moved_file["newParentId"] == "archive-folder-id"
+    assert moved_file["oldParentId"] == "fake-episode-folder-id"
+    assert moved_file["newName"].startswith(
+        "Cover_Art_EP042_War-Within-Seasons-Ranked_2026-03-06_"
+    )
+    assert moved_file["newName"].endswith(".png")
 
 
 @pytest.mark.asyncio

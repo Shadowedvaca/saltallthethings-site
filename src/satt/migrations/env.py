@@ -8,7 +8,7 @@ from pathlib import Path
 
 from alembic import context
 from dotenv import load_dotenv
-from sqlalchemy import pool
+from sqlalchemy import pool, text
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 # Load .env from project root
@@ -47,6 +47,10 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection):
+    # Alembic creates its version table before running revision 0001. Ensure the
+    # namespace exists on a completely fresh database so that version tracking
+    # can be created inside the application schema.
+    connection.execute(text("CREATE SCHEMA IF NOT EXISTS satt"))
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
@@ -63,7 +67,7 @@ async def run_async_migrations() -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-    async with connectable.connect() as connection:
+    async with connectable.begin() as connection:
         await connection.run_sync(do_run_migrations)
     await connectable.dispose()
 

@@ -22,6 +22,8 @@ def serialize_idea(row: Any) -> dict:
         "status": row.status,
         "imageFileId": row.image_file_id,
         "rawNotes": row.raw_notes,
+        "aiProvider": row.ai_provider,
+        "aiModelId": row.ai_model_id,
         "createdAt": _iso(row.created_at),
         "updatedAt": _iso(row.updated_at),
     }

@@ -1,0 +1,31 @@
+name: satt-test
+
+services:
+  database:
+    environment:
+      POSTGRES_DB: ${SATT_DB_NAME:?SATT_DB_NAME is required}
+      POSTGRES_USER: ${SATT_DB_USER:?SATT_DB_USER is required}
+      POSTGRES_PASSWORD: ${SATT_DB_PASSWORD:?SATT_DB_PASSWORD is required}
+
+  app:
+    image: satt:test
+    ports:
+      - "127.0.0.1:${SATT_APP_PORT:?SATT_APP_PORT is required}:8200"
+    environment:
+      ENVIRONMENT: test
+      DATABASE_ENVIRONMENT: test
+      SATT_DB_NAME: ${SATT_DB_NAME:?SATT_DB_NAME is required}
+      SATT_DB_USER: ${SATT_DB_USER:?SATT_DB_USER is required}
+      SATT_DB_PASSWORD: ${SATT_DB_PASSWORD:?SATT_DB_PASSWORD is required}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      SITE_URL: https://test.saltallthethings.com
+      CORS_ORIGINS: https://test.saltallthethings.com
+      COMMIT_SHA: ${COMMIT_SHA:?COMMIT_SHA is required}
+      GOOGLE_OAUTH_CLIENT_ID: ""
+      GOOGLE_OAUTH_CLIENT_SECRET: ""
+      GOOGLE_OAUTH_REFRESH_TOKEN: ""
+      ALLOW_NONPRODUCTION_EXTERNAL_SERVICES: "false"
+
+volumes:
+  satt_postgres:
+    name: satt-test-postgres
