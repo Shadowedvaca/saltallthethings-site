@@ -349,9 +349,25 @@ async def run_smoke(
                 "health commit does not match",
             )
 
-            for path in ("/", "/register.html", "/public/homepage"):
+            for path in (
+                "/",
+                "/register.html",
+                "/songs.html",
+                "/js/songs.js",
+                "/public/homepage",
+            ):
                 response = await client.get(path)
                 _expect_status(response, 200, f"public route {path}")
+                if path == "/songs.html":
+                    _require(
+                        "Song Bank" in response.text and "js/songs.js" in response.text,
+                        "deployed Song Bank page is incomplete",
+                    )
+                elif path == "/js/songs.js":
+                    _require(
+                        "validateSongInput" in response.text,
+                        "deployed Song Bank script is incomplete",
+                    )
 
             unauthorized = await client.get("/api/export")
             _expect_status(unauthorized, 401, "unauthenticated export")
