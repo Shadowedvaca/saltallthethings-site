@@ -112,7 +112,8 @@ Do not touch configs, units, or files belonging to other sites.
 - `scripts/container-entrypoint.sh` validates environment/data ownership, runs
   `alembic upgrade head`, and then starts FastAPI.
 - `compose.yaml` plus the local/development/test override selects isolated
-  non-production storage; `compose.production.yaml` never provisions a database.
+  non-production storage; `compose.production.yaml` defines a private application
+  and PostgreSQL pair with its own named production volume and no database port.
 - The image contains the explicitly public frontend and backend from one commit
   and runs as an unprivileged user.
 - Never print expanded Compose configuration because it may contain secrets.
@@ -281,7 +282,13 @@ runs only from an explicitly approved validated `prod-vX.Y.Z` tag through
 Stored separately for each environment in its server-side `.env`:
 
 ```
-DATABASE_URL=<environment-specific database URL>
+DATABASE_URL=<environment-specific non-production database URL>
+LEGACY_DATABASE_URL=<first-cutover host source; production operator only>
+SATT_DB_HOST=<private Compose database service in production>
+SATT_DB_PORT=5432
+SATT_DB_NAME=<environment-specific database name>
+SATT_DB_USER=<environment-specific database role>
+SATT_DB_PASSWORD=<environment-specific database credential>
 SECRET_KEY=<hex string — generate with: openssl rand -hex 32>
 ENVIRONMENT=<local|development|test|production>
 DATABASE_ENVIRONMENT=<must match ENVIRONMENT>
@@ -355,22 +362,25 @@ API calls in tests.
 
 ### Database backups
 
-Automated nightly backup runs at 03:00 UTC via `/etc/cron.d/satt-backup`:
-- Script: `/usr/local/bin/satt-backup.sh`
-- Output: `/opt/backups/satt-db/satt_db_YYYY-MM-DD_HHMM.sql.gz`
-- Retention: 14 days
+After the 0.0.2 container cutover, the 03:00 UTC entry in
+`/etc/cron.d/satt-backup` invokes
+`/opt/satt-platform/scripts/production_nightly_backup.sh`:
 
-**To restore from backup:**
-```bash
-# List available backups
-ls /opt/backups/satt-db/
+- output is a mode-`0600`, SATT-schema-only custom dump under
+  `/opt/backups/satt-db/nightly/`;
+- every dump must pass `pg_restore --list` and reports filename and SHA-256 only;
+- retention is 14 days; and
+- the prior host-database cron and script remain available throughout the
+  rollback window.
 
-# Restore (drops and recreates satt schema)
-sudo -u postgres dropdb satt_db && sudo -u postgres createdb satt_db
-zcat /opt/backups/satt-db/satt_db_YYYY-MM-DD_HHMM.sql.gz | psql "postgresql://satt_user:...@localhost/satt_db"
-sudo systemctl restart satt
-```
+Before the first cutover, the legacy host backup remains active. The release
+workflow creates separate verified `preflight` and stopped-runtime `final`
+dumps under `/opt/backups/satt-db/releases/`.
 
+Restoring a dump, deleting a production volume, or removing the unchanged host
+database is destructive and always requires separate approval against the exact
+failed state. Follow `docs/production-cutover.md`; never place a connection value
+or credential in a command transcript.
 ### Restart the service
 ```bash
 sudo systemctl restart satt

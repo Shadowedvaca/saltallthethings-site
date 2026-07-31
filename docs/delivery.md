@@ -32,7 +32,7 @@ directory. It may not prune shared Docker state or operate on test or
 production.
 
 The public and local health checks must both report environment `development`,
-version `0.0.1`, and the exact resolved commit. One-time server, DNS, TLS,
+version `0.0.2`, and the exact resolved commit. One-time server, DNS, TLS,
 GitHub environment, and secret provisioning requires explicit authorization.
 The detailed bootstrap, validation, cleanup, and rollback procedure is in
 `docs/development-environment.md`.
@@ -67,13 +67,14 @@ curated notes, exact tag target, and `main` ancestry, and uses the protected
 GitHub `production` environment. It checks out the immutable tag and deploys the
 frontend and backend together from the same standalone production image.
 
-The production Compose definition contains only the stable
-`satt-production-app` container and connects to the preserved host database; it
-must never be combined with the base Compose database definition. The workflow
-verifies a secret-safe custom-format backup, compares one-way authentication and
-stable-data fingerprints across migrations, checks migration heads and exact
-health metadata, and automatically restores the prior SATT runtime when a
-cutover-stage check fails. Diagnostics are bounded to the SATT application.
+The production Compose definition contains a stable `satt-production-app` and
+private `satt-production-database` pair. PostgreSQL uses the explicitly named
+`satt-production-postgres` volume and publishes no host port. The first cutover
+creates live and stopped-runtime SATT-schema backups, restores the final dump into
+a fresh volume, compares one-way authentication/data fingerprints, and promotes
+frontend files extracted from the same immutable image. A failure restores the
+prior static files and systemd runtime against the unchanged host database while
+retaining dumps and the failed volume. Diagnostics are bounded to SATT.
 
 The first cutover keeps the existing SATT systemd runtime and reverse-proxy path
 available for 24 hours. Database restore is deliberately not automatic because
@@ -84,12 +85,14 @@ by committing that procedure.
 
 ## Foundation branch and approval contract
 
-- Parent issue #3 owns release `0.0.1`.
-- The ordered child issues are #4 through #15.
-- Work uses one branch,
-  `codex/establish-cleanup-environment-isolation-and-release-engineering`, based
-  on an up-to-date `main`.
-- Work uses one cumulative draft pull request.
+- Parent issue #3 owns the unshipped 0.0.1 Foundation slice and corrective patch
+  0.0.2.
+- The ordered original children are #4 through #15; discovery added approved
+  child #31 for the isolated production database cutover.
+- The completed original slice used
+  `codex/establish-cleanup-environment-isolation-and-release-engineering`.
+- Corrective child #31 uses `codex/isolate-production-database-cutover` from
+  current `main` and its own cumulative pull request.
 - Each child is implemented, validated, committed, pushed, deployed to isolated
   development when that environment exists, and reviewed independently.
 - Approval of one child authorizes work on only the next ordered child.
@@ -169,17 +172,19 @@ starts FastAPI as an unprivileged user. Explicit copy boundaries and
 `.dockerignore` prevent local configuration, repository metadata, workbooks,
 backups, tests, and release documentation from entering the image.
 
-Compose definitions keep local, development, and test database storage under
-distinct project and volume names. The production definition contains no
-database service; production remains externally managed and must receive its
-configuration only through the separately approved production delivery path.
+Compose definitions keep local, development, test, and production database
+storage under distinct project and volume names. Production contains one private
+PostgreSQL service with no published port. The first cutover restores a verified
+SATT-schema dump into its fresh named volume and preserves the unchanged host
+database as the separately approved rollback source.
 
 `pull-request-validation.yml` has read-only repository permission and two
 non-deployment jobs:
 
 1. migrate a fresh loopback-only CI database and run the complete safe suite;
 2. build and inspect the production image, start it with a fresh isolated
-   container database, and verify health environment/version/commit metadata.
+   container database, rehearse a SATT-schema dump/restore with fingerprint
+   comparison, and verify health environment/version/commit metadata.
 
 CI constructs database connection strings only inside the runner process after
 asserting the GitHub Actions context, loopback host, port, user, and allowed

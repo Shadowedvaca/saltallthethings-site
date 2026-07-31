@@ -1,158 +1,185 @@
-# Production container cutover
+# Production container and database cutover
 
 This runbook defines the controlled replacement of the legacy SATT systemd
-runtime with the repository's isolated production container. It is not approval
-to perform the cutover. Creating the GitHub `production` environment, changing
-server configuration, creating `prod-v0.0.1`, or deploying production each
-requires the explicit authorization described in the release process.
+runtime and host database connection with an isolated production application and
+PostgreSQL Compose pair. It is not approval to merge, tag, deploy, restore,
+delete a volume, or retire the rollback source.
+
+The immutable `prod-v0.0.1` attempt failed during pre-cutover fingerprinting
+because the application container could not reach PostgreSQL listening only on
+the host loopback interface. The workflow stopped before systemd shutdown,
+migrations, container startup, static promotion, or GitHub Release publication;
+0.0.1 was not shipped. The corrected architecture begins with patch 0.0.2 and
+must use a new immutable tag.
 
 ## Safety boundary
 
-- The workflow runs only for an immutable `prod-vX.Y.Z` tag whose version,
-  curated notes, tag target, and `main` ancestry validate.
 - `compose.production.yaml` is used by itself. It starts only
-  `satt-production-app`, publishes only the configured loopback application
-  port, and does not create or move a database.
-- The existing production PostgreSQL database remains authoritative. The
-  container reaches that host database through `host.docker.internal`; host
-  backup tools reach the same database locally.
-- SATT's systemd unit and current reverse-proxy configuration remain available
-  for a 24-hour rollback window after the first successful container cutover.
-- Do not change or restart PATT, Shadowed Vaca, any other application, database,
-  Compose project, systemd unit, Nginx site, certificate, or virtual host.
-- Never print environment-file contents, database connection values, OAuth or AI
-  values, authentication hashes, invite codes, or record contents. Validation
-  reports configured status, counts, exact release metadata, and one-way
-  SHA-256 fingerprints only.
+  `satt-production-app` and `satt-production-database` on the private
+  `satt-production` network.
+- The database service uses the explicitly named `satt-production-postgres`
+  volume and publishes no host port. The application receives the database
+  service name and separate server-side database fields; production Compose
+  does not accept an application `DATABASE_URL` fallback.
+- The current host PostgreSQL SATT schema remains authoritative until the final
+  stopped-runtime backup is verified. It remains unchanged throughout the
+  first-cutover rollback window.
+- Dumps include only the SATT schema, use PostgreSQL custom format, omit
+  ownership and privileges, have mode `0600`, and are verified with
+  `pg_restore --list`. Logs report only phase, filename, SHA-256, and verified
+  status.
+- The frontend is copied from the exact immutable application image into a
+  staged directory and atomically replaces the Nginx-served static directory
+  only after local application health and data continuity pass.
+- The existing SATT systemd unit, prior checkout, prior static directory,
+  reverse-proxy route, host database, verified dumps, and rollback state remain
+  available throughout the observation window.
+- Do not change or restart PATT, Shadowed Vaca, sv-tools, another Compose
+  project, another database, another systemd unit, another Nginx site, DNS, or
+  certificates.
+- Never print environment-file contents, connection values, credentials,
+  authentication hashes, invite codes, database rows, or configuration records.
+  Validation reports configured status, exact release metadata, counts, and
+  one-way SHA-256 fingerprints only.
 
 ## Required inventory and preflight
 
-A production operator must complete this secret-safe inventory immediately
-before approving the production tag:
+Immediately before a production tag is approved:
 
-1. Record the active SATT systemd unit name, active state, process owner,
-   repository path, working directory, command, loopback port, and exact commit.
-2. Record the SATT Nginx site name, enabled state, upstream loopback port, public
-   hostname, and certificate status. Do not display unrelated virtual-host
-   contents.
-3. Confirm whether SATT's current static files are served by the application or
-   Nginx and record only their bounded paths and ownership.
-4. Confirm the production database service is local, healthy, and owned by the
-   production tier. Record its engine/version, database and role presence, and
-   configured status without printing names, connection values, or credentials.
-5. Record the current user, invite, configuration, idea, joke, show-slot, and
-   assignment counts plus the secret-safe authentication and data fingerprints.
-6. Confirm Docker, the Compose plugin, Git, curl, Python 3, `pg_dump`,
-   `pg_restore`, and systemd are available. Confirm the release checkout and
-   backup directories are root-only.
-7. Confirm `/opt/satt-platform/.env.production` exists with mode `0600`, is
-   owned by the production operator, declares matching production runtime and
-   database tiers, and targets the local host database alias. Do not display it.
-8. Confirm the intended SATT loopback port does not collide with another service
-   and that the existing Nginx upstream can reach it without changing any other
-   site.
+1. Record the active SATT runtime type, exact commit, process owner, working
+   directory, loopback port, and bounded health metadata.
+2. Confirm the SATT Nginx site is enabled, its upstream remains loopback port
+   8200, and its static root is `/opt/satt-platform/static`. Validate Nginx
+   without displaying unrelated virtual-host configuration.
+3. Confirm host PostgreSQL is healthy and local. Record only the SATT schema and
+   role configured status, migration revision, table counts, and secret-safe
+   authentication/data fingerprints.
+4. Confirm Docker, Compose, Git, curl, Python 3, `pg_dump`, `pg_restore`, and
+   systemd are available. Confirm backup and state directories are root-only.
+5. Confirm `/opt/satt-platform/.env.production` has mode `0600`, declares
+   matching production runtime/database tiers, contains the required private
+   database fields and a separately named legacy source connection, and does
+   not define the application `DATABASE_URL`. Validate values inside the server
+   process without printing them.
+6. Confirm `satt-production-app`, `satt-production-database`, and
+   `satt-production-postgres` do not exist before the first cutover. A leftover
+   volume from a failed attempt is evidence to preserve, not authorization to
+   delete or overwrite it.
+7. Confirm `prod-v0.0.1` remains unchanged and has no GitHub Release. Confirm
+   the intended new tag matches `VERSION`, release-note filename and heading,
+   exact tested main commit, and protected production policy.
+8. Confirm the latest pull-request, fresh-database, isolated restore,
+   development, and test checks passed for the exact intended commit.
 
-The current repository-side review could not complete the live inventory:
-existing local SSH identities were rejected by the production host. That is a
-hard preflight gate, not a reason to guess. A separately authorized operator
-with production access must complete and record it before tag approval.
+## Server-side production configuration
 
-## GitHub production controls
-
-Create the protected GitHub `production` environment only with separate
-approval. It must require the repository's production reviewers and contain
-these secret names:
-
-- `PROD_HOST`
-- `DEPLOY_SSH_KEY`
-- `PROD_SSH_KNOWN_HOSTS`
-
-The server-side `.env.production` file supplies these configuration keys; values
-must never be copied into GitHub logs, issues, release notes, or this document:
+The mode-`0600` production environment file supplies these names. Values remain
+server-side and must never appear in GitHub logs, issues, release notes, or
+terminal transcripts:
 
 - `ENVIRONMENT`
 - `DATABASE_ENVIRONMENT`
-- `DATABASE_URL`
+- `LEGACY_DATABASE_URL`
+- `SATT_DB_NAME`
+- `SATT_DB_USER`
+- `SATT_DB_PASSWORD`
 - `SECRET_KEY`
 - `SATT_APP_PORT`
 - `GOOGLE_OAUTH_CLIENT_ID`
 - `GOOGLE_OAUTH_CLIENT_SECRET`
 - `GOOGLE_OAUTH_REFRESH_TOKEN`
 
-The first two values must both identify production. OAuth values may remain
-empty when the production feature is not configured. The workflow refuses a
-non-local database host and strict SSH host verification is mandatory.
+The legacy source is accepted only by the host-side backup and fingerprint
+helpers and must resolve to a local host PostgreSQL endpoint. The application
+container constructs its connection internally from `SATT_DB_*` and can reach
+only the private `database` service.
 
-## Approved cutover sequence
+## Approved first-cutover sequence
 
-After development integration, merge, isolated test validation, and explicit
-production-release approval, create the exact `prod-v0.0.1` tag on the tested
-`main` commit. The tag starts `deploy-prod.yml`; a normal branch push cannot.
+After corrected development integration, explicit merge approval, isolated test
+validation, and separate production-release approval, create a new immutable
+patch tag on the exact tested main commit. The tag workflow performs:
 
-The workflow performs this sequence:
+1. Validate tag/version/notes, exact tag target, and main ancestry.
+2. Establish strict SSH trust through the protected production environment.
+3. Capture the prior checkout and switch to the exact immutable tag.
+4. Validate tools, configuration mode and configured status, production tiers,
+   standalone Compose structure, runtime identity, and absence of a prior SATT
+   production database volume.
+5. Create and verify a live `preflight` SATT-schema dump before image build or
+   runtime interruption.
+6. Pull PostgreSQL 16, build the exact application image, extract only the
+   explicitly public frontend files, and stage them without changing the live
+   static directory.
+7. Stop only the SATT systemd service. This begins the short production outage.
+8. Create and verify a second `final` SATT-schema dump while the application is
+   stopped, then compute the source authentication/data fingerprint.
+9. Start only the fresh SATT database service, restore the final dump into its
+   empty named volume, and compare the restored pre-migration fingerprint to the
+   stopped source.
+10. Start the exact tagged application image. Its entrypoint validates tier
+    ownership and runs `alembic upgrade head`; verify all migration heads and
+    compare the post-migration fingerprint.
+11. Verify local health reports `production`, the expected version, and exact
+    commit.
+12. Atomically move the prior static directory into the protected asset history
+    and promote the files extracted from the exact application image.
+13. Verify public health with the same metadata and load the public landing
+    page through Nginx.
+14. Record only current tag/commit, prior runtime identifiers, prior static
+    path, final backup path, and database volume name in the mode-`0600` state
+    directory.
+15. Only after deployment and independent public verification succeed may the
+    least-privilege publisher create the curated GitHub Release.
 
-1. Validate the canonical tag, authoritative version, curated notes, exact tag
-   target, and ancestry from `main`.
-2. Establish strict SSH trust from the protected production environment.
-3. On the production host, validate tools, mode-`0600` configuration, exact tag
-   checkout, standalone Compose expansion, and the local database boundary.
-4. Identify either the active legacy SATT systemd unit for the first cutover or
-   the exact prior SATT container image for a later release.
-5. Create a custom-format PostgreSQL backup in the root-only release backup
-   directory, verify it with `pg_restore --list`, and report only its filename
-   and SHA-256. This is the first production state-changing operation after
-   read-only preflight and happens before image build or runtime interruption.
-6. Build the immutable frontend/backend image.
-7. Capture pre-migration authentication and stable-data counts and SHA-256
-   fingerprints without printing any contents.
-8. Stop only the current SATT runtime. Do not disable or delete the systemd
-   unit.
-9. Start the exact tagged image. Its entrypoint applies Alembic migrations, then
-   the workflow verifies all migration heads.
-10. Recompute and compare authentication and stable-data fingerprints. Expected
-    migration normalization is deliberately excluded; all other differences
-    fail the deployment.
-11. Verify local and public health report `production`, version `0.0.1`, and the
-    exact tagged commit. Diagnostics are limited to 100 SATT application lines.
-12. Store only the current tag/commit and prior SATT runtime identifiers in a
-    root-only state directory.
-13. After the deployment job and independent public health check succeed, invoke
-    the separate least-privilege publisher to revalidate the exact tag/commit
-    and create or update the curated GitHub Release. A failed deployment cannot
-    publish a release.
+## Automatic application rollback
 
-A failure after the old runtime stops triggers automatic recovery. On the first
-cutover the new container is removed, the previous checkout is restored, and
-only the SATT systemd unit is restarted. On later container releases, the exact
-prior image is restarted with its prior commit metadata. The failed workflow
-must remain failed even when recovery succeeds.
+Any failure after SATT is stopped must leave the workflow failed and:
 
-## Verification and rollback window
+1. remove only failed SATT containers and the SATT Compose network;
+2. leave the failed named database volume and both verified dumps intact;
+3. restore the prior static directory if asset promotion occurred;
+4. restore the prior host-database backup cron if it was switched;
+5. check out the recorded prior commit; and
+6. restart only the SATT systemd service against the unchanged host database.
 
-For 24 hours after the first successful cutover:
+Database restoration is never automatic. Do not delete the failed volume,
+overwrite either database, restore a dump, or downgrade migrations without
+separate explicit approval against the exact failed state. A pre-cutover failure
+restores the prior checkout and leaves the active runtime untouched.
 
-- keep the SATT systemd unit, legacy checkout, reverse-proxy route, verified
-  backup, and rollback state intact;
-- monitor bounded application health and confirm registration/login,
-  authenticated data access, edits, persistence after reload, and scheduled
-  post-production behavior;
-- compare authentication and stable-data counts/fingerprints at the approved
-  checkpoints; and
-- do not prune images or remove old files, the database, or other services.
+## Isolated restore rehearsal
 
-Test the non-production recovery contract before production approval by forcing
-a post-start health mismatch in an isolated environment and verifying that the
-prior SATT runtime returns. Do not use production data or credentials for that
-exercise.
+Pull-request validation must exercise the restore mechanism without production
+data or credentials:
 
-During the window, an authorized operator may redeploy the recorded prior SATT
-runtime if validation fails. Database restoration is destructive and is never
-automatic; stop, preserve the failed state, and obtain separate explicit
-approval before restoring the verified dump. Migration downgrade or backup
-restore instructions must be reviewed against the exact failed release.
+1. migrate a fresh isolated PostgreSQL database;
+2. create and verify a SATT-schema-only custom dump;
+3. fingerprint the source;
+4. remove and recreate only the isolated database container;
+5. restore the dump before application startup;
+6. compare restored and post-start fingerprints; and
+7. remove all isolated CI resources.
 
-After 24 hours of healthy production operation and explicit cleanup approval,
-the obsolete SATT systemd runtime and legacy static deployment path may be
-retired. Keep the release backup according to the approved retention policy.
-Do not move or reuse an immutable production tag; corrections require a new
-patch release.
+Development and test then validate the corrected immutable commit normally.
+The production host database or backup must never be used for this rehearsal.
+
+## Observation window and later releases
+
+For at least 24 hours after the successful first cutover, retain the systemd
+unit, host database, prior checkout, prior static directory, final verified
+dump, production volume, prior backup cron, and rollback state. Verify the new
+nightly job creates a verified container dump, plus registration/login,
+authenticated reads and edits, persistence after reload, public pages,
+post-production behavior, migration head, and bounded health metadata.
+
+Later container releases back up the private database both before image build
+and after stopping the current application, retain the same named volume, and
+promote static assets from the new immutable image. Application rollback may
+restart the recorded prior image, but database restore remains a separately
+approved destructive operation.
+
+After the observation window is healthy, removing the host database source,
+legacy systemd runtime, prior static directory, failed volumes, old images, or
+release dumps requires an explicit bounded cleanup approval. Never move or reuse
+an immutable production tag; corrections require a new patch release.

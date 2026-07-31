@@ -141,6 +141,49 @@ jobs:
             "import json, os, sys, urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8200/api/health', timeout=2)); assert data['status']=='ok'; assert data['environment']=='test'; assert data['version']==sys.argv[1]; assert data['commit']==os.environ['COMMIT_SHA']" \
             "$EXPECTED_VERSION"
 
+      - name: Exercise isolated production backup restore
+        shell: bash
+        run: |
+          set -euo pipefail
+          restore_dump="$RUNNER_TEMP/satt-production-restore.dump"
+          before_fingerprint="$(
+            docker compose -f compose.ci.yaml exec -T \
+              -e ENVIRONMENT=production \
+              -e DATABASE_ENVIRONMENT=production \
+              app python -m satt.scripts.production_fingerprint \
+              < /dev/null
+          )"
+          docker compose -f compose.ci.yaml exec -T database sh -c \
+            'exec pg_dump --format=custom --schema=satt --no-owner --no-privileges --username "$POSTGRES_USER" --dbname "$POSTGRES_DB"' \
+            > "$restore_dump"
+          test -s "$restore_dump"
+          docker compose -f compose.ci.yaml exec -T database \
+            pg_restore --list < "$restore_dump" >/dev/null
+
+          docker compose -f compose.ci.yaml stop app
+          docker compose -f compose.ci.yaml rm -sf database
+          docker compose -f compose.ci.yaml up -d --wait database
+          docker compose -f compose.ci.yaml exec -T database sh -c \
+            'exec pg_restore --exit-on-error --no-owner --no-privileges --username "$POSTGRES_USER" --dbname "$POSTGRES_DB"' \
+            < "$restore_dump" >/dev/null
+          restored_fingerprint="$(
+            docker compose -f compose.ci.yaml run --rm --no-deps \
+              -e ENVIRONMENT=production \
+              -e DATABASE_ENVIRONMENT=production \
+              --entrypoint python app \
+              -m satt.scripts.production_fingerprint \
+              < /dev/null
+          )"
+          test "$before_fingerprint" = "$restored_fingerprint"
+          docker compose -f compose.ci.yaml up -d --wait app
+          after_fingerprint="$(
+            docker compose -f compose.ci.yaml exec -T \
+              -e ENVIRONMENT=production \
+              -e DATABASE_ENVIRONMENT=production \
+              app python -m satt.scripts.production_fingerprint \
+              < /dev/null
+          )"
+          test "$before_fingerprint" = "$after_fingerprint"
       - name: Exercise isolated runtime recovery after health mismatch
         shell: bash
         env:

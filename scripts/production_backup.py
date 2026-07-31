@@ -94,17 +94,20 @@ def create_verified_backup(
     backup_dir: Path,
     release_tag: str,
     *,
+    phase: str,
     now: datetime | None = None,
 ) -> tuple[Path, str]:
     """Create a custom-format dump and verify its table of contents."""
 
     if not TAG_PATTERN.fullmatch(release_tag):
         raise ProductionBackupError("invalid production release tag")
+    if phase not in {"preflight", "final"}:
+        raise ProductionBackupError("invalid production backup phase")
 
     timestamp = (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ")
     backup_dir.mkdir(parents=True, exist_ok=True)
     backup_dir.chmod(0o700)
-    backup_path = backup_dir / f"pre-deploy-{release_tag}-{timestamp}.dump"
+    backup_path = backup_dir / f"{phase}-{release_tag}-{timestamp}.dump"
     if backup_path.exists():
         raise ProductionBackupError("refusing to overwrite a production backup")
 
@@ -114,6 +117,7 @@ def create_verified_backup(
         [
             "pg_dump",
             "--format=custom",
+            "--schema=satt",
             "--no-owner",
             "--no-privileges",
             "--file",
@@ -136,6 +140,7 @@ def create_verified_backup(
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tag", required=True)
+    parser.add_argument("--phase", choices=("preflight", "final"), required=True)
     parser.add_argument(
         "--backup-dir",
         type=Path,
@@ -160,6 +165,7 @@ def main() -> int:
             database_url,
             args.backup_dir,
             args.tag,
+            phase=args.phase,
         )
     except ProductionBackupError as error:
         raise SystemExit(f"Production backup failed: {error}") from error

@@ -2,6 +2,8 @@
 .github
 .env
 .env.*
+.production-assets
+.production-state
 .pytest_cache
 venv
 __pycache__

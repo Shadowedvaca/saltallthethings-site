@@ -2,11 +2,15 @@
 
 from datetime import UTC, datetime
 import json
+import os
 from pathlib import Path
 
 import pytest
 
-from satt.scripts.production_fingerprint import fingerprint_rows
+from satt.scripts.production_fingerprint import (
+    configure_private_database_url,
+    fingerprint_rows,
+)
 from scripts import production_backup
 
 
@@ -25,6 +29,22 @@ def test_backup_maps_container_host_to_loopback_without_echoing_credentials():
         "PGUSER": "service-user",
         "PGPASSWORD": "sensitive-value",
     }
+
+
+def test_fingerprint_builds_encoded_private_database_url(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("SATT_DB_HOST", "database")
+    monkeypatch.setenv("SATT_DB_PORT", "5432")
+    monkeypatch.setenv("SATT_DB_NAME", "satt data")
+    monkeypatch.setenv("SATT_DB_USER", "service user")
+    monkeypatch.setenv("SATT_DB_PASSWORD", "secret/value")
+
+    configure_private_database_url()
+
+    assert os.environ["DATABASE_URL"] == (
+        "postgresql+asyncpg://service%20user:secret%2Fvalue@"
+        "database:5432/satt%20data"
+    )
 
 
 def test_backup_refuses_an_external_database_host():
@@ -57,13 +77,15 @@ def test_backup_is_created_verified_and_reported_only_by_digest(
     backup, digest = production_backup.create_verified_backup(
         "postgresql://service-user:sensitive-value@127.0.0.1/satt",
         tmp_path,
-        "prod-v0.0.1",
+        "prod-v0.0.2",
+        phase="preflight",
         now=datetime(2026, 7, 30, tzinfo=UTC),
     )
 
-    assert backup.name == "pre-deploy-prod-v0.0.1-20260730T000000Z.dump"
+    assert backup.name == "preflight-prod-v0.0.2-20260730T000000Z.dump"
     assert len(digest) == 64
     assert [call[0][0] for call in calls] == ["pg_dump", "pg_restore"]
+    assert "--schema=satt" in calls[0][0]
     assert all("sensitive-value" not in " ".join(command) for command, _ in calls)
 
 
@@ -85,7 +107,7 @@ def test_backup_main_never_prints_database_credentials(
     )
     monkeypatch.setattr(
         "sys.argv",
-        ["production_backup.py", "--tag", "prod-v0.0.1"],
+        ["production_backup.py", "--tag", "prod-v0.0.2", "--phase", "final"],
     )
 
     assert production_backup.main() == 0
@@ -118,3 +140,17 @@ def test_fingerprint_emits_only_counts_and_one_way_digest():
     serialized = json.dumps(result)
     assert "private-user" not in serialized
     assert "private-hash" not in serialized
+
+
+def test_backup_refuses_an_unknown_cutover_phase(tmp_path: Path):
+    with pytest.raises(
+        production_backup.ProductionBackupError,
+        match="invalid production backup phase",
+    ):
+        production_backup.create_verified_backup(
+            "postgresql://service-user:sensitive-value@127.0.0.1/satt",
+            tmp_path,
+            "prod-v0.0.2",
+            phase="retry",
+            now=datetime(2026, 7, 30, tzinfo=UTC),
+        )
