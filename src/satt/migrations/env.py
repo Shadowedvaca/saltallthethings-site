@@ -1,7 +1,6 @@
 """Alembic environment configuration for SATT."""
 
 import asyncio
-import os
 import sys
 from logging.config import fileConfig
 from pathlib import Path
@@ -17,6 +16,7 @@ load_dotenv(Path(__file__).parent.parent.parent.parent / ".env")
 # Ensure src/ is on path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
+from satt.database_url import configure_database_url  # noqa: E402
 from satt.models import Base  # noqa: E402
 
 config = context.config
@@ -26,10 +26,11 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-# Read DATABASE_URL from environment
-database_url = os.environ.get("DATABASE_URL", "")
-if database_url:
-    config.set_main_option("sqlalchemy.url", database_url)
+# Normal container startup exports DATABASE_URL inside the entrypoint process.
+# Later docker compose exec processes intentionally receive only the private
+# SATT_DB_* fields, so Alembic must reconstruct the same URL itself.
+database_url = configure_database_url(require_private=True)
+config.set_main_option("sqlalchemy.url", database_url)
 
 
 def run_migrations_offline() -> None:

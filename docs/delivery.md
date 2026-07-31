@@ -32,7 +32,7 @@ directory. It may not prune shared Docker state or operate on test or
 production.
 
 The public and local health checks must both report environment `development`,
-version `0.0.2`, and the exact resolved commit. One-time server, DNS, TLS,
+version `0.0.3`, and the exact resolved commit. One-time server, DNS, TLS,
 GitHub environment, and secret provisioning requires explicit authorization.
 The detailed bootstrap, validation, cleanup, and rollback procedure is in
 `docs/development-environment.md`.
@@ -85,14 +85,17 @@ by committing that procedure.
 
 ## Foundation branch and approval contract
 
-- Parent issue #3 owns the unshipped 0.0.1 Foundation slice and corrective patch
-  0.0.2.
+- Parent issue #3 owns the unshipped 0.0.1 and failed, unpublished 0.0.2
+  Foundation attempts plus corrective patch 0.0.3.
 - The ordered original children are #4 through #15; discovery added approved
-  child #31 for the isolated production database cutover.
+  children #31 for the isolated production database cutover and #33 for the
+  production-only verification corrections.
 - The completed original slice used
   `codex/establish-cleanup-environment-isolation-and-release-engineering`.
-- Corrective child #31 uses `codex/isolate-production-database-cutover` from
+- Corrective child #31 used `codex/isolate-production-database-cutover` from
   current `main` and its own cumulative pull request.
+- Corrective child #33 uses
+  `codex/correct-production-cutover-verification-release-0-0-3` from current `main`.
 - Each child is implemented, validated, committed, pushed, deployed to isolated
   development when that environment exists, and reviewed independently.
 - Approval of one child authorizes work on only the next ordered child.

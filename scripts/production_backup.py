@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
-from urllib.parse import unquote, urlsplit
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 
 TAG_PATTERN = re.compile(r"prod-v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)")
@@ -61,6 +61,23 @@ def libpq_environment(database_url: str) -> dict[str, str]:
         "PGUSER": user,
         "PGPASSWORD": password,
     }
+
+
+def host_runtime_database_url(database_url: str) -> str:
+    """Map the approved container host alias to host loopback for Python."""
+
+    # Reuse backup validation so an external database can never be normalized
+    # into an accepted production source.
+    libpq_environment(database_url)
+    parsed = urlsplit(database_url)
+    if parsed.hostname != "host.docker.internal":
+        return database_url
+
+    userinfo, separator, host_port = parsed.netloc.rpartition("@")
+    if not separator or not host_port.startswith("host.docker.internal"):
+        raise ProductionBackupError("production database URL host is malformed")
+    suffix = host_port[len("host.docker.internal") :]
+    return urlunsplit(parsed._replace(netloc=f"{userinfo}@127.0.0.1{suffix}"))
 
 
 def _run_without_sensitive_output(
