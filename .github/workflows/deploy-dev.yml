@@ -149,6 +149,19 @@ jobs:
             "$expected_version" \
             "$deploy_sha"
 
+          revision="$(
+            compose exec -T database \
+              sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from satt.alembic_version"'
+          )"
+          test "$revision" = "0006"
+
+          compose exec -T app /usr/local/bin/satt-entrypoint \
+            python -m satt.scripts.environment_smoke \
+            --base-url http://127.0.0.1:8200 \
+            --expected-environment development \
+            --expected-version "$expected_version" \
+            --expected-commit "$deploy_sha"
+
           trap - EXIT
           echo "Development deploy verified at commit $deploy_sha"
           REMOTE
