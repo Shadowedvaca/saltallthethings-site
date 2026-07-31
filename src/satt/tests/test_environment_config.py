@@ -14,9 +14,11 @@ ENVIRONMENT_SENSITIVE_BROWSER_FILES = (
     "index.html",
     "login.html",
     "register.html",
+    "songs.html",
     "js/ai-service.js",
     "js/postproduction.js",
     "js/site-config.js",
+    "js/songs.js",
     "js/storage.js",
 )
 PRODUCTION_API_MARKERS = (
@@ -108,9 +110,12 @@ async def test_local_server_exposes_public_frontend_but_not_environment_file(
     client: AsyncClient,
 ):
     page_response = await client.get("/login.html")
+    song_page_response = await client.get("/songs.html")
     script_response = await client.get("/js/storage.js")
     environment_response = await client.get("/.env")
 
     assert page_response.status_code == 200
+    assert song_page_response.status_code == 200
+    assert "Song Bank" in song_page_response.text
     assert script_response.status_code == 200
     assert environment_response.status_code == 404

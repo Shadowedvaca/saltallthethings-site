@@ -42,6 +42,23 @@ per idea and keep unassigned states free of stale idea IDs.
 All mutations require the current `If-Match` data revision. A stale client
 receives a conflict and cannot overwrite newer state.
 
+## Authenticated management page
+
+Hosts manage the bank at `songs.html`. The page supports manual creation,
+search, lifecycle filtering, editing, retirement/restoration, assignment
+removal, and deletion. It displays the assigned idea and scheduled episode
+when available, but remains an authenticated preparation surface and never
+publishes private talking points.
+
+Artist, title, and YouTube link errors are shown before saving. The server
+remains authoritative and the shared storage layer guards every mutation with
+the current revision. If another session wins a write, the page restores the
+latest server state and tells the host to review and retry. Retirement,
+assignment removal, and deletion require confirmation because they remove data
+or change episode assignment state. Navigation, form labels, live status/error
+messages, filter state, and responsive layouts support keyboard and narrow-
+screen use.
+
 ## Import, export, and rollback
 
 Authenticated export includes `songs`; browser import accepts it as an optional

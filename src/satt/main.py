@@ -58,6 +58,7 @@ _frontend_pages = {
     "postproduction.html",
     "register.html",
     "show_management.html",
+    "songs.html",
 }
 
 

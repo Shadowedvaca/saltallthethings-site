@@ -3,6 +3,7 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
+const SongBankPage = require("../js/songs.js");
 
 function domHarness() {
   const elements = new Map();
@@ -236,13 +237,108 @@ async function testAtomicScheduleAndImportRoutes() {
   });
 }
 
+async function testSongManagementStorageRoutes() {
+  const mutations = [];
+  let revision = 11;
+  let songs = [{
+    id: "song-1",
+    artist: "Artist",
+    title: "Original",
+    youtubeUrl: "https://youtu.be/abcdefghijk",
+    privateNotes: "Private",
+    status: "unused",
+    assignedIdeaId: null,
+  }];
+  const harness = loadStorage(async (url, options = {}) => {
+    if (url === "/api/export") return response(200, state(revision, { songs }));
+    mutations.push({ url, options });
+    assert.equal(options.headers["If-Match"], String(revision));
+    revision += 1;
+    if (url === "/api/data/songs") songs = JSON.parse(options.body);
+    if (url.endsWith("/status")) songs[0] = { ...songs[0], status: "retired" };
+    if (options.method === "DELETE" && url === "/api/songs/song-1") songs = [];
+    return response(200, { ok: true, state: state(revision, { songs }), revision });
+  });
+  await harness.storage.init();
+  assert.equal(await harness.storage.updateSong("song-1", { title: "Edited" }), true);
+  assert.equal(harness.storage.getSongs()[0].title, "Edited");
+  assert.equal(await harness.storage.setSongStatus("song-1", "retired"), true);
+  assert.equal(harness.storage.getSongs()[0].status, "retired");
+  assert.equal(await harness.storage.deleteSong("song-1"), true);
+  assert.deepEqual(Array.from(harness.storage.getSongs()), []);
+  assert.deepEqual(mutations.map((entry) => [entry.url, entry.options.method]), [
+    ["/api/data/songs", "PUT"],
+    ["/api/songs/song-1/status", "PUT"],
+    ["/api/songs/song-1", "DELETE"],
+  ]);
+}
+
+function testSongManagementPageContract() {
+  assert.equal(
+    SongBankPage.validateYoutubeUrl("https://youtu.be/abcdefghijk"),
+    "https://youtu.be/abcdefghijk",
+  );
+  assert.equal(
+    SongBankPage.validateYoutubeUrl("https://www.youtube.com/watch?v=abcdefghijk"),
+    "https://www.youtube.com/watch?v=abcdefghijk",
+  );
+  assert.throws(() => SongBankPage.validateYoutubeUrl("http://youtu.be/abcdefghijk"), /HTTPS/);
+  assert.throws(() => SongBankPage.validateYoutubeUrl("https://example.com/abcdefghijk"), /YouTube/);
+  assert.throws(
+    () => SongBankPage.validateSongInput({ artist: " ", title: "Title", youtubeUrl: "https://youtu.be/abcdefghijk" }),
+    /Artist is required/,
+  );
+  const context = SongBankPage.ideaContext(
+    { assignedIdeaId: "idea-1" },
+    [{ id: "idea-1", selectedTitle: "A Salty Episode" }],
+    [{ id: "slot-1", episodeNumber: 42 }],
+    { "slot-1": "idea-1" },
+  );
+  assert.equal(context, "Episode 42: A Salty Episode");
+  assert.equal(
+    SongBankPage.songMatches(
+      { status: "unused", artist: "The Band", title: "Track", privateNotes: "memory" },
+      "unused",
+      "MEMORY",
+      "",
+    ),
+    true,
+  );
+  const markup = SongBankPage.songCardMarkup({
+    id: "song'quoted",
+    artist: "<script>alert(1)</script>",
+    title: 'A "Song"',
+    youtubeUrl: "https://youtu.be/abcdefghijk",
+    privateNotes: "<b>private</b>",
+    status: "used",
+    assignedIdeaId: "idea-1",
+    createdAt: "2026-07-31T00:00:00Z",
+    updatedAt: "2026-07-31T00:00:00Z",
+  }, context);
+  assert.doesNotMatch(markup, /<script>|<b>private<\/b>/);
+  assert.match(markup, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.match(markup, /song&#039;quoted/);
+  assert.match(markup, /Remove assignment/);
+  assert.match(markup, /rel="noopener noreferrer"/);
+}
+
 async function main() {
   const showManagement = fs.readFileSync("show_management.html", "utf8");
   const jokesPage = fs.readFileSync("jokes.html", "utf8");
+  const songsPage = fs.readFileSync("songs.html", "utf8");
   const configPage = fs.readFileSync("config.html", "utf8");
   checkInlineScripts("show_management.html", showManagement);
   checkInlineScripts("jokes.html", jokesPage);
+  checkInlineScripts("songs.html", songsPage);
   checkInlineScripts("config.html", configPage);
+  for (const page of [showManagement, jokesPage, songsPage, configPage, fs.readFileSync("postproduction.html", "utf8")]) {
+    assert.match(page, /href="songs\.html"/);
+  }
+  assert.match(songsPage, /aria-current="page"/);
+  assert.match(songsPage, /role="status" aria-live="polite"/);
+  assert.match(songsPage, /role="alert"/);
+  assert.match(songsPage, /data-action="cancel-edit"/);
+  assert.match(songsPage, /js\/songs\.js/);
   assert.match(showManagement, /!config\.claudeApiKeyConfigured/);
   assert.match(showManagement, /!config\.openaiApiKeyConfigured/);
   assert.match(showManagement, /await Storage\.addIdea\(idea\)/);
@@ -270,6 +366,8 @@ async function main() {
   await testFailureRollbackRetryAndUnloadGuard();
   await testConflictReloadsAndCancelsStaleQueue();
   await testAtomicScheduleAndImportRoutes();
+  await testSongManagementStorageRoutes();
+  testSongManagementPageContract();
 }
 
 main().catch((error) => {
