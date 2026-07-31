@@ -122,7 +122,7 @@ jobs:
           set -euo pipefail
           docker compose -f compose.ci.yaml stop app
           docker compose -f compose.ci.yaml run --rm --no-deps \
-            --entrypoint alembic app downgrade 0005
+            app alembic downgrade 0005
           revision="$(
             docker compose -f compose.ci.yaml exec -T database \
               sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from satt.alembic_version"'
@@ -130,7 +130,7 @@ jobs:
           test "$revision" = "0005"
 
           docker compose -f compose.ci.yaml run --rm --no-deps \
-            --entrypoint alembic app upgrade head
+            app alembic upgrade head
           revision="$(
             docker compose -f compose.ci.yaml exec -T database \
               sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from satt.alembic_version"'
