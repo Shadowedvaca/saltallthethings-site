@@ -9,8 +9,12 @@ The immutable `prod-v0.0.1` attempt failed during pre-cutover fingerprinting
 because the application container could not reach PostgreSQL listening only on
 the host loopback interface. The workflow stopped before systemd shutdown,
 migrations, container startup, static promotion, or GitHub Release publication;
-0.0.1 was not shipped. The corrected architecture begins with patch 0.0.2 and
-must use a new immutable tag.
+0.0.1 was not shipped. Two immutable `prod-v0.0.2` attempts later proved the
+backup, restore, fingerprint-continuity, application-startup, and automatic
+systemd rollback paths, but exposed separate host-name and post-start Alembic
+verification gaps. Version 0.0.2 was not shipped and has no GitHub Release.
+Those verification paths are corrected in patch 0.0.3, which must use a new
+immutable tag after development and test promotion.
 
 ## Safety boundary
 
@@ -61,11 +65,14 @@ Immediately before a production tag is approved:
    database fields and a separately named legacy source connection, and does
    not define the application `DATABASE_URL`. Validate values inside the server
    process without printing them.
-6. Confirm `satt-production-app`, `satt-production-database`, and
-   `satt-production-postgres` do not exist before the first cutover. A leftover
-   volume from a failed attempt is evidence to preserve, not authorization to
-   delete or overwrite it.
-7. Confirm `prod-v0.0.1` remains unchanged and has no GitHub Release. Confirm
+6. Confirm `satt-production-app` and `satt-production-database` do not exist
+   before the first cutover. If the retained failed `satt-production-postgres`
+   candidate exists, confirm it is unused and remove only that exact volume at
+   the explicitly approved recovery gate after re-verifying live systemd
+   health plus the preflight and final backup inventories. Never remove a
+   volume selected by a pattern, substitution, or unresolved variable.
+7. Confirm `prod-v0.0.1` and `prod-v0.0.2` remain unchanged and have no GitHub
+   Releases. Confirm
    the intended new tag matches `VERSION`, release-note filename and heading,
    exact tested main commit, and protected production policy.
 8. Confirm the latest pull-request, fresh-database, isolated restore,
@@ -90,9 +97,13 @@ terminal transcripts:
 - `GOOGLE_OAUTH_REFRESH_TOKEN`
 
 The legacy source is accepted only by the host-side backup and fingerprint
-helpers and must resolve to a local host PostgreSQL endpoint. The application
+helpers and must resolve to a local host PostgreSQL endpoint. The host-side
+fingerprint helper maps the specifically allowed container host alias to
+loopback without logging or persisting the connection value. The application
 container constructs its connection internally from `SATT_DB_*` and can reach
-only the private `database` service.
+only the private `database` service. Alembic constructs the same private value
+when invoked in a later container process where the entrypoint's exported
+environment is intentionally unavailable.
 
 ## Approved first-cutover sequence
 

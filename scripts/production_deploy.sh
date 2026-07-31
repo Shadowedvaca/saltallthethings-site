@@ -70,7 +70,7 @@ if systemctl is-active --quiet "$systemd_service"; then
   current_runtime="systemd"
   test -n "${LEGACY_DATABASE_URL:-}"
   DATABASE_URL="$LEGACY_DATABASE_URL" python3 -c \
-    'import os; from scripts.production_backup import libpq_environment; libpq_environment(os.environ["DATABASE_URL"])'
+    'import os; from scripts.production_backup import host_runtime_database_url; host_runtime_database_url(os.environ["DATABASE_URL"])'
 
   test -z "$(docker ps --filter name='^/satt-production-app$' --format '{{.Names}}')"
   test -z "$(docker ps --filter name='^/satt-production-database$' --format '{{.Names}}')"
@@ -138,13 +138,19 @@ backup_path_from_json() {
 
 source_fingerprint() {
   if test "$current_runtime" = "systemd"; then
-    DATABASE_URL="$LEGACY_DATABASE_URL" \
+    local host_database_url
+    host_database_url="$(
+      DATABASE_URL="$LEGACY_DATABASE_URL" python3 -c \
+        'import os; from scripts.production_backup import host_runtime_database_url; print(host_runtime_database_url(os.environ["DATABASE_URL"]))'
+    )"
+    DATABASE_URL="$host_database_url" \
       ENVIRONMENT=production \
       DATABASE_ENVIRONMENT=production \
       PYTHONPATH=src \
       "$repository/venv/bin/python" \
       -m satt.scripts.production_fingerprint \
       < /dev/null
+    unset host_database_url
   else
     compose run --rm --no-deps --entrypoint python app \
       -m satt.scripts.production_fingerprint \

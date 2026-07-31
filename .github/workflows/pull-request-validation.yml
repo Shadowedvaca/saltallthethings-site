@@ -108,6 +108,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          docker compose -f compose.ci.yaml exec -T app \
+            sh -c 'test -z "${DATABASE_URL:-}"'
+          docker compose -f compose.ci.yaml exec -T app \
+            alembic current --check-heads \
+            < /dev/null
           revision="$(
             docker compose -f compose.ci.yaml exec -T database \
               sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from satt.alembic_version"'
