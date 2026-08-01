@@ -239,6 +239,29 @@ async function testAtomicScheduleAndImportRoutes() {
   });
 }
 
+function testSongBankBrowserStartupWithLexicalDependencies() {
+  let authInitCalls = 0;
+  const element = { addEventListener() {} };
+  const document = {
+    getElementById() { return element; },
+    querySelector() { return element; },
+  };
+  const window = { document, confirm: () => true };
+  const context = {
+    window,
+    Auth: { init() { authInitCalls += 1; } },
+    Storage: {},
+    Toast: {},
+    URL,
+    Set,
+  };
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync("js/songs.js", "utf8"), context);
+  assert.equal(authInitCalls, 1);
+  assert.equal(typeof window.SongBankPage.start, "function");
+  assert.equal(typeof window.onStorageReady, "function");
+}
+
 async function testSongManagementStorageRoutes() {
   const mutations = [];
   let revision = 11;
@@ -508,6 +531,7 @@ async function main() {
   await testAtomicScheduleAndImportRoutes();
   await testSongManagementStorageRoutes();
   testSongManagementPageContract();
+  testSongBankBrowserStartupWithLexicalDependencies();
   testEpisodeSongPreparationContract();
   await testEpisodeOverviewContract();
 }

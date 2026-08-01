@@ -1,9 +1,15 @@
 /* Authenticated Song Bank management page. */
 (function(root, factory) {
-  var api = factory(root);
   if (typeof module === 'object' && module.exports) {
-    module.exports = api;
+    module.exports = factory(root);
   } else {
+    var api = factory({
+      document: root.document,
+      confirm: root.confirm.bind(root),
+      Auth: Auth,
+      Storage: Storage,
+      Toast: Toast
+    });
     root.SongBankPage = api;
     root.onStorageReady = api.onStorageReady;
     api.start();
