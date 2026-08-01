@@ -54,6 +54,53 @@ def serialize_song(row: Any) -> dict:
     }
 
 
+def serialize_top3_concept(row: Any) -> dict:
+    return {
+        "id": row.id,
+        "name": row.name,
+        "description": row.description,
+        "rules": row.rules,
+        "hostNotes": row.host_notes,
+        "aiExample": list(row.ai_example or []),
+        "status": row.status,
+        "source": row.source,
+        "aiProvider": row.ai_provider,
+        "aiModelId": row.ai_model_id,
+        "aiGeneratedAt": _iso(row.ai_generated_at),
+        "createdByUserId": row.created_by_user_id,
+        "createdAt": _iso(row.created_at),
+        "updatedAt": _iso(row.updated_at),
+    }
+
+
+def serialize_top3_submission(
+    row: Any,
+    *,
+    display_name: str,
+    current_user_id: int,
+    revealed: bool,
+) -> dict:
+    is_current_user = (
+        row.participant_type == "account" and row.account_user_id == current_user_id
+    )
+    can_read_private = row.participant_type == "external" or is_current_user or revealed
+    result = {
+        "submissionId": row.id,
+        "contributorType": row.participant_type,
+        "externalType": row.external_type,
+        "displayName": display_name,
+        "complete": True,
+        "isCurrentUser": is_current_user,
+        "revealed": bool(revealed),
+    }
+    if can_read_private:
+        result["picks"] = [row.pick_1, row.pick_2, row.pick_3]
+        result["privateDiscussionNotes"] = row.private_discussion_notes
+        result["createdAt"] = _iso(row.created_at)
+        result["updatedAt"] = _iso(row.updated_at)
+    return result
+
+
 def serialize_show_slot(row: Any) -> dict:
     return {
         "id": row.id,

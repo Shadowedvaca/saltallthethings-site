@@ -298,6 +298,21 @@ async function testSongManagementStorageRoutes() {
   ]);
 }
 
+async function testTop3PrivateDataNeverEntersSharedStorage() {
+  const harness = loadStorage(async (url) => {
+    if (url === "/api/export") {
+      return response(200, state(7, {
+        top3Submissions: [{ picks: ["hidden-one", "hidden-two", "hidden-three"] }],
+      }));
+    }
+    throw new Error(`Unexpected request ${url}`);
+  });
+  await harness.storage.init();
+  assert.equal(harness.storage.get("top3Submissions"), null);
+  assert.equal(Object.prototype.hasOwnProperty.call(harness.storage._cache, "top3Submissions"), false);
+  assert.equal(Object.keys(harness.storage.exportAll()).some((key) => key.toLowerCase().startsWith("top3")), false);
+}
+
 function testSongManagementPageContract() {
   assert.equal(
     SongBankPage.validateYoutubeUrl("https://youtu.be/abcdefghijk"),
@@ -542,6 +557,7 @@ async function main() {
   await testConflictReloadsAndCancelsStaleQueue();
   await testAtomicScheduleAndImportRoutes();
   await testSongManagementStorageRoutes();
+  await testTop3PrivateDataNeverEntersSharedStorage();
   testSongManagementPageContract();
   testSongBankBrowserStartupWithLexicalDependencies();
   testEpisodeSongPreparationContract();

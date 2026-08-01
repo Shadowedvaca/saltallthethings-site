@@ -13,7 +13,7 @@ from sqlalchemy import delete
 
 from satt.config import get_settings
 from satt.database import get_session_factory
-from satt.models import InviteCode, User
+from satt.models import Idea, InviteCode, Top3Assignment, Top3Concept, User
 
 _ALLOWED_ENVIRONMENTS = {"development", "test"}
 _PRODUCTION_HOSTS = {"saltallthethings.com", "www.saltallthethings.com"}
@@ -78,6 +78,20 @@ async def _cleanup_identity(username: str, invite_code: str) -> None:
         await session.execute(
             delete(InviteCode).where(InviteCode.code == invite_code)
         )
+        await session.commit()
+
+
+async def _cleanup_top3_records(idea_id: str, concept_ids: tuple[str, str]) -> None:
+    """Remove only uniquely named Top 3 smoke records in dependency order."""
+    factory = get_session_factory()
+    async with factory() as session:
+        await session.execute(
+            delete(Top3Assignment).where(Top3Assignment.idea_id == idea_id)
+        )
+        await session.execute(
+            delete(Top3Concept).where(Top3Concept.id.in_(concept_ids))
+        )
+        await session.execute(delete(Idea).where(Idea.id == idea_id))
         await session.commit()
 
 
@@ -316,6 +330,118 @@ async def _exercise_song_bank(client: httpx.AsyncClient, token: str) -> None:
         )
 
 
+async def _exercise_top3(
+    client: httpx.AsyncClient, owner_token: str, viewer_token: str
+) -> None:
+    """Exercise owner-only Top 3 picks and metadata-only cross-user reads."""
+    suffix = secrets.token_hex(8)
+    idea_id = f"deploy-smoke-top3-idea-{suffix}"
+    concept_ids = (
+        f"deploy-smoke-top3-concept-a-{suffix}",
+        f"deploy-smoke-top3-concept-b-{suffix}",
+    )
+    private_pick = f"private-top3-pick-{suffix}"
+    private_notes = f"private-top3-notes-{suffix}"
+    try:
+        state = await _latest_state(client, owner_token)
+        idea = {
+            "id": idea_id,
+            "titles": ["Deployment Top 3 smoke"],
+            "selectedTitle": "Deployment Top 3 smoke",
+            "summary": "Temporary non-production privacy validation",
+            "outline": [],
+            "status": "processed",
+        }
+        response = await client.put(
+            "/api/data/ideas",
+            json=[*state["ideas"], idea],
+            headers=_headers(owner_token, state["revision"]),
+        )
+        _expect_status(response, 200, "temporary Top 3 idea creation")
+        revision = response.json()["revision"]
+
+        for concept_id in concept_ids:
+            response = await client.post(
+                "/api/top3/concepts",
+                json={
+                    "id": concept_id,
+                    "name": "Deployment privacy list",
+                    "description": "Temporary isolated Top 3 validation.",
+                    "rules": "Exactly three distinct picks.",
+                    "hostNotes": "Private deployment-only notes.",
+                    "aiExample": ["Example One", "Example Two", "Example Three"],
+                },
+                headers=_headers(owner_token, revision),
+            )
+            _expect_status(response, 201, "temporary Top 3 concept creation")
+            revision = response.json()["revision"]
+
+        assigned = await client.put(
+            f"/api/top3/episodes/{idea_id}/assignment",
+            json={"conceptId": concept_ids[0]},
+            headers=_headers(owner_token, revision),
+        )
+        _expect_status(assigned, 200, "Top 3 assignment")
+        revision = assigned.json()["revision"]
+        saved = await client.put(
+            f"/api/top3/episodes/{idea_id}/submission",
+            json={
+                "id": f"deploy-smoke-top3-submission-{suffix}",
+                "picks": [private_pick, "Private Rank Two", "Private Rank Three"],
+                "privateDiscussionNotes": private_notes,
+            },
+            headers=_headers(owner_token, revision),
+        )
+        _expect_status(saved, 200, "Top 3 owner submission")
+        _require(private_pick in saved.text, "owner cannot reload their Top 3 picks")
+        _require(private_notes in saved.text, "owner cannot reload their Top 3 notes")
+
+        redacted = await client.get(
+            f"/api/top3/episodes/{idea_id}", headers=_headers(viewer_token)
+        )
+        _expect_status(redacted, 200, "Top 3 redacted viewer read")
+        _require(private_pick not in redacted.text, "another user received a private pick")
+        _require(private_notes not in redacted.text, "another user received private notes")
+        contributors = redacted.json()["assignment"]["contributors"]
+        _require(
+            any(item["complete"] and "picks" not in item for item in contributors),
+            "redacted viewer received no metadata-only completed contributor",
+        )
+
+        spoof = await client.put(
+            f"/api/top3/episodes/{idea_id}/submission",
+            json={
+                "id": "spoofed-owner",
+                "picks": ["One", "Two", "Three"],
+                "accountUserId": 1,
+            },
+            headers=_headers(viewer_token, saved.json()["revision"]),
+        )
+        _expect_status(spoof, 422, "Top 3 owner spoof attempt")
+
+        exported = await client.get("/api/export", headers=_headers(viewer_token))
+        _expect_status(exported, 200, "Top 3 leakage export")
+        _require(private_pick not in exported.text, "private Top 3 pick leaked to export")
+        _require(private_notes not in exported.text, "private Top 3 notes leaked to export")
+        _require(
+            not any(key.lower().startswith("top3") for key in exported.json()),
+            "general export unexpectedly contains Top 3 data",
+        )
+
+        replaced = await client.put(
+            f"/api/top3/episodes/{idea_id}/assignment",
+            json={"conceptId": concept_ids[1]},
+            headers=_headers(owner_token, exported.json()["revision"]),
+        )
+        _expect_status(replaced, 200, "Top 3 assignment replacement")
+        _require(
+            private_pick not in replaced.text and private_notes not in replaced.text,
+            "replacement retained picks from the prior concept",
+        )
+    finally:
+        await _cleanup_top3_records(idea_id, concept_ids)
+
+
 async def run_smoke(
     *,
     base_url: str,
@@ -326,10 +452,16 @@ async def run_smoke(
     """Exercise public, authentication, and protected API behavior."""
     validate_target(base_url, expected_environment)
     username = f"deploy-smoke-{secrets.token_hex(6)}"
+    viewer_username = f"deploy-smoke-viewer-{secrets.token_hex(6)}"
     password = secrets.token_urlsafe(24)
+    viewer_password = secrets.token_urlsafe(24)
     invite_code = "".join(secrets.choice(_INVITE_CHARSET) for _ in range(8))
+    viewer_invite_code = "".join(
+        secrets.choice(_INVITE_CHARSET) for _ in range(8)
+    )
 
     await _seed_invite(invite_code)
+    await _seed_invite(viewer_invite_code)
     try:
         async with httpx.AsyncClient(base_url=base_url, timeout=10) as client:
             health = await client.get("/api/health")
@@ -396,12 +528,28 @@ async def run_smoke(
             token = registration.json().get("token")
             _require(isinstance(token, str) and token, "registration returned no token")
 
+            viewer_registration = await client.post(
+                "/api/auth/register",
+                json={
+                    "username": viewer_username,
+                    "password": viewer_password,
+                    "inviteCode": viewer_invite_code,
+                },
+            )
+            _expect_status(viewer_registration, 201, "viewer registration")
+            viewer_token = viewer_registration.json().get("token")
+            _require(
+                isinstance(viewer_token, str) and viewer_token,
+                "viewer registration returned no token",
+            )
+
             authenticated_export = await client.get(
                 "/api/export",
                 headers={"Authorization": f"Bearer {token}"},
             )
             _expect_status(authenticated_export, 200, "authenticated export")
             await _exercise_song_bank(client, token)
+            await _exercise_top3(client, token, viewer_token)
 
             for attempt in (1, 2):
                 login = await client.post(
@@ -424,6 +572,7 @@ async def run_smoke(
                     f"authenticated export attempt {attempt}",
                 )
     finally:
+        await _cleanup_identity(viewer_username, viewer_invite_code)
         await _cleanup_identity(username, invite_code)
 
 

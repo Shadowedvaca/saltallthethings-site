@@ -98,3 +98,8 @@ def test_deployment_smoke_exercises_song_lifecycle_without_external_services():
     assert '"renderPreparation" in response.text' in source
     assert '"publicSongBlock" in response.text' in source
     assert '"clipboard.writeText" in response.text' in source
+    assert "/api/top3/concepts" in source
+    assert "/api/top3/episodes/{idea_id}/submission" in source
+    assert "another user received a private pick" in source
+    assert "general export unexpectedly contains Top 3 data" in source
+    assert "replacement retained picks from the prior concept" in source

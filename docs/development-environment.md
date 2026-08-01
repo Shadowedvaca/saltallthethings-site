@@ -86,7 +86,7 @@ uses `ssh-keyscan` to trust a key observed during deployment.
 6. builds the shared application image and starts only the
    `satt-development` services;
 7. waits for Compose health and verifies local and public health report
-   `development`, version `0.0.3`, and the exact resolved commit; and
+   `development`, version `0.0.5`, and the exact resolved commit; and
 8. prints at most 100 lines of SATT app/database logs on failure.
 
 Manual dispatch:
