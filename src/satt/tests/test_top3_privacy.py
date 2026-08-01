@@ -110,6 +110,46 @@ async def test_top3_routes_require_authentication(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_ai_concept_provenance_round_trips_without_creating_a_submission(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await _users(db_session)
+    generated_at = "2026-08-01T12:30:00Z"
+    response = await db_client.post(
+        "/api/top3/concepts",
+        json={
+            **_concept("ai-generated-concept"),
+            "source": "ai",
+            "aiProvider": "claude",
+            "aiModelId": "claude-test-model",
+            "aiGeneratedAt": generated_at,
+        },
+        headers=_headers(101, "rocket"),
+    )
+    assert response.status_code == 201
+    saved = response.json()["concept"]
+    assert saved["aiProvider"] == "claude"
+    assert saved["aiModelId"] == "claude-test-model"
+    assert datetime.fromisoformat(
+        saved["aiGeneratedAt"].replace("Z", "+00:00")
+    ) == datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+
+    reloaded = await db_client.get(
+        "/api/top3/concepts", headers=_headers(101, "rocket")
+    )
+    concept = next(
+        item
+        for item in reloaded.json()["concepts"]
+        if item["id"] == "ai-generated-concept"
+    )
+    assert datetime.fromisoformat(
+        concept["aiGeneratedAt"].replace("Z", "+00:00")
+    ) == datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+    submissions = await db_session.execute(select(Top3Submission))
+    assert submissions.scalars().all() == []
+
+
+@pytest.mark.asyncio
 async def test_viewer_projection_redacts_other_accounts_even_for_admin(
     db_client: AsyncClient, db_session: AsyncSession
 ):

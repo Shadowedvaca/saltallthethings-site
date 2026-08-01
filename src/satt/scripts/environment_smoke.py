@@ -442,6 +442,54 @@ async def _exercise_top3(
         await _cleanup_top3_records(idea_id, concept_ids)
 
 
+async def _exercise_top3_ai_boundary(
+    client: httpx.AsyncClient, token: str, exported_state: dict
+) -> None:
+    """Verify the deployed AI route without contacting an external provider."""
+    config = exported_state.get("config") or {}
+    _require("claudeApiKey" not in config, "Claude credential leaked to export")
+    _require("openaiApiKey" not in config, "OpenAI credential leaked to export")
+    _require(
+        isinstance(config.get("claudeApiKeyConfigured"), bool),
+        "Claude credential status is unavailable",
+    )
+    _require(
+        isinstance(config.get("openaiApiKeyConfigured"), bool),
+        "OpenAI credential status is unavailable",
+    )
+
+    unauthorized = await client.post(
+        "/api/ai/top3-concept",
+        json={"description": "Deployment-only route check"},
+    )
+    _expect_status(unauthorized, 401, "unauthenticated Top 3 AI generation")
+
+    participant_shaped = await client.post(
+        "/api/ai/top3-concept",
+        json={
+            "description": "Deployment-only route check",
+            "participantPicks": ["One", "Two", "Three"],
+        },
+        headers=_headers(token),
+    )
+    _expect_status(participant_shaped, 422, "participant-shaped Top 3 AI input")
+
+    provider = config.get("aiModel", "claude")
+    configured_flag = f"{provider}ApiKeyConfigured"
+    if provider in {"claude", "openai"} and config.get(configured_flag) is False:
+        missing_credential = await client.post(
+            "/api/ai/top3-concept",
+            json={"description": "Deployment-only missing credential check"},
+            headers=_headers(token),
+        )
+        _expect_status(missing_credential, 400, "Top 3 AI missing credential")
+        _require(
+            missing_credential.json().get("error")
+            == f"No API key configured for {provider}",
+            "Top 3 AI missing-credential response is not actionable",
+        )
+
+
 async def run_smoke(
     *,
     base_url: str,
@@ -548,6 +596,9 @@ async def run_smoke(
                 headers={"Authorization": f"Bearer {token}"},
             )
             _expect_status(authenticated_export, 200, "authenticated export")
+            await _exercise_top3_ai_boundary(
+                client, token, authenticated_export.json()
+            )
             await _exercise_song_bank(client, token)
             await _exercise_top3(client, token, viewer_token)
 

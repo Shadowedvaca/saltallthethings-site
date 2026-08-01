@@ -103,3 +103,8 @@ def test_deployment_smoke_exercises_song_lifecycle_without_external_services():
     assert "another user received a private pick" in source
     assert "general export unexpectedly contains Top 3 data" in source
     assert "replacement retained picks from the prior concept" in source
+    assert '"/api/ai/top3-concept"' in source
+    assert "participant-shaped Top 3 AI input" in source
+    assert "Top 3 AI missing credential" in source
+    assert '"claudeApiKey" not in config' in source
+    assert '"openaiApiKey" not in config' in source
