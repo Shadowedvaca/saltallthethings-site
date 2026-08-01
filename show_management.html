@@ -233,6 +233,21 @@
       border: 1px solid var(--ice-dim); border-radius: var(--radius-md);
     }
     .show-display-song-title { color: var(--text-gold); font-size: 1.1rem; }
+    .spotify-overview {
+      padding: var(--space-lg); background: var(--bg-surface);
+      border: 1px solid var(--gold-dim); border-radius: var(--radius-md);
+    }
+    .spotify-overview-heading {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: var(--space-md); margin-bottom: var(--space-md);
+    }
+    .spotify-overview-heading h2 { margin-bottom: 0; }
+    .spotify-overview pre {
+      margin: 0; padding: var(--space-md); white-space: pre-wrap; overflow-wrap: anywhere;
+      color: var(--text-primary); background: var(--bg-deep); border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm); font: inherit; line-height: 1.6;
+    }
+    .spotify-overview-status { min-height: 1.5em; margin-top: var(--space-sm); color: var(--text-muted); }
     .show-display-image {
       margin-top: var(--space-xl); text-align: center;
       padding-top: var(--space-lg); border-top: 1px solid var(--border-subtle);
@@ -384,6 +399,7 @@
   <script src="js/ai-service.js"></script>
   <script src="js/show-engine.js"></script>
   <script src="js/show-song.js"></script>
+  <script src="js/episode-overview.js"></script>
   <script src="js/toast.js"></script>
   <script>
     // Init auth gate
@@ -1094,6 +1110,8 @@
     // ============================================
     // Full-Screen Show Display
     // ============================================
+    var currentSpotifyOverview = '';
+
     function openShowDisplay(slotId) {
       var slots = Storage.getShowSlots();
       var assignments = Storage.getAssignments();
@@ -1132,6 +1150,9 @@
       }
 
       html += SongPreparation.renderPreparation(assignedSong);
+
+      currentSpotifyOverview = EpisodeOverview.compose(idea.summary, assignedSong);
+      html += EpisodeOverview.render(currentSpotifyOverview);
 
       // Summary
       if (idea.summary) {
@@ -1194,8 +1215,21 @@
       document.body.style.overflow = 'hidden';
     }
 
+    async function copySpotifyOverview() {
+      var status = document.getElementById('spotifyOverviewStatus');
+      try {
+        await EpisodeOverview.copy(currentSpotifyOverview, navigator, document);
+        status.textContent = 'Spotify overview copied.';
+        Toast.success('Spotify overview copied.');
+      } catch (error) {
+        status.textContent = 'Copy failed. Select the overview text and copy it manually.';
+        Toast.error('Copy failed. Select the overview text and copy it manually.');
+      }
+    }
+
     function closeShowDisplay() {
       document.getElementById('showDisplayOverlay').classList.remove('active');
+      currentSpotifyOverview = '';
       document.body.style.overflow = '';
       // Clean URL hash
       if (location.hash.startsWith('#show/')) {

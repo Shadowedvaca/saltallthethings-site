@@ -75,6 +75,28 @@ offered. If another session changes or deletes a choice, revision conflict
 handling reloads the current server state and the episode view reports that the
 requested change was not applied.
 
+## Spotify overview output
+
+The authenticated full-screen show display provides a deterministic, copyable
+Spotify overview. It preserves the saved AI-generated summary exactly. When an
+episode has an assigned song, the composer appends exactly one blank line and
+this public block:
+
+```text
+Featured song: Artist — Song title
+YouTube: https://youtu.be/video-id
+```
+
+When no song is assigned, the overview is only the unchanged summary and no
+empty song heading or placeholder is emitted. The copied plaintext includes
+only the summary, artist, title, and validated YouTube URL. It never includes
+private talking points, lifecycle state, database or client IDs, assignment
+metadata, or other preparation data. Composition and copying are read-only and
+do not update the episode or Song Bank. Clipboard API failure falls back to the
+browser copy command; if neither path succeeds, the text remains selectable and
+the page gives explicit failure feedback. This is copy/paste assistance only;
+the application does not publish to Spotify.
+
 ## Import, export, and rollback
 
 Authenticated export includes `songs`; browser import accepts it as an optional

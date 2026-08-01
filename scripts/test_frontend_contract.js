@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const SongBankPage = require("../js/songs.js");
 const SongPreparation = require("../js/show-song.js");
+const EpisodeOverview = require("../js/episode-overview.js");
 
 function domHarness() {
   const elements = new Map();
@@ -384,6 +385,71 @@ function testEpisodeSongPreparationContract() {
   assert.equal(SongPreparation.renderPreparation(null), "");
 }
 
+async function testEpisodeOverviewContract() {
+  const summary = "AI summary <unchanged> & ready.";
+  const song = Object.freeze({
+    id: "internal-song-id",
+    artist: "Artist & Friends",
+    title: "Title <Live>",
+    youtubeUrl: "https://youtu.be/abc123?si=safe&feature=share",
+    privateNotes: "PRIVATE SENTINEL",
+    status: "used",
+    assignedIdeaId: "internal-idea-id",
+  });
+  const before = JSON.stringify(song);
+  const expected = summary
+    + "\n\nFeatured song: Artist & Friends — Title <Live>"
+    + "\nYouTube: https://youtu.be/abc123?si=safe&feature=share";
+  const composed = EpisodeOverview.compose(summary, song);
+  assert.equal(composed, expected);
+  assert.equal(EpisodeOverview.compose(summary, null), summary);
+  assert.equal(JSON.stringify(song), before);
+  assert.doesNotMatch(composed, /PRIVATE SENTINEL|internal-song-id|internal-idea-id|used/);
+
+  const markup = EpisodeOverview.render(composed);
+  assert.match(markup, /Spotify Overview/);
+  assert.match(markup, /aria-describedby="spotifyOverviewStatus"/);
+  assert.match(markup, /role="status" aria-live="polite"/);
+  assert.match(markup, /Title &lt;Live&gt;/);
+  assert.match(markup, /si=safe&amp;feature=share/);
+  assert.doesNotMatch(markup, /PRIVATE SENTINEL|<Live>/);
+
+  let clipboardPayload = null;
+  assert.equal(await EpisodeOverview.copy(composed, {
+    clipboard: { writeText: async (text) => { clipboardPayload = text; } },
+  }, null), "clipboard");
+  assert.equal(clipboardPayload, expected);
+  assert.equal(JSON.stringify(song), before);
+
+  let fallbackPayload = null;
+  let removed = false;
+  const textarea = {
+    value: "",
+    style: {},
+    setAttribute() {},
+    select() { fallbackPayload = this.value; },
+  };
+  const fallbackDocument = {
+    createElement: () => textarea,
+    execCommand(command) { assert.equal(command, "copy"); return true; },
+    body: {
+      appendChild(element) { assert.equal(element, textarea); },
+      removeChild(element) { assert.equal(element, textarea); removed = true; },
+    },
+  };
+  assert.equal(await EpisodeOverview.copy(composed, {}, fallbackDocument), "fallback");
+  assert.equal(fallbackPayload, expected);
+  assert.equal(removed, true);
+  assert.equal(await EpisodeOverview.copy(composed, {
+    clipboard: { writeText: async () => { throw new Error("permission denied"); } },
+  }, fallbackDocument), "fallback");
+  await assert.rejects(EpisodeOverview.copy(composed, {}, {
+    createElement: () => textarea,
+    execCommand: () => false,
+    body: { appendChild() {}, removeChild() {} },
+  }), /did not copy/);
+}
+
 async function main() {
   const showManagement = fs.readFileSync("show_management.html", "utf8");
   const jokesPage = fs.readFileSync("jokes.html", "utf8");
@@ -408,8 +474,12 @@ async function main() {
   assert.match(showManagement, /await Storage\.assignJokeToIdea\(jokeId, ideaId\)/);
   assert.match(showManagement, /await Storage\.freeJoke\(jokeId\)/);
   assert.match(showManagement, /js\/show-song\.js/);
+  assert.match(showManagement, /js\/episode-overview\.js/);
   assert.match(showManagement, /SongPreparation\.renderPicker\(idea\.id, Storage\.getSongs\(\)\)/);
   assert.match(showManagement, /SongPreparation\.renderPreparation\(assignedSong\)/);
+  assert.match(showManagement, /EpisodeOverview\.compose\(idea\.summary, assignedSong\)/);
+  assert.match(showManagement, /await EpisodeOverview\.copy\(currentSpotifyOverview, navigator, document\)/);
+  assert.match(showManagement, /Copy failed\. Select the overview text and copy it manually\./);
   assert.match(showManagement, /await Storage\.assignSongToIdea\(songId, ideaId\)/);
   assert.match(showManagement, /await Storage\.freeSong\(songId\)/);
   assert.match(showManagement, /Replace .* with/);
@@ -439,6 +509,7 @@ async function main() {
   await testSongManagementStorageRoutes();
   testSongManagementPageContract();
   testEpisodeSongPreparationContract();
+  await testEpisodeOverviewContract();
 }
 
 main().catch((error) => {
