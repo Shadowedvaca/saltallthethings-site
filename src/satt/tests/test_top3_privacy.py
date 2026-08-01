@@ -360,9 +360,8 @@ async def test_database_rejects_duplicate_picks_and_user_deletion_with_audit_row
         )
     )
     await db_session.flush()
-    await db_session.execute(delete(User).where(User.id == 101))
     with pytest.raises(IntegrityError):
-        await db_session.flush()
+        await db_session.execute(delete(User).where(User.id == 101))
     await db_session.rollback()
 
 
