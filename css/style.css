@@ -727,7 +727,13 @@ select {
   .site-nav {
     padding: var(--space-sm) var(--space-md);
     gap: var(--space-md);
+    flex-wrap: wrap;
   }
+
+  .site-nav .nav-title,
+  .site-nav .nav-spacer { display: none; }
+
+  .site-nav a { flex: 0 0 auto; }
 }
 
 /* Persistent write state for conflict-safe browser saves. */

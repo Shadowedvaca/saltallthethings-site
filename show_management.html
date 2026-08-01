@@ -201,6 +201,53 @@
       border-radius: var(--radius-md); font-size: 1rem; line-height: 1.6;
       color: var(--text-gold); font-style: italic;
     }
+    .song-prep-card {
+      padding: var(--space-md); background: var(--bg-surface);
+      border: 1px solid var(--border-default); border-radius: var(--radius-md);
+    }
+    .song-prep-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-sm); }
+    .song-prep-heading a, .show-display-song a { color: var(--ice); }
+    .song-prep-notes, .show-display-song-notes {
+      margin-top: var(--space-md); padding-top: var(--space-md);
+      border-top: 1px solid var(--border-subtle);
+    }
+    .song-prep-notes strong, .show-display-song-notes strong {
+      display: block; color: var(--text-muted); font-size: 0.72rem;
+      text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: var(--space-xs);
+    }
+    .song-prep-notes p, .show-display-song-notes p { white-space: pre-wrap; overflow-wrap: anywhere; }
+    .song-choice-list { display: flex; flex-direction: column; gap: var(--space-xs); margin-top: var(--space-sm); }
+    .song-choice {
+      display: flex; align-items: center; gap: var(--space-xs); width: 100%;
+      padding: var(--space-sm) var(--space-md); color: var(--text-primary);
+      background: var(--bg-surface); border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md); font: inherit; font-size: 0.82rem;
+      text-align: left; cursor: pointer;
+    }
+    .song-choice:hover, .song-choice:focus-visible { border-color: var(--gold-dim); }
+    .song-choice span { margin-left: auto; color: var(--text-muted); font-size: 0.7rem; }
+    .song-replace { margin-top: var(--space-sm); }
+    .song-replace summary { color: var(--ice); cursor: pointer; font-size: 0.8rem; }
+    .show-display-song {
+      padding: var(--space-lg); background: var(--ice-glow);
+      border: 1px solid var(--ice-dim); border-radius: var(--radius-md);
+    }
+    .show-display-song-title { color: var(--text-gold); font-size: 1.1rem; }
+    .spotify-overview {
+      padding: var(--space-lg); background: var(--bg-surface);
+      border: 1px solid var(--gold-dim); border-radius: var(--radius-md);
+    }
+    .spotify-overview-heading {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: var(--space-md); margin-bottom: var(--space-md);
+    }
+    .spotify-overview-heading h2 { margin-bottom: 0; }
+    .spotify-overview pre {
+      margin: 0; padding: var(--space-md); white-space: pre-wrap; overflow-wrap: anywhere;
+      color: var(--text-primary); background: var(--bg-deep); border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm); font: inherit; line-height: 1.6;
+    }
+    .spotify-overview-status { min-height: 1.5em; margin-top: var(--space-sm); color: var(--text-muted); }
     .show-display-image {
       margin-top: var(--space-xl); text-align: center;
       padding-top: var(--space-lg); border-top: 1px solid var(--border-subtle);
@@ -270,6 +317,7 @@
       <a href="index.html">Home</a>
       <a href="show_management.html" class="active">Show Management</a>
       <a href="jokes.html">Joke Bank</a>
+      <a href="songs.html">Song Bank</a>
       <a href="postproduction.html">Post-Production</a>
       <a href="config.html">Config</a>
       <button class="btn btn-ghost btn-sm" onclick="Auth.logout()" style="color: var(--text-muted);">🔒 Logout</button>
@@ -350,6 +398,8 @@
   <script src="js/storage.js"></script>
   <script src="js/ai-service.js"></script>
   <script src="js/show-engine.js"></script>
+  <script src="js/show-song.js"></script>
+  <script src="js/episode-overview.js"></script>
   <script src="js/toast.js"></script>
   <script>
     // Init auth gate
@@ -362,6 +412,7 @@
     let currentYear = 2026;
     let draggedIdeaId = null;
     const editingIdeas = new Set();
+    const expandedIdeas = new Set();
     let lastProcessedId = null;
     let pastSectionOpen = false;
 
@@ -536,7 +587,7 @@
       const title = esc(idea.selectedTitle || (idea.titles && idea.titles[0]) || 'Untitled Idea');
       const summary = esc(idea.summary || truncate(idea.rawNotes, 120));
       const isEditing = editingIdeas.has(idea.id);
-      const autoExpand = (idea.id === lastProcessedId) || isEditing;
+      const autoExpand = expandedIdeas.has(idea.id) || (idea.id === lastProcessedId) || isEditing;
 
       // Schedule info line
       var scheduleHtml = '';
@@ -594,13 +645,15 @@
         jokeHtml = '<p class="text-sm text-muted">No unused jokes available. <a href="jokes.html" style="color: var(--ice);">Build your joke bank</a> first.</p>';
       }
 
+      var songHtml = SongPreparation.renderPicker(idea.id, Storage.getSongs());
+
       if (isEditing) {
-        return renderEditMode(idea, jokeHtml);
+        return renderEditMode(idea, jokeHtml, songHtml);
       }
-      return renderViewMode(idea, jokeHtml);
+      return renderViewMode(idea, jokeHtml, songHtml);
     }
 
-    function renderViewMode(idea, jokeHtml) {
+    function renderViewMode(idea, jokeHtml, songHtml) {
       var html = '';
 
       // Edit button
@@ -624,6 +677,10 @@
       html += '<div class="mb-md">'
         + '<label class="text-xs text-muted" style="display:block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Opening Salt Joke ' + (assignedJoke ? '✓' : '(click to assign)') + '</label>'
         + jokeHtml + '</div>';
+
+      html += '<div class="mb-md">'
+        + '<label class="text-xs text-muted" style="display:block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Episode Song</label>'
+        + songHtml + '</div>';
 
       // Summary
       html += '<div class="mb-md">'
@@ -652,7 +709,7 @@
 
       // Raw notes
       html += '<div class="mt-md" style="padding-top: var(--space-md); border-top: 1px solid var(--border-subtle);">'
-        + '<details><summary class="text-xs text-muted" style="cursor: pointer;">Raw Notes</summary>'
+        + '<details onclick="event.stopPropagation()"><summary class="text-xs text-muted" style="cursor: pointer;">Raw Notes</summary>'
         + '<pre class="text-sm mt-sm" style="white-space: pre-wrap; color: var(--text-secondary); font-family: \'DM Sans\', sans-serif; line-height: 1.6;">' + esc(idea.rawNotes) + '</pre>'
         + '</details></div>';
 
@@ -665,7 +722,7 @@
       return html;
     }
 
-    function renderEditMode(idea, jokeHtml) {
+    function renderEditMode(idea, jokeHtml, songHtml) {
       var html = '';
 
       // Edit mode banner
@@ -708,6 +765,10 @@
       html += '<div class="mb-md">'
         + '<label class="text-xs text-muted" style="display:block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Opening Salt Joke ' + (assignedJoke ? '✓' : '(click to assign)') + '</label>'
         + jokeHtml + '</div>';
+
+      html += '<div class="mb-md">'
+        + '<label class="text-xs text-muted" style="display:block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Episode Song</label>'
+        + songHtml + '</div>';
 
       // Editable summary
       html += '<div class="mb-md" onclick="event.stopPropagation()">'
@@ -796,16 +857,14 @@
     // ============================================
     function enterEditMode(ideaId) {
       editingIdeas.add(ideaId);
+      expandedIdeas.add(ideaId);
       renderIdeasList();
-      var card = document.getElementById('idea-' + ideaId);
-      if (card && !card.classList.contains('expanded')) card.classList.add('expanded');
     }
 
     function cancelEdit(ideaId) {
       editingIdeas.delete(ideaId);
+      expandedIdeas.add(ideaId);
       renderIdeasList();
-      var card = document.getElementById('idea-' + ideaId);
-      if (card && !card.classList.contains('expanded')) card.classList.add('expanded');
     }
 
     async function saveEdits(ideaId) {
@@ -864,9 +923,7 @@
       if (!saved) return;
 
       editingIdeas.delete(ideaId);
-      renderIdeasList();
-      var card = document.getElementById('idea-' + ideaId);
-      if (card && !card.classList.contains('expanded')) card.classList.add('expanded');
+      rerenderIdeasPreservingExpansion(ideaId);
       Toast.success('Changes saved!');
     }
 
@@ -902,25 +959,81 @@
     // ============================================
     // Idea Actions
     // ============================================
-    function toggleIdeaExpand(ideaId) { document.getElementById('idea-' + ideaId).classList.toggle('expanded'); }
+    function toggleIdeaExpand(ideaId) {
+      var card = document.getElementById('idea-' + ideaId);
+      var expanded = card.classList.toggle('expanded');
+      if (expanded) expandedIdeas.add(ideaId);
+      else expandedIdeas.delete(ideaId);
+    }
+
+    function rerenderIdeasPreservingExpansion(ideaId) {
+      expandedIdeas.add(ideaId);
+      renderIdeasList();
+    }
 
     async function selectTitle(ideaId, titleIndex) {
       var ideas = Storage.getIdeas();
       var idea = ideas.find(function(i) { return i.id === ideaId; });
-      if (idea && idea.titles && await Storage.updateIdea(ideaId, { selectedTitle: idea.titles[titleIndex] })) renderIdeasList();
+      if (idea && idea.titles && await Storage.updateIdea(ideaId, { selectedTitle: idea.titles[titleIndex] })) rerenderIdeasPreservingExpansion(ideaId);
     }
 
     async function selectJokeForIdea(ideaId, jokeId) {
       if (!await Storage.assignJokeToIdea(jokeId, ideaId)) return;
-      renderIdeasList();
+      rerenderIdeasPreservingExpansion(ideaId);
       Toast.success('Joke assigned to show!');
     }
 
     async function clearJokeFromIdea(ideaId, jokeId) {
       if (!await Storage.freeJoke(jokeId)) return;
-      renderIdeasList();
+      rerenderIdeasPreservingExpansion(ideaId);
       Toast.info('Joke freed up.');
     }
+
+    async function selectSongForIdea(ideaId, songId) {
+      var selected = Storage.getSongs().find(function(song) { return song.id === songId; });
+      var current = Storage.getSongForIdea(ideaId);
+      if (!selected || selected.status !== 'unused') {
+        rerenderIdeasPreservingExpansion(ideaId);
+        Toast.error('That song is no longer available. The latest Song Bank is shown.');
+        return;
+      }
+      if (current && current.id !== songId && !confirm('Replace “' + current.artist + ' — ' + current.title + '” with “' + selected.artist + ' — ' + selected.title + '”?')) return;
+      var assigned = await Storage.assignSongToIdea(songId, ideaId);
+      rerenderIdeasPreservingExpansion(ideaId);
+      if (!assigned) {
+        Toast.info('Song assignment was not changed. The latest server data is shown.');
+        return;
+      }
+      Toast.success(current ? 'Episode song replaced.' : 'Song assigned to episode.');
+    }
+
+    async function clearSongFromIdea(ideaId, songId) {
+      var current = Storage.getSongForIdea(ideaId);
+      if (!current || current.id !== songId) {
+        rerenderIdeasPreservingExpansion(ideaId);
+        Toast.error('That assignment no longer exists. The latest data is shown.');
+        return;
+      }
+      if (!confirm('Remove “' + current.artist + ' — ' + current.title + '” from this episode?')) return;
+      var removed = await Storage.freeSong(songId);
+      rerenderIdeasPreservingExpansion(ideaId);
+      if (!removed) {
+        Toast.info('Song assignment was not removed. The latest server data is shown.');
+        return;
+      }
+      Toast.info('Episode song removed.');
+    }
+
+    document.addEventListener('click', function(event) {
+      var button = event.target.closest('[data-song-action]');
+      if (!button) return;
+      event.stopPropagation();
+      if (button.dataset.songAction === 'assign') {
+        selectSongForIdea(button.dataset.ideaId, button.dataset.songId);
+      } else if (button.dataset.songAction === 'remove') {
+        clearSongFromIdea(button.dataset.ideaId, button.dataset.songId);
+      }
+    });
 
     async function processIdea() {
       var notes = document.getElementById('ideaNotes').value.trim();
@@ -997,6 +1110,7 @@
       if (!confirm('Delete this idea?')) return;
       if (!await Storage.deleteIdea(ideaId)) return;
       editingIdeas.delete(ideaId);
+      expandedIdeas.delete(ideaId);
       renderIdeasList();
       Toast.info('Idea deleted.');
     }
@@ -1004,6 +1118,8 @@
     // ============================================
     // Full-Screen Show Display
     // ============================================
+    var currentSpotifyOverview = '';
+
     function openShowDisplay(slotId) {
       var slots = Storage.getShowSlots();
       var assignments = Storage.getAssignments();
@@ -1022,6 +1138,7 @@
 
       var title = idea.selectedTitle || (idea.titles && idea.titles[0]) || 'Untitled';
       var assignedJoke = Storage.getJokeForIdea(idea.id);
+      var assignedSong = Storage.getSongForIdea(idea.id);
 
       var html = '<div class="show-display-header">'
         + '<div>'
@@ -1039,6 +1156,11 @@
           + '<div class="show-display-joke">' + esc(assignedJoke.text) + '</div>'
           + '</div>';
       }
+
+      html += SongPreparation.renderPreparation(assignedSong);
+
+      currentSpotifyOverview = EpisodeOverview.compose(idea.summary, assignedSong);
+      html += EpisodeOverview.render(currentSpotifyOverview);
 
       // Summary
       if (idea.summary) {
@@ -1101,8 +1223,21 @@
       document.body.style.overflow = 'hidden';
     }
 
+    async function copySpotifyOverview() {
+      var status = document.getElementById('spotifyOverviewStatus');
+      try {
+        await EpisodeOverview.copy(currentSpotifyOverview, navigator, document);
+        status.textContent = 'Spotify overview copied.';
+        Toast.success('Spotify overview copied.');
+      } catch (error) {
+        status.textContent = 'Copy failed. Select the overview text and copy it manually.';
+        Toast.error('Copy failed. Select the overview text and copy it manually.');
+      }
+    }
+
     function closeShowDisplay() {
       document.getElementById('showDisplayOverlay').classList.remove('active');
+      currentSpotifyOverview = '';
       document.body.style.overflow = '';
       // Clean URL hash
       if (location.hash.startsWith('#show/')) {

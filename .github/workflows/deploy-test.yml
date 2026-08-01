@@ -135,7 +135,7 @@ jobs:
               sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from satt.alembic_version"' \
               < /dev/null
           )"
-          test "$revision" = "0006"
+          test "$revision" = "0007"
 
           compose exec -T app /usr/local/bin/satt-entrypoint \
             python -m satt.scripts.environment_smoke \

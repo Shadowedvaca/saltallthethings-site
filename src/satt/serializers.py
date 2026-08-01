@@ -40,6 +40,20 @@ def serialize_joke(row: Any) -> dict:
     }
 
 
+def serialize_song(row: Any) -> dict:
+    return {
+        "id": row.id,
+        "artist": row.artist,
+        "title": row.title,
+        "youtubeUrl": row.youtube_url,
+        "privateNotes": row.private_notes,
+        "status": row.status,
+        "assignedIdeaId": row.assigned_idea_id,
+        "createdAt": _iso(row.created_at),
+        "updatedAt": _iso(row.updated_at),
+    }
+
+
 def serialize_show_slot(row: Any) -> dict:
     return {
         "id": row.id,

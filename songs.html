@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Song Bank — Salt All The Things</title>
+  <link rel="icon" type="image/jpeg" href="images/256x256.jpeg">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .songs-layout { display: grid; grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.4fr); gap: var(--space-lg); align-items: start; }
+    .song-form-card { position: sticky; top: 84px; }
+    .song-toolbar { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: end; margin-bottom: var(--space-md); }
+    .song-search { flex: 1 1 240px; margin-bottom: 0; }
+    .song-filters { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
+    .song-filter {
+      padding: var(--space-xs) var(--space-md); border-radius: 100px;
+      background: var(--bg-surface); border: 1px solid var(--border-subtle);
+      color: var(--text-secondary); font: inherit; font-size: 0.8rem; font-weight: 600;
+      cursor: pointer;
+    }
+    .song-filter:hover, .song-filter:focus-visible { border-color: var(--border-default); }
+    .song-filter.active { background: var(--gold-glow); border-color: var(--gold-dim); color: var(--text-gold); }
+    .song-list { display: flex; flex-direction: column; gap: var(--space-sm); }
+    .song-item {
+      padding: var(--space-md); background: var(--bg-card);
+      border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+    }
+    .song-item.retired { opacity: 0.65; }
+    .song-heading { display: flex; gap: var(--space-sm); justify-content: space-between; align-items: start; }
+    .song-heading h3 { margin: 0; font-size: 1rem; }
+    .song-artist { color: var(--text-gold); }
+    .song-notes { margin-top: var(--space-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+    .song-meta { margin-top: var(--space-sm); color: var(--text-muted); font-size: 0.75rem; }
+    .song-actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-top: var(--space-md); }
+    .song-empty { text-align: center; padding: 3rem 1rem; }
+    .form-error { min-height: 1.4em; color: var(--danger); font-size: 0.85rem; }
+    .field-error { border-color: var(--danger) !important; }
+    @media (max-width: 1024px) {
+      .songs-layout { grid-template-columns: 1fr; }
+      .song-form-card { position: static; }
+    }
+    @media (max-width: 768px) {
+      .song-heading { flex-direction: column; }
+      .song-actions .btn { flex: 1 1 auto; }
+    }
+  </style>
+</head>
+<body>
+  <div id="loadingOverlay" style="display:none; position:fixed; inset:0; z-index:99998; background:#08080f; align-items:center; justify-content:center; flex-direction:column; gap:16px;">
+    <svg class="spinner-lg" viewBox="0 0 50 50" style="width:48px;height:48px;" aria-hidden="true"><circle cx="25" cy="25" r="20" fill="none" stroke="#c8a84e" stroke-width="3" stroke-dasharray="80 40" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" values="0 25 25;360 25 25" dur="0.8s" repeatCount="indefinite"></animateTransform></circle></svg>
+    <span style="color:#c8a84e; font-family:'Cinzel',serif; font-size:0.9rem;">Loading songs…</span>
+  </div>
+
+  <div id="protectedContent" style="display:none;">
+    <nav class="site-nav" aria-label="Crew navigation">
+      <img src="images/256x256.jpeg" alt="SATT" class="nav-logo">
+      <span class="nav-title">Salt All The Things</span>
+      <div class="nav-spacer"></div>
+      <a href="index.html">Home</a>
+      <a href="show_management.html">Show Management</a>
+      <a href="jokes.html">Joke Bank</a>
+      <a href="songs.html" class="active" aria-current="page">Song Bank</a>
+      <a href="postproduction.html">Post-Production</a>
+      <a href="config.html">Config</a>
+      <button type="button" class="btn btn-ghost btn-sm" data-action="logout" style="color:var(--text-muted);">🔒 Logout</button>
+    </nav>
+
+    <main class="page-container">
+      <div class="page-header">
+        <h1>Song Bank</h1>
+        <p class="subtitle">Save thematic songs and private host talking points for future episodes.</p>
+      </div>
+
+      <div id="pageNotice" class="text-sm text-secondary mb-md" role="status" aria-live="polite"></div>
+
+      <div class="songs-layout">
+        <section class="card card-elevated song-form-card" aria-labelledby="songFormHeading">
+          <h2 id="songFormHeading" class="mb-md">Add a Song</h2>
+          <form id="songForm" novalidate>
+            <div class="form-group">
+              <label for="songArtist">Artist</label>
+              <input id="songArtist" name="artist" type="text" autocomplete="off" required maxlength="300">
+            </div>
+            <div class="form-group">
+              <label for="songTitle">Song title</label>
+              <input id="songTitle" name="title" type="text" autocomplete="off" required maxlength="300">
+            </div>
+            <div class="form-group">
+              <label for="songYoutubeUrl">YouTube link</label>
+              <input id="songYoutubeUrl" name="youtubeUrl" type="url" inputmode="url" required aria-describedby="youtubeHelp" placeholder="https://youtu.be/…">
+              <p id="youtubeHelp" class="text-xs text-muted mt-sm">Official HTTPS YouTube watch, short, live, embed, or youtu.be links only. The site does not fetch metadata.</p>
+            </div>
+            <div class="form-group">
+              <label for="songPrivateNotes">Private talking points <span class="label-hint">— hosts only</span></label>
+              <textarea id="songPrivateNotes" name="privateNotes" rows="6" placeholder="Why this song fits, transitions, memories, or discussion prompts…"></textarea>
+            </div>
+            <p id="songFormError" class="form-error" role="alert"></p>
+            <div class="flex gap-sm">
+              <button id="saveSongButton" type="submit" class="btn btn-primary">Add Song</button>
+              <button id="cancelEditButton" type="button" class="btn btn-ghost hidden" data-action="cancel-edit">Cancel</button>
+            </div>
+          </form>
+        </section>
+
+        <section aria-labelledby="songListHeading">
+          <div class="flex justify-between items-center mb-md">
+            <h2 id="songListHeading">Your Songs</h2>
+            <span id="songCount" class="text-sm text-muted"></span>
+          </div>
+          <div class="song-toolbar">
+            <div class="form-group song-search">
+              <label for="songSearch">Search songs</label>
+              <input id="songSearch" type="search" placeholder="Artist, title, notes, or episode">
+            </div>
+            <div class="song-filters" role="group" aria-label="Filter songs by status">
+              <button type="button" class="song-filter active" data-filter="all" aria-pressed="true">All</button>
+              <button type="button" class="song-filter" data-filter="unused" aria-pressed="false">Unused</button>
+              <button type="button" class="song-filter" data-filter="used" aria-pressed="false">Used</button>
+              <button type="button" class="song-filter" data-filter="retired" aria-pressed="false">Retired</button>
+            </div>
+          </div>
+          <div id="songsList" class="song-list"></div>
+          <div id="noSongs" class="song-empty hidden">
+            <p class="text-secondary">No songs match this view.</p>
+            <p class="text-muted text-sm mt-sm">Add a song or adjust the search and status filter.</p>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <noscript>This authenticated page requires JavaScript.</noscript>
+  <script src="js/auth.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/toast.js"></script>
+  <script src="js/songs.js"></script>
+</body>
+</html>

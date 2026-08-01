@@ -217,10 +217,10 @@ def test_pull_request_workflow_has_minimal_permissions_and_pinned_actions():
     assert "python scripts/validate_release.py" in source
     assert "Validate current release contract without publishing" in source
     assert "Exercise isolated migration rollback and recovery" in source
-    assert "app alembic downgrade 0005" in source
-    assert 'test "$revision" = "0005"' in source
-    assert "app alembic upgrade head" in source
+    assert "app alembic downgrade 0006" in source
     assert 'test "$revision" = "0006"' in source
+    assert "app alembic upgrade head" in source
+    assert 'test "$revision" = "0007"' in source
     assert "docker compose -f compose.ci.yaml up -d --wait app" in source
     assert "Exercise isolated production backup restore" in source
     assert "pg_dump --format=custom --schema=satt" in source
@@ -348,6 +348,7 @@ def test_production_deploy_is_tag_only_immutable_and_recoverable():
     deploy_script = PROD_SCRIPT_PATH.read_text(encoding="utf-8")
     nightly_backup = PROD_NIGHTLY_BACKUP_PATH.read_text(encoding="utf-8")
     combined = source + deploy_script + nightly_backup
+    assert "songs.html" in deploy_script
     workflow = yaml.safe_load(source)
 
     assert workflow["on"] == {"push": {"tags": ["prod-v*"]}}

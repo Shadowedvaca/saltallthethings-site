@@ -54,6 +54,17 @@ DATA_QUERIES = {
         FROM satt.assignments ORDER BY slot_id
     """,
 }
+OPTIONAL_DATA_QUERIES = {
+    # Additive release tables are represented as an empty collection before
+    # their migration and queried normally afterward. This keeps cutover
+    # continuity comparable across the migration boundary without weakening
+    # checks once the table contains data.
+    "songs": """
+        SELECT id, artist, title, youtube_url, private_notes, status,
+               assigned_idea_id, created_at, updated_at
+        FROM satt.songs ORDER BY id
+    """,
+}
 
 
 def configure_private_database_url() -> None:
@@ -117,11 +128,21 @@ def fingerprint_rows(rows_by_table: dict[str, list[dict[str, Any]]]) -> dict[str
     }
 
 
-async def _query_group(queries: dict[str, str]) -> dict[str, list[dict[str, Any]]]:
+async def _query_group(
+    queries: dict[str, str], *, optional: bool = False
+) -> dict[str, list[dict[str, Any]]]:
     engine = get_engine()
     rows_by_table: dict[str, list[dict[str, Any]]] = {}
     async with engine.connect() as connection:
         for table, query in queries.items():
+            if optional:
+                exists = await connection.scalar(
+                    text("SELECT to_regclass(:qualified_name)"),
+                    {"qualified_name": f"satt.{table}"},
+                )
+                if exists is None:
+                    rows_by_table[table] = []
+                    continue
             result = await connection.execute(text(query))
             rows_by_table[table] = [dict(row) for row in result.mappings()]
     return rows_by_table
@@ -136,6 +157,7 @@ async def fingerprint_production() -> dict[str, Any]:
 
     auth_rows = await _query_group(AUTH_QUERIES)
     data_rows = await _query_group(DATA_QUERIES)
+    data_rows.update(await _query_group(OPTIONAL_DATA_QUERIES, optional=True))
     await get_engine().dispose()
     return {
         "auth": fingerprint_rows(auth_rows),

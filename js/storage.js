@@ -47,6 +47,7 @@ const Storage = {
     if (Object.prototype.hasOwnProperty.call(state, 'config')) this._cache.config = state.config || null;
     if (Object.prototype.hasOwnProperty.call(state, 'ideas')) this._cache.ideas = state.ideas || [];
     if (Object.prototype.hasOwnProperty.call(state, 'jokes')) this._cache.jokes = state.jokes || [];
+    if (Object.prototype.hasOwnProperty.call(state, 'songs')) this._cache.songs = state.songs || [];
     if (Object.prototype.hasOwnProperty.call(state, 'showSlots')) this._cache.showSlots = state.showSlots || [];
     if (Object.prototype.hasOwnProperty.call(state, 'assignments')) this._cache.assignments = state.assignments || {};
     if (Number.isInteger(state.revision)) this._revision = state.revision;
@@ -55,6 +56,7 @@ const Storage = {
         config: this._clone(this._cache.config),
         ideas: this._clone(this._cache.ideas),
         jokes: this._clone(this._cache.jokes),
+        songs: this._clone(this._cache.songs),
         showSlots: this._clone(this._cache.showSlots),
         assignments: this._clone(this._cache.assignments),
         revision: this._revision
@@ -68,6 +70,7 @@ const Storage = {
     this._cache.config = canonical.config;
     this._cache.ideas = canonical.ideas;
     this._cache.jokes = canonical.jokes;
+    this._cache.songs = canonical.songs;
     this._cache.showSlots = canonical.showSlots;
     this._cache.assignments = canonical.assignments;
     this._revision = canonical.revision;
@@ -354,6 +357,97 @@ const Storage = {
     return this.getJokes().find(function(j) { return j.usedByIdeaId === ideaId; }) || null;
   },
 
+  // ---- Songs ----
+  getSongs() {
+    return this.get('songs') || [];
+  },
+
+  saveSongs(songs) {
+    return this.set('songs', songs);
+  },
+
+  addSong(song) {
+    var songs = this._clone(this.getSongs());
+    songs.push(song);
+    return this.saveSongs(songs);
+  },
+
+  updateSong(songId, updates) {
+    var songs = this._clone(this.getSongs());
+    var index = songs.findIndex(function(song) { return song.id === songId; });
+    if (index === -1) return false;
+    Object.assign(songs[index], updates);
+    return this.saveSongs(songs);
+  },
+
+  async assignSongToIdea(songId, ideaId) {
+    try {
+      await this._enqueueMutation(
+        () => this._request('/songs/' + encodeURIComponent(songId) + '/assignment', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ideaId: ideaId })
+        }),
+        () => this.assignSongToIdea(songId, ideaId)
+      );
+      return true;
+    } catch (err) {
+      console.error('Song assignment failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to assign song: ' + err.message);
+      return false;
+    }
+  },
+
+  async freeSong(songId) {
+    try {
+      await this._enqueueMutation(
+        () => this._request('/songs/' + encodeURIComponent(songId) + '/assignment', { method: 'DELETE' }),
+        () => this.freeSong(songId)
+      );
+      return true;
+    } catch (err) {
+      console.error('Free song failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to free song: ' + err.message);
+      return false;
+    }
+  },
+
+  async setSongStatus(songId, status) {
+    try {
+      await this._enqueueMutation(
+        () => this._request('/songs/' + encodeURIComponent(songId) + '/status', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: status })
+        }),
+        () => this.setSongStatus(songId, status)
+      );
+      return true;
+    } catch (err) {
+      console.error('Song status update failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to update song: ' + err.message);
+      return false;
+    }
+  },
+
+  async deleteSong(songId) {
+    try {
+      await this._enqueueMutation(
+        () => this._request('/songs/' + encodeURIComponent(songId), { method: 'DELETE' }),
+        () => this.deleteSong(songId)
+      );
+      return true;
+    } catch (err) {
+      console.error('Delete song failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to delete song: ' + err.message);
+      return false;
+    }
+  },
+
+  getSongForIdea(ideaId) {
+    return this.getSongs().find(function(song) { return song.assignedIdeaId === ideaId; }) || null;
+  },
+
   // ---- Show Ideas ----
   getIdeas() {
     return this.get('ideas') || [];
@@ -466,6 +560,7 @@ const Storage = {
       config: this.getConfig(),
       ideas: this.getIdeas(),
       jokes: this.getJokes(),
+      songs: this.getSongs(),
       showSlots: this.getShowSlots(),
       assignments: this.getAssignments(),
       exportDate: new Date().toISOString()
@@ -474,7 +569,7 @@ const Storage = {
 
   async importAll(data) {
     var payload = {};
-    ['config', 'ideas', 'jokes', 'showSlots', 'assignments'].forEach(function(key) {
+    ['config', 'ideas', 'jokes', 'songs', 'showSlots', 'assignments'].forEach(function(key) {
       if (Object.prototype.hasOwnProperty.call(data, key)) payload[key] = data[key];
     });
     try {

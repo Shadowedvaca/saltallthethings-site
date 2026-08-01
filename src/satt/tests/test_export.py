@@ -31,7 +31,7 @@ async def test_export_returns_all_data_keys_and_revision(db_client: AsyncClient)
     assert response.status_code == 200
     body = response.json()
     assert set(body.keys()) == {
-        "config", "ideas", "jokes", "showSlots", "assignments", "revision"
+        "config", "ideas", "jokes", "songs", "showSlots", "assignments", "revision"
     }
     assert body["revision"] >= 0
 
@@ -50,6 +50,14 @@ async def test_export_jokes_is_list(db_client: AsyncClient):
         "/api/export", headers={"Authorization": f"Bearer {_token()}"}
     )
     assert isinstance(response.json()["jokes"], list)
+
+
+@pytest.mark.asyncio
+async def test_export_songs_is_list(db_client: AsyncClient):
+    response = await db_client.get(
+        "/api/export", headers={"Authorization": f"Bearer {_token()}"}
+    )
+    assert isinstance(response.json()["songs"], list)
 
 
 @pytest.mark.asyncio

@@ -3,19 +3,18 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from typing import Any
-
 import pytz
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from satt.joke_contract import validate_banked_jokes
-from satt.models import Assignment, Config, DataRevision, Idea, Joke, ShowSlot
+from satt.models import Assignment, Config, DataRevision, Idea, Joke, ShowSlot, Song
 from satt.serializers import serialize_idea, serialize_joke, serialize_postprod_row, serialize_show_slot
 
 _PST = pytz.timezone("America/Los_Angeles")
 _JOKE_LIFECYCLE_LOCK_ID = 0x53415454
+_SONG_LIFECYCLE_LOCK_ID = 0x5341544F
 _SCHEDULE_LIFECYCLE_LOCK_ID = 0x53415453
 
 
@@ -62,6 +61,11 @@ async def bump_data_revision(db: AsyncSession) -> int:
 async def _lock_joke_lifecycle(db: AsyncSession) -> None:
     """Serialize the small bank's lifecycle writes to avoid cross-swap deadlocks."""
     await db.execute(select(func.pg_advisory_xact_lock(_JOKE_LIFECYCLE_LOCK_ID)))
+
+
+async def _lock_song_lifecycle(db: AsyncSession) -> None:
+    """Serialize Song Bank lifecycle writes and assignment swaps."""
+    await db.execute(select(func.pg_advisory_xact_lock(_SONG_LIFECYCLE_LOCK_ID)))
 
 
 async def _lock_schedule_lifecycle(db: AsyncSession) -> None:
@@ -148,6 +152,7 @@ async def get_idea_and_slot(
 
 async def replace_ideas(db: AsyncSession, ideas: list[dict]) -> None:
     await _lock_joke_lifecycle(db)
+    await _lock_song_lifecycle(db)
     new_ids = {idea["id"] for idea in ideas}
 
     # Preserve created_at for existing rows
@@ -161,6 +166,15 @@ async def replace_ideas(db: AsyncSession, ideas: list[dict]) -> None:
             update(Joke)
             .where(Joke.used_by_idea_id.in_(deleted_ids))
             .values(status="unused", used_by_idea_id=None)
+        )
+        await db.execute(
+            update(Song)
+            .where(Song.assigned_idea_id.in_(deleted_ids))
+            .values(
+                status="unused",
+                assigned_idea_id=None,
+                updated_at=datetime.now(timezone.utc),
+            )
         )
 
     # Delete rows not in new set (cascade removes their schedule assignments).
@@ -321,8 +335,9 @@ async def free_joke(db: AsyncSession, joke_id: str) -> None:
 
 
 async def delete_idea(db: AsyncSession, idea_id: str) -> None:
-    """Delete one idea while freeing its opening joke in the same transaction."""
+    """Delete one idea while freeing its assigned bank entries atomically."""
     await _lock_joke_lifecycle(db)
+    await _lock_song_lifecycle(db)
     result = await db.execute(
         select(Idea.id).where(Idea.id == idea_id).with_for_update()
     )
@@ -332,6 +347,15 @@ async def delete_idea(db: AsyncSession, idea_id: str) -> None:
         update(Joke)
         .where(Joke.used_by_idea_id == idea_id)
         .values(status="unused", used_by_idea_id=None)
+    )
+    await db.execute(
+        update(Song)
+        .where(Song.assigned_idea_id == idea_id)
+        .values(
+            status="unused",
+            assigned_idea_id=None,
+            updated_at=datetime.now(timezone.utc),
+        )
     )
     await db.execute(delete(Idea).where(Idea.id == idea_id))
     await db.flush()

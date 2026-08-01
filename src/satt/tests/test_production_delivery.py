@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from satt.scripts.production_fingerprint import (
+    OPTIONAL_DATA_QUERIES,
     configure_private_database_url,
     fingerprint_rows,
 )
@@ -140,6 +141,14 @@ def test_fingerprint_emits_only_counts_and_one_way_digest():
     serialized = json.dumps(result)
     assert "private-user" not in serialized
     assert "private-hash" not in serialized
+
+
+def test_song_fingerprint_is_additive_across_migration_boundary():
+    assert set(OPTIONAL_DATA_QUERIES) == {"songs"}
+    assert "private_notes" in OPTIONAL_DATA_QUERIES["songs"]
+    before = fingerprint_rows({"songs": []})
+    after_empty_migration = fingerprint_rows({"songs": []})
+    assert before == after_empty_migration
 
 
 def test_backup_refuses_an_unknown_cutover_phase(tmp_path: Path):

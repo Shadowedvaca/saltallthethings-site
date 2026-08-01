@@ -1,6 +1,6 @@
 """SQLAlchemy ORM models for the SATT platform.
 
-satt schema: users, invite_codes, config, ideas, jokes, show_slots, assignments
+satt schema: users, invite_codes, config, ideas, jokes, songs, show_slots, assignments
 """
 
 from datetime import date, datetime
@@ -135,6 +135,9 @@ class Idea(Base):
 
     assignment: Mapped[Optional["Assignment"]] = relationship(back_populates="idea")
     jokes_used: Mapped[list["Joke"]] = relationship(back_populates="used_by_idea")
+    assigned_song: Mapped[Optional["Song"]] = relationship(
+        back_populates="assigned_idea", uselist=False
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -170,6 +173,46 @@ class Joke(Base):
     )
 
     used_by_idea: Mapped[Optional[Idea]] = relationship(back_populates="jokes_used")
+
+
+# ---------------------------------------------------------------------------
+# satt.songs
+# ---------------------------------------------------------------------------
+
+
+class Song(Base):
+    __tablename__ = "songs"
+    __table_args__ = (
+        UniqueConstraint("assigned_idea_id", name="uq_songs_assigned_idea_id"),
+        CheckConstraint(
+            "status IN ('unused', 'used', 'retired')",
+            name="songs_valid_status",
+        ),
+        CheckConstraint(
+            "(status = 'used' AND assigned_idea_id IS NOT NULL) OR "
+            "(status <> 'used' AND assigned_idea_id IS NULL)",
+            name="songs_assignment_matches_status",
+        ),
+        {"schema": "satt"},
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    artist: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    youtube_url: Mapped[str] = mapped_column(Text, nullable=False)
+    private_notes: Mapped[str] = mapped_column(Text, nullable=False, server_default="''")
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="'unused'")
+    assigned_idea_id: Mapped[Optional[str]] = mapped_column(
+        Text, ForeignKey("satt.ideas.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+
+    assigned_idea: Mapped[Optional[Idea]] = relationship(back_populates="assigned_song")
 
 
 # ---------------------------------------------------------------------------
