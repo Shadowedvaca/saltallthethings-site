@@ -505,6 +505,18 @@ async function main() {
   assert.match(showManagement, /Copy failed\. Select the overview text and copy it manually\./);
   assert.match(showManagement, /await Storage\.assignSongToIdea\(songId, ideaId\)/);
   assert.match(showManagement, /await Storage\.freeSong\(songId\)/);
+  assert.match(showManagement, /const expandedIdeas = new Set\(\)/);
+  assert.match(showManagement, /expandedIdeas\.has\(idea\.id\)/);
+  assert.match(showManagement, /function rerenderIdeasPreservingExpansion\(ideaId\)/);
+  assert.match(showManagement, /selectTitle[\s\S]*rerenderIdeasPreservingExpansion\(ideaId\)/);
+  assert.match(showManagement, /selectJokeForIdea[\s\S]*rerenderIdeasPreservingExpansion\(ideaId\)/);
+  assert.match(showManagement, /selectSongForIdea[\s\S]*rerenderIdeasPreservingExpansion\(ideaId\)/);
+  assert.match(showManagement, /clearSongFromIdea[\s\S]*rerenderIdeasPreservingExpansion\(ideaId\)/);
+  assert.match(showManagement, /<details onclick="event\.stopPropagation\(\)"><summary[^>]*>Raw Notes/);
+  assert.match(SongPreparation.renderPicker("idea-1", [
+    { id: "assigned", artist: "Assigned", title: "Song", status: "used", assignedIdeaId: "idea-1" },
+    { id: "available", artist: "Available", title: "Song", status: "unused", assignedIdeaId: null },
+  ]), /song-replace" onclick="event\.stopPropagation\(\)"/);
   assert.match(showManagement, /Replace .* with/);
   assert.match(showManagement, /Remove .* from this episode/);
   assert.match(showManagement, /The latest server data is shown/);

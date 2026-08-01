@@ -57,7 +57,7 @@
         return songChoiceMarkup(song, ideaId, assigned ? 'Replace current song' : 'Assign to this episode');
       }).join('');
       if (assigned) {
-        html += '<details class="song-replace"><summary>Replace song</summary><div class="song-choice-list">' + choices + '</div></details>';
+        html += '<details class="song-replace" onclick="event.stopPropagation()"><summary>Replace song</summary><div class="song-choice-list">' + choices + '</div></details>';
       } else {
         html += '<div class="song-choice-list">' + choices + '</div>';
       }
