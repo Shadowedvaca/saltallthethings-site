@@ -15,6 +15,7 @@ from satt.routes.health import router as health_router
 from satt.routes.postproduction import router as postproduction_router
 from satt.routes.public import router as public_router
 from satt.routes.songs import router as songs_router
+from satt.routes.top3 import router as top3_router
 from satt.routes.users import router as users_router
 from satt.version import APP_VERSION
 
@@ -34,6 +35,7 @@ app.include_router(health_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(data_router, prefix="/api")
 app.include_router(songs_router, prefix="/api")
+app.include_router(top3_router, prefix="/api")
 app.include_router(ai_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 app.include_router(postproduction_router, prefix="/api")
@@ -59,6 +61,7 @@ _frontend_pages = {
     "register.html",
     "show_management.html",
     "songs.html",
+    "top3.html",
 }
 
 

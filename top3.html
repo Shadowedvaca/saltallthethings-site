@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Top 3 Bank — Salt All The Things</title>
+  <link rel="icon" type="image/jpeg" href="images/256x256.jpeg">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .top3-layout { display: grid; grid-template-columns: minmax(300px, 0.9fr) minmax(0, 1.35fr); gap: var(--space-lg); align-items: start; }
+    .top3-workshop { position: sticky; top: 84px; }
+    .top3-toolbar { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: end; margin-bottom: var(--space-md); }
+    .top3-search { flex: 1 1 240px; margin-bottom: 0; }
+    .top3-filters { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
+    .top3-filter { padding: var(--space-xs) var(--space-md); border-radius: 100px; background: var(--bg-surface); border: 1px solid var(--border-subtle); color: var(--text-secondary); font: inherit; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+    .top3-filter:hover, .top3-filter:focus-visible { border-color: var(--border-default); }
+    .top3-filter.active { background: var(--gold-glow); border-color: var(--gold-dim); color: var(--text-gold); }
+    .top3-list { display: flex; flex-direction: column; gap: var(--space-sm); }
+    .top3-item { padding: var(--space-md); background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
+    .top3-item.retired { opacity: 0.7; }
+    .top3-heading { display: flex; gap: var(--space-sm); justify-content: space-between; align-items: start; }
+    .top3-heading h3 { margin: 0; font-size: 1.05rem; }
+    .top3-copy { margin-top: var(--space-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+    .top3-example-box { margin-top: var(--space-md); padding: var(--space-sm) var(--space-md); border-left: 3px solid var(--ice); background: rgba(74, 158, 255, 0.06); }
+    .top3-example-box ol { margin: var(--space-xs) 0 0 var(--space-lg); }
+    .top3-assignment { margin-top: var(--space-md); color: var(--text-secondary); font-size: 0.85rem; }
+    .top3-assignment ul { margin: var(--space-xs) 0 0 var(--space-lg); }
+    .top3-meta { margin-top: var(--space-sm); color: var(--text-muted); font-size: 0.75rem; }
+    .top3-actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-top: var(--space-md); }
+    .top3-empty { text-align: center; padding: 3rem 1rem; }
+    .top3-example-fields { padding: var(--space-md); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); margin-bottom: var(--space-md); }
+    .top3-example-fields legend { padding: 0 var(--space-xs); color: var(--text-gold); font-weight: 600; }
+    .proposal-notice { min-height: 1.4em; color: var(--ice); font-size: 0.85rem; margin-bottom: var(--space-sm); }
+    .form-error { min-height: 1.4em; color: var(--danger); font-size: 0.85rem; }
+    .field-error { border-color: var(--danger) !important; }
+    @media (max-width: 1024px) { .top3-layout { grid-template-columns: 1fr; } .top3-workshop { position: static; } }
+    @media (max-width: 768px) { .top3-heading { flex-direction: column; } .top3-actions .btn, .top3-form-actions .btn { flex: 1 1 auto; } }
+  </style>
+</head>
+<body>
+  <div id="loadingOverlay" style="display:none; position:fixed; inset:0; z-index:99998; background:#08080f; align-items:center; justify-content:center; flex-direction:column; gap:16px;">
+    <svg class="spinner-lg" viewBox="0 0 50 50" style="width:48px;height:48px;" aria-hidden="true"><circle cx="25" cy="25" r="20" fill="none" stroke="#c8a84e" stroke-width="3" stroke-dasharray="80 40" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" values="0 25 25;360 25 25" dur="0.8s" repeatCount="indefinite"></animateTransform></circle></svg>
+    <span style="color:#c8a84e; font-family:'Cinzel',serif; font-size:0.9rem;">Loading Top 3 Bank…</span>
+  </div>
+
+  <div id="protectedContent" style="display:none;">
+    <nav class="site-nav" aria-label="Crew navigation">
+      <img src="images/256x256.jpeg" alt="SATT" class="nav-logo">
+      <span class="nav-title">Salt All The Things</span>
+      <div class="nav-spacer"></div>
+      <a href="index.html">Home</a>
+      <a href="show_management.html">Show Management</a>
+      <a href="jokes.html">Joke Bank</a>
+      <a href="songs.html">Song Bank</a>
+      <a href="top3.html" class="active" aria-current="page">Top 3 Bank</a>
+      <a href="postproduction.html">Post-Production</a>
+      <a href="config.html">Config</a>
+      <button type="button" class="btn btn-ghost btn-sm" data-action="logout" style="color:var(--text-muted);">🔒 Logout</button>
+    </nav>
+
+    <main class="page-container">
+      <div class="page-header">
+        <h1>Top 3 Bank</h1>
+        <p class="subtitle">Brainstorm, review, and bank reusable Top 3 concepts before assigning them to an episode.</p>
+      </div>
+
+      <div id="pageNotice" class="text-sm text-secondary mb-md" role="status" aria-live="polite"></div>
+
+      <div class="top3-layout">
+        <section class="card card-elevated top3-workshop" aria-labelledby="top3FormHeading">
+          <h2 id="top3FormHeading" class="mb-sm">Create a Top 3 Concept</h2>
+          <p class="text-sm text-muted mb-md">AI generation fills this workshop for review. Nothing is banked until you explicitly save.</p>
+          <form id="top3Form" novalidate>
+            <div class="form-group">
+              <label for="top3Description">Concept description</label>
+              <textarea id="top3Description" name="description" rows="4" required maxlength="4000" aria-describedby="top3DescriptionHelp" placeholder="What should everyone rank, and what makes the discussion interesting?"></textarea>
+              <p id="top3DescriptionHelp" class="text-xs text-muted mt-sm">Required. This context is used for manual creation and AI brainstorming.</p>
+            </div>
+            <div class="form-group">
+              <label for="top3Name">Shared name <span class="label-hint">— optional before generation</span></label>
+              <input id="top3Name" name="name" type="text" maxlength="200" autocomplete="off" placeholder="Let AI propose one, or supply it here">
+            </div>
+            <div class="form-group">
+              <label for="top3Rules">Participation rules <span class="label-hint">— optional</span></label>
+              <textarea id="top3Rules" name="rules" rows="3" maxlength="4000" placeholder="Eligibility, ties, timeframe, or ranking guidance…"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="top3HostNotes">Host planning notes <span class="label-hint">— authenticated crew context</span></label>
+              <textarea id="top3HostNotes" name="hostNotes" rows="3" maxlength="8000" placeholder="Angles to explore, tone, or reminders for the workshop…"></textarea>
+            </div>
+            <fieldset class="top3-example-fields" aria-describedby="top3ExamplesHelp">
+              <legend>Fictional examples — not participant picks</legend>
+              <p id="top3ExamplesHelp" class="text-xs text-muted mb-sm">Leave all three blank for a manual concept, or provide exactly three distinct examples. AI proposals always provide three.</p>
+              <div class="form-group"><label for="top3Example1">Example rank 1</label><input id="top3Example1" type="text" maxlength="200" autocomplete="off"></div>
+              <div class="form-group"><label for="top3Example2">Example rank 2</label><input id="top3Example2" type="text" maxlength="200" autocomplete="off"></div>
+              <div class="form-group"><label for="top3Example3">Example rank 3</label><input id="top3Example3" type="text" maxlength="200" autocomplete="off"></div>
+            </fieldset>
+            <p id="proposalNotice" class="proposal-notice" role="status" aria-live="polite"></p>
+            <p id="top3FormError" class="form-error" role="alert"></p>
+            <div class="flex gap-sm top3-form-actions">
+              <button id="generateTop3Button" type="button" class="btn btn-secondary">Generate AI Proposal</button>
+              <button id="saveTop3Button" type="submit" class="btn btn-primary">Save Manually</button>
+              <button id="cancelTop3EditButton" type="button" class="btn btn-ghost hidden">Cancel</button>
+            </div>
+          </form>
+        </section>
+
+        <section aria-labelledby="top3ListHeading">
+          <div class="flex justify-between items-center mb-md">
+            <h2 id="top3ListHeading">Banked Concepts</h2>
+            <span id="top3Count" class="text-sm text-muted"></span>
+          </div>
+          <div class="top3-toolbar">
+            <div class="form-group top3-search">
+              <label for="top3Search">Search concepts</label>
+              <input id="top3Search" type="search" placeholder="Name, description, rules, notes, or episode">
+            </div>
+            <div class="top3-filters" role="group" aria-label="Filter concepts by status">
+              <button type="button" class="top3-filter active" data-filter="all" aria-pressed="true">All</button>
+              <button type="button" class="top3-filter" data-filter="active" aria-pressed="false">Active</button>
+              <button type="button" class="top3-filter" data-filter="retired" aria-pressed="false">Retired</button>
+            </div>
+          </div>
+          <div id="top3List" class="top3-list"></div>
+          <div id="noTop3Concepts" class="top3-empty hidden">
+            <p class="text-secondary">No concepts match this view.</p>
+            <p class="text-muted text-sm mt-sm">Create a concept or adjust the search and status filter.</p>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <noscript>This authenticated page requires JavaScript.</noscript>
+  <script src="js/auth.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/toast.js"></script>
+  <script src="js/top3-bank.js"></script>
+</body>
+</html>

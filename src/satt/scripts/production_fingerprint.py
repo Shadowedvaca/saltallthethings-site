@@ -64,6 +64,27 @@ OPTIONAL_DATA_QUERIES = {
                assigned_idea_id, created_at, updated_at
         FROM satt.songs ORDER BY id
     """,
+    "top3_concepts": """
+        SELECT id, name, description, rules, host_notes, ai_example, status,
+               source, ai_provider, ai_model_id, ai_generated_at,
+               created_by_user_id, created_at, updated_at
+        FROM satt.top3_concepts ORDER BY id
+    """,
+    "top3_assignments": """
+        SELECT idea_id, concept_id, assigned_by_user_id, assigned_at, updated_at
+        FROM satt.top3_assignments ORDER BY idea_id
+    """,
+    "top3_submissions": """
+        SELECT id, assignment_idea_id, participant_type, account_user_id,
+               external_display_name, external_type, entered_by_user_id,
+               pick_1, pick_2, pick_3, private_discussion_notes,
+               created_at, updated_at
+        FROM satt.top3_submissions ORDER BY id
+    """,
+    "top3_reveals": """
+        SELECT viewer_user_id, submission_id, revealed_at
+        FROM satt.top3_reveals ORDER BY viewer_user_id, submission_id
+    """,
 }
 
 

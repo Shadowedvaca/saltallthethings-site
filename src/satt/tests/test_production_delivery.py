@@ -144,8 +144,15 @@ def test_fingerprint_emits_only_counts_and_one_way_digest():
 
 
 def test_song_fingerprint_is_additive_across_migration_boundary():
-    assert set(OPTIONAL_DATA_QUERIES) == {"songs"}
+    assert set(OPTIONAL_DATA_QUERIES) == {
+        "songs",
+        "top3_concepts",
+        "top3_assignments",
+        "top3_submissions",
+        "top3_reveals",
+    }
     assert "private_notes" in OPTIONAL_DATA_QUERIES["songs"]
+    assert "private_discussion_notes" in OPTIONAL_DATA_QUERIES["top3_submissions"]
     before = fingerprint_rows({"songs": []})
     after_empty_migration = fingerprint_rows({"songs": []})
     assert before == after_empty_migration

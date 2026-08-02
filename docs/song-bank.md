@@ -88,14 +88,45 @@ YouTube: https://youtu.be/video-id
 ```
 
 When no song is assigned, the overview is only the unchanged summary and no
-empty song heading or placeholder is emitted. The copied plaintext includes
-only the summary, artist, title, and validated YouTube URL. It never includes
-private talking points, lifecycle state, database or client IDs, assignment
-metadata, or other preparation data. Composition and copying are read-only and
-do not update the episode or Song Bank. Clipboard API failure falls back to the
-browser copy command; if neither path succeeds, the text remains selectable and
-the page gives explicit failure feedback. This is copy/paste assistance only;
-the application does not publish to Spotify.
+empty song heading or placeholder is emitted. When the episode has submitted
+Top 3 results, the composer appends exactly one blank line and this compact
+format. Display-cased account contributors appear first alphabetically, followed
+by external contributors alphabetically; picks provide a deterministic tie-break:
+
+```text
+Top 3: Best dungeon snacks
+
+Rocket
+1. Pretzels
+2. Trail mix
+3. Crackers
+
+Trog
+1. Cheese
+2. Jerky
+3. Fruit
+
+Guest One
+1. Chips
+2. Nuts
+3. Cookies
+```
+
+Accounts without a saved submission are omitted. The Top 3 block contains only
+the list name, contributor display names, and three ranked pick names. It never
+contains descriptions, rules, AI examples, discussion notes, reveal metadata,
+participant types, ownership or submission IDs, timestamps, or readiness state.
+The authenticated result request is a separate deliberate publication contract;
+the viewer-scoped preparation projection remains redacted and unchanged.
+
+The copied plaintext otherwise includes only the summary, artist, title, and
+validated YouTube URL. It never includes private talking points, lifecycle
+state, database or client IDs, assignment metadata, or other preparation data.
+Composition and copying are read-only and do not update the episode, Song Bank,
+Top 3 records, reveal state, or data revision. Clipboard API failure falls back
+to the browser copy command; if neither path succeeds, the text remains
+selectable and the page gives explicit failure feedback. This is copy/paste
+assistance only; the application does not publish to Spotify.
 
 ## Import, export, and rollback
 

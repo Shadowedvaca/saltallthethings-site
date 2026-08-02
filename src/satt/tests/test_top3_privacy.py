@@ -1,0 +1,1124 @@
+"""Top 3 ownership, redaction, lifecycle, constraints, and leakage tests."""
+
+from __future__ import annotations
+
+import asyncio
+from datetime import datetime, timedelta, timezone
+
+import jwt
+import pytest
+from httpx import AsyncClient
+from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from satt.config import get_settings
+from satt.models import (
+    Idea,
+    Top3Assignment,
+    Top3Concept,
+    Top3Reveal,
+    Top3Submission,
+    User,
+)
+from satt.top3_crud import (
+    Top3ConflictError,
+    reveal_submission,
+    save_current_submission,
+)
+
+
+def _headers(user_id: int, username: str, *, admin: bool = False) -> dict[str, str]:
+    settings = get_settings()
+    now = datetime.now(timezone.utc)
+    token = jwt.encode(
+        {
+            "user_id": user_id,
+            "username": username,
+            "is_admin": admin,
+            "iat": now,
+            "exp": now + timedelta(hours=1),
+        },
+        settings.secret_key,
+        algorithm=settings.jwt_algorithm,
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def _users(db_session: AsyncSession) -> None:
+    db_session.add_all(
+        [
+            User(id=101, username="rocket", password_hash="unused", is_admin=True),
+            User(id=102, username="trog", password_hash="unused"),
+            User(id=103, username="observer", password_hash="unused"),
+        ]
+    )
+    await db_session.flush()
+
+
+def _idea(idea_id: str) -> dict:
+    return {
+        "id": idea_id,
+        "titles": ["Top 3 test"],
+        "selectedTitle": "Top 3 test",
+        "summary": "Private list test",
+        "outline": [],
+        "status": "processed",
+    }
+
+
+def _concept(concept_id: str = "top3-concept") -> dict:
+    return {
+        "id": concept_id,
+        "name": "Best dungeon snacks",
+        "description": "Rank snacks for a long dungeon.",
+        "rules": "No conjured food.",
+        "hostNotes": "Keep the reasoning surprising.",
+        "aiExample": ["Cheese", "Jerky", "Fruit"],
+        "status": "active",
+        "source": "manual",
+    }
+
+
+async def _assigned(db_client: AsyncClient, db_session: AsyncSession) -> None:
+    await _users(db_session)
+    assert (
+        await db_client.put(
+            "/api/data/ideas", json=[_idea("top3-idea")], headers=_headers(101, "rocket")
+        )
+    ).status_code == 200
+    assert (
+        await db_client.post(
+            "/api/top3/concepts", json=_concept(), headers=_headers(101, "rocket")
+        )
+    ).status_code == 201
+    assert (
+        await db_client.put(
+            "/api/top3/episodes/top3-idea/assignment",
+            json={"conceptId": "top3-concept"},
+            headers=_headers(101, "rocket"),
+        )
+    ).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_top3_routes_require_authentication(client: AsyncClient):
+    assert (await client.get("/api/top3/concepts")).status_code == 401
+    assert (await client.get("/api/top3/episodes/idea")).status_code == 401
+    assert (
+        await client.put(
+            "/api/top3/episodes/idea/submission",
+            json={"id": "x", "picks": ["a", "b", "c"]},
+        )
+    ).status_code == 401
+    assert (
+        await client.post("/api/top3/episodes/idea/reveals/submission")
+    ).status_code == 401
+    assert (
+        await client.post(
+            "/api/top3/episodes/idea/spotify-results",
+            json={"purpose": "spotify-overview"},
+        )
+    ).status_code == 401
+    assert (
+        await client.post(
+            "/api/top3/episodes/idea/external-submissions",
+            json={
+                "id": "external",
+                "displayName": "Guest",
+                "externalType": "guest",
+                "picks": ["One", "Two", "Three"],
+            },
+        )
+    ).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_ai_concept_provenance_round_trips_without_creating_a_submission(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await _users(db_session)
+    generated_at = "2026-08-01T12:30:00Z"
+    response = await db_client.post(
+        "/api/top3/concepts",
+        json={
+            **_concept("ai-generated-concept"),
+            "source": "ai",
+            "aiProvider": "claude",
+            "aiModelId": "claude-test-model",
+            "aiGeneratedAt": generated_at,
+        },
+        headers=_headers(101, "rocket"),
+    )
+    assert response.status_code == 201
+    saved = response.json()["concept"]
+    assert saved["aiProvider"] == "claude"
+    assert saved["aiModelId"] == "claude-test-model"
+    assert datetime.fromisoformat(
+        saved["aiGeneratedAt"].replace("Z", "+00:00")
+    ) == datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+
+    reloaded = await db_client.get(
+        "/api/top3/concepts", headers=_headers(101, "rocket")
+    )
+    concept = next(
+        item
+        for item in reloaded.json()["concepts"]
+        if item["id"] == "ai-generated-concept"
+    )
+    assert datetime.fromisoformat(
+        concept["aiGeneratedAt"].replace("Z", "+00:00")
+    ) == datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+    submissions = await db_session.execute(select(Top3Submission))
+    assert submissions.scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_viewer_projection_redacts_other_accounts_even_for_admin(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await _assigned(db_client, db_session)
+    rocket_secret = "rocket-secret-pick"
+    saved = await db_client.put(
+        "/api/top3/episodes/top3-idea/submission",
+        json={
+            "id": "rocket-submission",
+            "picks": [rocket_secret, "Rocket Two", "Rocket Three"],
+            "privateDiscussionNotes": "rocket-private-notes",
+        },
+        headers=_headers(101, "rocket"),
+    )
+    assert saved.status_code == 200
+    own = saved.json()["assignment"]["contributors"]
+    rocket = next(item for item in own if item["displayName"] == "Rocket")
+    assert rocket["picks"][0] == rocket_secret
+    assert rocket["privateDiscussionNotes"] == "rocket-private-notes"
+
+    for viewer in (_headers(102, "trog"), _headers(103, "observer", admin=True)):
+        response = await db_client.get(
+            "/api/top3/episodes/top3-idea", headers=viewer
+        )
+        assert response.status_code == 200
+        assert rocket_secret not in response.text
+        assert "rocket-private-notes" not in response.text
+        rocket = next(
+            item
+            for item in response.json()["assignment"]["contributors"]
+            if item["displayName"] == "Rocket"
+        )
+        assert rocket == {
+            "submissionId": "rocket-submission",
+            "contributorType": "account",
+            "externalType": None,
+            "displayName": "Rocket",
+            "complete": True,
+            "isCurrentUser": False,
+            "revealed": False,
+        }
+
+    incomplete = next(
+        item
+        for item in saved.json()["assignment"]["contributors"]
+        if item["displayName"] == "Trog"
+    )
+    assert incomplete["complete"] is False
+    assert "picks" not in incomplete
+
+
+@pytest.mark.asyncio
+async def test_reveal_is_viewer_specific_and_external_results_are_shared(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await _assigned(db_client, db_session)
+    await db_client.put(
+        "/api/top3/episodes/top3-idea/submission",
+        json={
+            "id": "rocket-submission",
+            "picks": ["Rocket One", "Rocket Two", "Rocket Three"],
+            "privateDiscussionNotes": "revealed notes",
+        },
+        headers=_headers(101, "rocket"),
+    )
+    db_session.add(
+        Top3Submission(
+            id="guest-submission",
+            assignment_idea_id="top3-idea",
+            participant_type="external",
+            external_display_name="Guest One",
+            external_type="guest",
+            entered_by_user_id=101,
+            pick_1="Guest Pick One",
+            pick_2="Guest Pick Two",
+            pick_3="Guest Pick Three",
+            private_discussion_notes="shared guest notes",
+        )
+    )
+    db_session.add(Top3Reveal(viewer_user_id=102, submission_id="rocket-submission"))
+    await db_session.flush()
+
+    trog = await db_client.get(
+        "/api/top3/episodes/top3-idea", headers=_headers(102, "trog")
+    )
+    observer = await db_client.get(
+        "/api/top3/episodes/top3-idea", headers=_headers(103, "observer")
+    )
+    assert "Rocket One" in trog.text
+    assert "revealed notes" in trog.text
+    assert "Rocket One" not in observer.text
+    assert "revealed notes" not in observer.text
+    assert "Guest Pick One" in trog.text and "Guest Pick One" in observer.text
+
+
+@pytest.mark.asyncio
+async def test_reveal_route_is_viewer_specific_persistent_audited_and_idempotent(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await _assigned(db_client, db_session)
+    for user_id, username, submission_id, prefix in (
+        (101, "rocket", "rocket-reveal", "Rocket Secret"),
+        (102, "trog", "trog-reveal", "Trog Secret"),
+    ):
+        saved = await db_client.put(
+            "/api/top3/episodes/top3-idea/submission",
+            json={
+                "id": submission_id,
+                "picks": [f"{prefix} One", f"{prefix} Two", f"{prefix} Three"],
+                "privateDiscussionNotes": f"{prefix} Notes",
+            },
+            headers=_headers(user_id, username),
+        )
+        assert saved.status_code == 200
+
+    before = await db_client.get(
+        "/api/top3/episodes/top3-idea", headers=_headers(102, "trog")
+    )
+    assert "Rocket Secret" not in before.text
+    revealed = await db_client.post(
+        "/api/top3/episodes/top3-idea/reveals/rocket-reveal",
+        headers=_headers(102, "trog"),
+    )
+    assert revealed.status_code == 200
+    rocket = next(
+        item
+        for item in revealed.json()["assignment"]["contributors"]
+        if item["submissionId"] == "rocket-reveal"
+    )
+    assert rocket["picks"] == [
+        "Rocket Secret One",
+        "Rocket Secret Two",
+        "Rocket Secret Three",
+    ]
+    assert rocket["privateDiscussionNotes"] == "Rocket Secret Notes"
+    assert rocket["revealed"] is True
+    assert datetime.fromisoformat(rocket["revealedAt"].replace("Z", "+00:00"))
+
+    audit = await db_session.scalar(
+        select(Top3Reveal).where(
+            Top3Reveal.viewer_user_id == 102,
+            Top3Reveal.submission_id == "rocket-reveal",
+        )
+    )
+    assert audit is not None
+    revealed_at = audit.revealed_at
+
+    reloaded = await db_client.get(
+        "/api/top3/episodes/top3-idea", headers=_headers(102, "trog")
+    )
+    assert "Rocket Secret One" in reloaded.text
+    repeated = await db_client.post(
+        "/api/top3/episodes/top3-idea/reveals/rocket-reveal",
+        headers=_headers(102, "trog"),
+    )
+    assert repeated.status_code == 200
+    assert repeated.json()["revision"] == reloaded.json()["revision"]
+    await db_session.refresh(audit)
+    assert audit.revealed_at == revealed_at
+
+    for user_id, username in ((101, "rocket"), (103, "observer")):
+        isolated = await db_client.get(
+            "/api/top3/episodes/top3-idea", headers=_headers(user_id, username)
+        )
+        if user_id == 101:
+            assert "Trog Secret" not in isolated.text
+        else:
+            assert "Rocket Secret" not in isolated.text
+            assert "Trog Secret" not in isolated.text
+    rows = list((await db_session.execute(select(Top3Reveal))).scalars())
+    assert [(row.viewer_user_id, row.submission_id) for row in rows] == [
+        (102, "rocket-reveal")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_reveal_rejects_own_external_and_wrong_episode_submissions(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await _assigned(db_client, db_session)
+    await db_client.put(
+        "/api/top3/episodes/top3-idea/submission",
+        json={"id": "own-reveal", "picks": ["One", "Two", "Three"]},
+        headers=_headers(101, "rocket"),
+    )
+    own = await db_client.post(
+        "/api/top3/episodes/top3-idea/reveals/own-reveal",
+        headers=_headers(101, "rocket"),
+    )
+    assert own.status_code == 409
+    missing = await db_client.post(
+        "/api/top3/episodes/top3-idea/reveals/not-here",
+        headers=_headers(102, "trog"),
+    )
+    assert missing.status_code == 404
+
+    external = await db_client.post(
+        "/api/top3/episodes/top3-idea/external-submissions",
+        json={
+            "id": "shared-result",
+            "displayName": "Guest",
+            "externalType": "guest",
+            "picks": ["Four", "Five", "Six"],
+        },
+        headers=_headers(101, "rocket"),
+    )
+    assert external.status_code == 201
+    unnecessary = await db_client.post(
+        "/api/top3/episodes/top3-idea/reveals/shared-result",
+        headers=_headers(102, "trog"),
+    )
+    assert unnecessary.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_external_results_are_shared_and_any_authenticated_host_can_crud(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await _assigned(db_client, db_session)
+    for invalid in (
+        {
+            "id": "invalid",
+            "displayName": "",
+            "externalType": "guest",
+            "picks": ["One", "Two", "Three"],
+        },
+        {
+            "id": "invalid",
+            "displayName": "Guest",
+            "externalType": "host",
+            "picks": ["One", "Two", "Three"],
+        },
+        {
+            "id": "invalid",
+            "displayName": "Guest",
+            "externalType": "guest",
+            "picks": ["One", "Two"],
+        },
+    ):
+        assert (
+            await db_client.post(
+                "/api/top3/episodes/top3-idea/external-submissions",
+                json=invalid,
+                headers=_headers(101, "rocket"),
+            )
+        ).status_code == 422
+
+    spoof = await db_client.post(
+        "/api/top3/episodes/top3-idea/external-submissions",
+        json={
+            "id": "external-spoof",
+            "displayName": "Guest",
+            "externalType": "guest",
+            "picks": ["One", "Two", "Three"],
+            "accountUserId": 101,
+        },
+        headers=_headers(101, "rocket"),
+    )
+    assert spoof.status_code == 422
+
+    created = await db_client.post(
+        "/api/top3/episodes/top3-idea/external-submissions",
+        json={
+            "id": "external-shared",
+            "displayName": "Guest <One>",
+            "externalType": "guest",
+            "picks": ["Guest One", "Guest Two", "Guest Three"],
+            "privateDiscussionNotes": "Shared guest notes",
+        },
+        headers=_headers(101, "rocket"),
+    )
+    assert created.status_code == 201
+    external = next(
+        item
+        for item in created.json()["assignment"]["contributors"]
+        if item["submissionId"] == "external-shared"
+    )
+    assert external["enteredByUserId"] == 101
+    assert external["picks"] == ["Guest One", "Guest Two", "Guest Three"]
+
+    shared_read = await db_client.get(
+        "/api/top3/episodes/top3-idea", headers=_headers(102, "trog")
+    )
+    assert "Guest One" in shared_read.text and "Shared guest notes" in shared_read.text
+    edited = await db_client.put(
+        "/api/top3/episodes/top3-idea/external-submissions/external-shared",
+        json={
+            "displayName": "Listener One",
+            "externalType": "listener",
+            "picks": ["Listener One", "Listener Two", "Listener Three"],
+            "privateDiscussionNotes": "Edited by another host",
+        },
+        headers=_headers(102, "trog"),
+    )
+    assert edited.status_code == 200
+    external = next(
+        item
+        for item in edited.json()["assignment"]["contributors"]
+        if item["submissionId"] == "external-shared"
+    )
+    assert external["displayName"] == "Listener One"
+    assert external["externalType"] == "listener"
+    assert external["enteredByUserId"] == 101
+    assert external["privateDiscussionNotes"] == "Edited by another host"
+
+    account_only = await db_client.put(
+        "/api/top3/episodes/top3-idea/submission",
+        json={"id": "account-only", "picks": ["A", "B", "C"]},
+        headers=_headers(103, "observer"),
+    )
+    assert account_only.status_code == 200
+    wrong_contract = await db_client.delete(
+        "/api/top3/episodes/top3-idea/external-submissions/account-only",
+        headers=_headers(102, "trog"),
+    )
+    assert wrong_contract.status_code == 404
+
+    removed = await db_client.delete(
+        "/api/top3/episodes/top3-idea/external-submissions/external-shared",
+        headers=_headers(103, "observer"),
+    )
+    assert removed.status_code == 200
+    assert "Listener One" not in removed.text
+    assert await db_session.get(Top3Submission, "external-shared") is None
+
+
+@pytest.mark.asyncio
+async def test_spotify_results_are_narrow_complete_deterministic_and_read_only(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await _assigned(db_client, db_session)
+    for user_id, username, submission_id, picks, notes in (
+        (
+            101,
+            "rocket",
+            "spotify-rocket",
+            ["Rocket <one>", "Rocket two", "Rocket three"],
+            "ROCKET PRIVATE NOTES",
+        ),
+        (
+            102,
+            "trog",
+            "spotify-trog",
+            ["Trog one", "Trog two", "Trog three"],
+            "TROG PRIVATE NOTES",
+        ),
+    ):
+        saved = await db_client.put(
+            "/api/top3/episodes/top3-idea/submission",
+            json={
+                "id": submission_id,
+                "picks": picks,
+                "privateDiscussionNotes": notes,
+            },
+            headers=_headers(user_id, username),
+        )
+        assert saved.status_code == 200
+
+    for submission in (
+        {
+            "id": "spotify-listener",
+            "displayName": "Listener Zed",
+            "externalType": "listener",
+            "picks": ["Listener one", "Listener two", "Listener three"],
+            "privateDiscussionNotes": "LISTENER PLANNING NOTES",
+        },
+        {
+            "id": "spotify-guest",
+            "displayName": "Guest & One",
+            "externalType": "guest",
+            "picks": ["Guest one", "Guest two", "Guest three"],
+            "privateDiscussionNotes": "GUEST PLANNING NOTES",
+        },
+    ):
+        created = await db_client.post(
+            "/api/top3/episodes/top3-idea/external-submissions",
+            json=submission,
+            headers=_headers(101, "rocket"),
+        )
+        assert created.status_code == 201
+
+    before = await db_client.get(
+        "/api/top3/episodes/top3-idea", headers=_headers(103, "observer")
+    )
+    assert before.status_code == 200
+    before_revision = before.json()["revision"]
+    assert "Rocket <one>" not in before.text
+    assert "Trog one" not in before.text
+
+    invalid = await db_client.post(
+        "/api/top3/episodes/top3-idea/spotify-results",
+        json={"purpose": "preparation"},
+        headers=_headers(103, "observer"),
+    )
+    assert invalid.status_code == 422
+    observer_results = await db_client.post(
+        "/api/top3/episodes/top3-idea/spotify-results",
+        json={"purpose": "spotify-overview"},
+        headers=_headers(103, "observer"),
+    )
+    assert observer_results.status_code == 200
+    assert observer_results.json() == {
+        "top3": {
+            "listName": "Best dungeon snacks",
+            "contributors": [
+                {
+                    "displayName": "Guest & One",
+                    "picks": ["Guest one", "Guest two", "Guest three"],
+                },
+                {
+                    "displayName": "Listener Zed",
+                    "picks": ["Listener one", "Listener two", "Listener three"],
+                },
+            ],
+        },
+    }
+    assert "Rocket <one>" not in observer_results.text
+    assert "Trog one" not in observer_results.text
+
+    trog_before_reveal = await db_client.post(
+        "/api/top3/episodes/top3-idea/spotify-results",
+        json={"purpose": "spotify-overview"},
+        headers=_headers(102, "trog"),
+    )
+    assert trog_before_reveal.status_code == 200
+    assert "Trog one" in trog_before_reveal.text
+    assert "Rocket <one>" not in trog_before_reveal.text
+
+    revealed = await db_client.post(
+        "/api/top3/episodes/top3-idea/reveals/spotify-rocket",
+        headers=_headers(102, "trog"),
+    )
+    assert revealed.status_code == 200
+    revealed_revision = revealed.json()["revision"]
+
+    published = await db_client.post(
+        "/api/top3/episodes/top3-idea/spotify-results",
+        json={"purpose": "spotify-overview"},
+        headers=_headers(102, "trog"),
+    )
+    assert published.status_code == 200
+    assert published.json() == {
+        "top3": {
+            "listName": "Best dungeon snacks",
+            "contributors": [
+                {
+                    "displayName": "Rocket",
+                    "picks": ["Rocket <one>", "Rocket two", "Rocket three"],
+                },
+                {
+                    "displayName": "Trog",
+                    "picks": ["Trog one", "Trog two", "Trog three"],
+                },
+                {
+                    "displayName": "Guest & One",
+                    "picks": ["Guest one", "Guest two", "Guest three"],
+                },
+                {
+                    "displayName": "Listener Zed",
+                    "picks": ["Listener one", "Listener two", "Listener three"],
+                },
+            ],
+        },
+    }
+    for forbidden in (
+        "PRIVATE NOTES",
+        "PLANNING NOTES",
+        "Rank snacks for a long dungeon",
+        "No conjured food",
+        "Cheese",
+        "spotify-rocket",
+        "spotify-guest",
+        "revealedAt",
+        "enteredByUserId",
+    ):
+        assert forbidden not in published.text
+
+    after = await db_client.get(
+        "/api/top3/episodes/top3-idea", headers=_headers(102, "trog")
+    )
+    assert after.json()["revision"] == revealed_revision
+    assert before_revision < revealed_revision
+    assert "Rocket <one>" in after.text
+    assert "Trog one" in after.text
+    assert await db_session.scalar(select(Top3Reveal.submission_id)) == "spotify-rocket"
+
+
+@pytest.mark.asyncio
+async def test_general_export_import_and_cache_contract_never_include_top3_picks(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await _assigned(db_client, db_session)
+    await db_client.put(
+        "/api/top3/episodes/top3-idea/submission",
+        json={
+            "id": "private-export-submission",
+            "picks": ["never-export-one", "never-export-two", "never-export-three"],
+            "privateDiscussionNotes": "never-export-notes",
+        },
+        headers=_headers(101, "rocket"),
+    )
+    exported = await db_client.get("/api/export", headers=_headers(101, "rocket"))
+    assert exported.status_code == 200
+    assert not any(key.lower().startswith("top3") for key in exported.json())
+    assert "never-export" not in exported.text
+
+    rejected = await db_client.put(
+        "/api/import",
+        json={"top3Submissions": [{"picks": ["stolen", "data", "here"]}]},
+        headers=_headers(101, "rocket"),
+    )
+    assert rejected.status_code == 422
+    assert "top3Submissions" in rejected.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_submission_contract_cannot_spoof_owner_or_write_another_object(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await _assigned(db_client, db_session)
+    spoof = await db_client.put(
+        "/api/top3/episodes/top3-idea/submission",
+        json={
+            "id": "spoof",
+            "picks": ["One", "Two", "Three"],
+            "accountUserId": 101,
+        },
+        headers=_headers(102, "trog"),
+    )
+    assert spoof.status_code == 422
+
+    saved = await db_client.put(
+        "/api/top3/episodes/top3-idea/submission",
+        json={"id": "trog-list", "picks": ["One", "Two", "Three"]},
+        headers=_headers(102, "trog"),
+    )
+    assert saved.status_code == 200
+    renamed = await db_client.put(
+        "/api/top3/episodes/top3-idea/submission",
+        json={"id": "different-id", "picks": ["Four", "Five", "Six"]},
+        headers=_headers(102, "trog"),
+    )
+    assert renamed.status_code == 409
+    assert "original id" in renamed.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_assignment_and_owner_submission_lifecycle_survives_reload(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await _assigned(db_client, db_session)
+    invalid = await db_client.put(
+        "/api/top3/episodes/top3-idea/submission",
+        json={"id": "invalid-three", "picks": ["One", "Two"]},
+        headers=_headers(101, "rocket"),
+    )
+    assert invalid.status_code == 422
+    assert "exactly three" in invalid.json()["detail"]
+
+    saved = await db_client.put(
+        "/api/top3/episodes/top3-idea/submission",
+        json={
+            "id": "owner-lifecycle",
+            "picks": ["One", "Two", "Three"],
+            "privateDiscussionNotes": "first private note",
+        },
+        headers=_headers(101, "rocket"),
+    )
+    assert saved.status_code == 200
+    updated = await db_client.put(
+        "/api/top3/episodes/top3-idea/submission",
+        json={
+            "id": "owner-lifecycle",
+            "picks": ["Four", "Five", "Six"],
+            "privateDiscussionNotes": "updated private note",
+        },
+        headers=_headers(101, "rocket"),
+    )
+    assert updated.status_code == 200
+
+    reloaded = await db_client.get(
+        "/api/top3/episodes/top3-idea", headers=_headers(101, "rocket")
+    )
+    own = next(
+        item
+        for item in reloaded.json()["assignment"]["contributors"]
+        if item["isCurrentUser"]
+    )
+    assert own["submissionId"] == "owner-lifecycle"
+    assert own["picks"] == ["Four", "Five", "Six"]
+    assert own["privateDiscussionNotes"] == "updated private note"
+
+    removed_submission = await db_client.delete(
+        "/api/top3/episodes/top3-idea/submission",
+        headers=_headers(101, "rocket"),
+    )
+    assert removed_submission.status_code == 200
+    own = next(
+        item
+        for item in removed_submission.json()["assignment"]["contributors"]
+        if item["isCurrentUser"]
+    )
+    assert own["complete"] is False
+    assert "picks" not in own and "privateDiscussionNotes" not in own
+
+    removed_assignment = await db_client.delete(
+        "/api/top3/episodes/top3-idea/assignment",
+        headers=_headers(101, "rocket"),
+    )
+    assert removed_assignment.status_code == 200
+    assert removed_assignment.json()["assignment"] is None
+    assert (
+        await db_client.get(
+            "/api/top3/episodes/top3-idea", headers=_headers(102, "trog")
+        )
+    ).json()["assignment"] is None
+
+
+@pytest.mark.asyncio
+async def test_database_constraints_reject_duplicate_owner_and_invalid_picks(
+    db_session: AsyncSession,
+):
+    await _users(db_session)
+    db_session.add(Idea(id="constraint-idea"))
+    db_session.add(
+        Top3Concept(
+            id="constraint-concept",
+            name="Constraint",
+            description="Constraint test",
+            created_by_user_id=101,
+        )
+    )
+    db_session.add(
+        Top3Assignment(
+            idea_id="constraint-idea",
+            concept_id="constraint-concept",
+            assigned_by_user_id=101,
+        )
+    )
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Top3Submission(
+                id="duplicate-one",
+                assignment_idea_id="constraint-idea",
+                participant_type="account",
+                account_user_id=101,
+                pick_1="One",
+                pick_2="Two",
+                pick_3="Three",
+            ),
+            Top3Submission(
+                id="duplicate-two",
+                assignment_idea_id="constraint-idea",
+                participant_type="account",
+                account_user_id=101,
+                pick_1="Four",
+                pick_2="Five",
+                pick_3="Six",
+            ),
+        ]
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_database_rejects_duplicate_picks_and_user_deletion_with_audit_rows(
+    db_session: AsyncSession,
+):
+    await _users(db_session)
+    db_session.add(Idea(id="constraint-picks-idea"))
+    db_session.add(
+        Top3Concept(
+            id="constraint-picks-concept",
+            name="Constraint",
+            description="Constraint test",
+            created_by_user_id=101,
+        )
+    )
+    db_session.add(
+        Top3Assignment(
+            idea_id="constraint-picks-idea",
+            concept_id="constraint-picks-concept",
+            assigned_by_user_id=101,
+        )
+    )
+    await db_session.flush()
+    db_session.add(
+        Top3Submission(
+            id="duplicate-picks",
+            assignment_idea_id="constraint-picks-idea",
+            participant_type="account",
+            account_user_id=101,
+            pick_1="Same",
+            pick_2="same",
+            pick_3="Different",
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+    await db_session.rollback()
+
+    await _users(db_session)
+    db_session.add(
+        Top3Concept(
+            id="user-audit-concept",
+            name="Audit",
+            description="Preserve authorship",
+            created_by_user_id=101,
+        )
+    )
+    await db_session.flush()
+    with pytest.raises(IntegrityError):
+        await db_session.execute(delete(User).where(User.id == 101))
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_assigned_concept_cannot_be_deleted(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await _assigned(db_client, db_session)
+    response = await db_client.delete(
+        "/api/top3/concepts/top3-concept", headers=_headers(101, "rocket")
+    )
+    assert response.status_code == 409
+    assert "Assigned" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_concept_bank_lists_assignment_state_without_participant_picks(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await _assigned(db_client, db_session)
+    response = await db_client.get(
+        "/api/top3/concepts", headers=_headers(101, "rocket")
+    )
+    assert response.status_code == 200
+    concept = next(
+        item for item in response.json()["concepts"] if item["id"] == "top3-concept"
+    )
+    assert concept["assignedEpisodes"] == [
+        {
+            "ideaId": "top3-idea",
+            "title": "Top 3 test",
+            "episodeNumber": None,
+        }
+    ]
+    assert "picks" not in response.text
+    assert "privateDiscussionNotes" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_reassignment_and_idea_deletion_cascade_private_rows(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await _assigned(db_client, db_session)
+    await db_client.post(
+        "/api/top3/concepts",
+        json=_concept("replacement-concept"),
+        headers=_headers(101, "rocket"),
+    )
+    await db_client.put(
+        "/api/top3/episodes/top3-idea/submission",
+        json={"id": "cascade-list", "picks": ["One", "Two", "Three"]},
+        headers=_headers(101, "rocket"),
+    )
+    db_session.add(Top3Reveal(viewer_user_id=102, submission_id="cascade-list"))
+    await db_session.flush()
+
+    replaced = await db_client.put(
+        "/api/top3/episodes/top3-idea/assignment",
+        json={"conceptId": "replacement-concept"},
+        headers=_headers(101, "rocket"),
+    )
+    assert replaced.status_code == 200
+    assert all(
+        not contributor["complete"]
+        for contributor in replaced.json()["assignment"]["contributors"]
+        if contributor["contributorType"] == "account"
+    )
+    assert await db_session.scalar(select(Top3Reveal.submission_id)) is None
+
+    await db_client.put(
+        "/api/top3/episodes/top3-idea/submission",
+        json={"id": "delete-cascade-list", "picks": ["A", "B", "C"]},
+        headers=_headers(101, "rocket"),
+    )
+    deleted = await db_client.delete(
+        "/api/ideas/top3-idea", headers=_headers(101, "rocket")
+    )
+    assert deleted.status_code == 200
+    assert await db_session.scalar(select(Top3Assignment.idea_id)) is None
+    assert await db_session.scalar(select(Top3Submission.id)) is None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_first_submissions_preserve_one_owner_row(
+    db_session: AsyncSession,
+):
+    await _users(db_session)
+    db_session.add(Idea(id="concurrent-top3-idea"))
+    db_session.add(
+        Top3Concept(
+            id="concurrent-top3-concept",
+            name="Concurrent",
+            description="Concurrent test",
+            created_by_user_id=101,
+        )
+    )
+    db_session.add(
+        Top3Assignment(
+            idea_id="concurrent-top3-idea",
+            concept_id="concurrent-top3-concept",
+            assigned_by_user_id=101,
+        )
+    )
+    await db_session.commit()
+    factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
+
+    async def save(submission_id: str):
+        async with factory() as session:
+            try:
+                await save_current_submission(
+                    session,
+                    idea_id="concurrent-top3-idea",
+                    user_id=101,
+                    submission={
+                        "id": submission_id,
+                        "picks": [submission_id, "Two", "Three"],
+                        "privateDiscussionNotes": "",
+                    },
+                )
+                await session.commit()
+                return "saved"
+            except Top3ConflictError:
+                await session.rollback()
+                return "conflict"
+
+    try:
+        results = await asyncio.gather(save("concurrent-a"), save("concurrent-b"))
+        assert sorted(results) == ["conflict", "saved"]
+        async with factory() as verify:
+            rows = list(
+                (
+                    await verify.execute(
+                        select(Top3Submission).where(
+                            Top3Submission.assignment_idea_id == "concurrent-top3-idea",
+                            Top3Submission.account_user_id == 101,
+                        )
+                    )
+                ).scalars()
+            )
+            assert len(rows) == 1
+    finally:
+        async with factory() as cleanup:
+            await cleanup.execute(
+                delete(Top3Assignment).where(
+                    Top3Assignment.idea_id == "concurrent-top3-idea"
+                )
+            )
+            await cleanup.execute(
+                delete(Top3Concept).where(Top3Concept.id == "concurrent-top3-concept")
+            )
+            await cleanup.execute(delete(Idea).where(Idea.id == "concurrent-top3-idea"))
+            await cleanup.execute(delete(User).where(User.id.in_([101, 102, 103])))
+            await cleanup.commit()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_reveal_requests_create_one_audit_row(
+    db_session: AsyncSession,
+):
+    await _users(db_session)
+    db_session.add(Idea(id="concurrent-reveal-idea"))
+    db_session.add(
+        Top3Concept(
+            id="concurrent-reveal-concept",
+            name="Concurrent reveal",
+            description="Concurrent reveal test",
+            created_by_user_id=101,
+        )
+    )
+    db_session.add(
+        Top3Assignment(
+            idea_id="concurrent-reveal-idea",
+            concept_id="concurrent-reveal-concept",
+            assigned_by_user_id=101,
+        )
+    )
+    db_session.add(
+        Top3Submission(
+            id="concurrent-reveal-submission",
+            assignment_idea_id="concurrent-reveal-idea",
+            participant_type="account",
+            account_user_id=101,
+            pick_1="One",
+            pick_2="Two",
+            pick_3="Three",
+        )
+    )
+    await db_session.commit()
+    factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
+
+    async def reveal():
+        async with factory() as session:
+            await reveal_submission(
+                session,
+                idea_id="concurrent-reveal-idea",
+                submission_id="concurrent-reveal-submission",
+                viewer_user_id=102,
+            )
+            await session.commit()
+
+    try:
+        await asyncio.gather(reveal(), reveal())
+        async with factory() as verify:
+            rows = list(
+                (
+                    await verify.execute(
+                        select(Top3Reveal).where(
+                            Top3Reveal.viewer_user_id == 102,
+                            Top3Reveal.submission_id
+                            == "concurrent-reveal-submission",
+                        )
+                    )
+                ).scalars()
+            )
+            assert len(rows) == 1
+    finally:
+        async with factory() as cleanup:
+            await cleanup.execute(
+                delete(Top3Assignment).where(
+                    Top3Assignment.idea_id == "concurrent-reveal-idea"
+                )
+            )
+            await cleanup.execute(
+                delete(Top3Concept).where(
+                    Top3Concept.id == "concurrent-reveal-concept"
+                )
+            )
+            await cleanup.execute(
+                delete(Idea).where(Idea.id == "concurrent-reveal-idea")
+            )
+            await cleanup.execute(delete(User).where(User.id.in_([101, 102, 103])))
+            await cleanup.commit()

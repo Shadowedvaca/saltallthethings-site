@@ -15,11 +15,14 @@ ENVIRONMENT_SENSITIVE_BROWSER_FILES = (
     "login.html",
     "register.html",
     "songs.html",
+    "top3.html",
     "js/ai-service.js",
     "js/postproduction.js",
     "js/site-config.js",
     "js/show-song.js",
     "js/songs.js",
+    "js/top3-bank.js",
+    "js/top3-episode.js",
     "js/storage.js",
 )
 PRODUCTION_API_MARKERS = (
@@ -47,6 +50,12 @@ def test_browser_api_calls_use_same_origin_paths():
     ).read_text(encoding="utf-8")
     assert "_apiBase: '/api'" in (
         REPOSITORY_ROOT / "js/postproduction.js"
+    ).read_text(encoding="utf-8")
+    assert "root.fetch('/api' + path" in (
+        REPOSITORY_ROOT / "js/top3-bank.js"
+    ).read_text(encoding="utf-8")
+    assert "root.fetch('/api' + path" in (
+        REPOSITORY_ROOT / "js/top3-episode.js"
     ).read_text(encoding="utf-8")
     assert "publicApiUrl: window.location.origin" in (
         REPOSITORY_ROOT / "js/site-config.js"
@@ -112,11 +121,17 @@ async def test_local_server_exposes_public_frontend_but_not_environment_file(
 ):
     page_response = await client.get("/login.html")
     song_page_response = await client.get("/songs.html")
+    top3_page_response = await client.get("/top3.html")
     script_response = await client.get("/js/storage.js")
+    top3_episode_script_response = await client.get("/js/top3-episode.js")
     environment_response = await client.get("/.env")
 
     assert page_response.status_code == 200
     assert song_page_response.status_code == 200
     assert "Song Bank" in song_page_response.text
+    assert top3_page_response.status_code == 200
+    assert "Top 3 Bank" in top3_page_response.text
     assert script_response.status_code == 200
+    assert top3_episode_script_response.status_code == 200
+    assert "Top3EpisodePlanning" in top3_episode_script_response.text
     assert environment_response.status_code == 404

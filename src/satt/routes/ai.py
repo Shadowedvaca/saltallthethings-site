@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import httpx
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from satt.ai_client import call_ai, call_dalle, call_gpt_image_1, call_gpt_image_1_edits
@@ -42,6 +42,13 @@ from satt.prompts import (
     build_generate_jokes_prompts,
     build_process_idea_prompts,
     build_process_idea_repair_prompt,
+    build_top3_concept_prompts,
+    build_top3_concept_repair_prompt,
+)
+from satt.top3_ai_contract import (
+    Top3AIContractError,
+    normalize_top3_generation_input,
+    parse_generated_top3_concept,
 )
 
 router = APIRouter()
@@ -171,6 +178,109 @@ async def process_idea(
                     "error": (
                         "AI returned an invalid outline after one repair attempt: "
                         f"{error}"
+                    )
+                },
+            )
+
+    return JSONResponse(content=result)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/ai/top3-concept
+# ---------------------------------------------------------------------------
+
+
+class GenerateTop3ConceptRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    description: str
+    name: str | None = None
+    rules: str | None = None
+    hostNotes: str | None = None
+
+
+@router.post("/ai/top3-concept")
+async def generate_top3_concept(
+    body: GenerateTop3ConceptRequest,
+    _user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    try:
+        generation_input = normalize_top3_generation_input(body.model_dump())
+    except Top3AIContractError as error:
+        return JSONResponse(status_code=422, content={"error": str(error)})
+
+    config = await get_config(db)
+    provider = config.get("aiModel", "claude")
+    if provider == "claude":
+        credential_key = "claudeApiKey"
+        model_id = config.get("claudeModelId") or "claude-sonnet-4-5-20250929"
+    elif provider == "openai":
+        credential_key = "openaiApiKey"
+        model_id = config.get("openaiModelId") or "gpt-4o"
+    else:
+        return JSONResponse(
+            status_code=422,
+            content={"error": "Configured AI provider is not supported"},
+        )
+    if not config.get(credential_key):
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"No API key configured for {provider}"},
+        )
+
+    system_prompt, user_prompt = build_top3_concept_prompts(generation_input)
+    try:
+        text = await call_ai(system_prompt, user_prompt, config)
+    except (httpx.HTTPStatusError, httpx.RequestError, ValueError):
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": (
+                    f"{provider} could not generate a Top 3 concept; retry or verify "
+                    "the server-side provider configuration"
+                )
+            },
+        )
+
+    generated_at = datetime.now(timezone.utc)
+    try:
+        result = parse_generated_top3_concept(
+            text,
+            generation_input=generation_input,
+            provider=provider,
+            model_id=model_id,
+            generated_at=generated_at,
+        )
+    except Top3AIContractError as first_error:
+        repair_prompt = build_top3_concept_repair_prompt(text, str(first_error))
+        try:
+            repaired_text = await call_ai(system_prompt, repair_prompt, config)
+        except (httpx.HTTPStatusError, httpx.RequestError, ValueError):
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "error": (
+                        f"{provider} could not repair the invalid Top 3 concept; retry "
+                        "or verify the server-side provider configuration"
+                    )
+                },
+            )
+        try:
+            result = parse_generated_top3_concept(
+                repaired_text,
+                generation_input=generation_input,
+                provider=provider,
+                model_id=model_id,
+                generated_at=generated_at,
+            )
+        except Top3AIContractError as error:
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "error": (
+                        "AI returned an invalid Top 3 concept after one repair "
+                        f"attempt: {error}"
                     )
                 },
             )
