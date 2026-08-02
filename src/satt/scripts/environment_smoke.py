@@ -590,24 +590,27 @@ async def _exercise_top3(
         )
         result_contributors = top3_result.get("contributors") or []
         _require(
-            len(result_contributors) == 3
+            len(result_contributors) == 2
             and all(set(item) == {"displayName", "picks"} for item in result_contributors)
             and all(len(item["picks"]) == 3 for item in result_contributors),
             "Top 3 Spotify result was not the narrow exact-three contributor contract",
         )
         result_first_picks = [item["picks"][0] for item in result_contributors]
         _require(
-            set(result_first_picks[:2]) == {private_pick, viewer_pick}
-            and result_first_picks[2] == external_pick
-            and all(item["displayName"][:1].isupper() for item in result_contributors[:2]),
-            "Top 3 Spotify result did not order proper-case accounts before external results",
+            result_first_picks == [private_pick, external_pick]
+            and result_contributors[0]["displayName"][:1].isupper(),
+            "Top 3 Spotify result did not keep the viewer's proper-case account before external results",
         )
         spotify_text = spotify_results.text
-        for expected_pick in (private_pick, viewer_pick, external_pick):
+        for expected_pick in (private_pick, external_pick):
             _require(
                 expected_pick in spotify_text,
                 "Top 3 Spotify result omitted a submitted contributor",
             )
+        _require(
+            viewer_pick not in spotify_text,
+            "Top 3 Spotify result exposed another host before viewer reveal",
+        )
         _require(
             private_notes not in spotify_text
             and f"viewer-private-notes-{suffix}" not in spotify_text
@@ -625,6 +628,23 @@ async def _exercise_top3(
             ),
             "Top 3 Spotify result exposed preparation or ownership metadata",
         )
+        viewer_spotify = await client.post(
+            f"/api/top3/episodes/{idea_id}/spotify-results",
+            json={"purpose": "spotify-overview"},
+            headers=_headers(viewer_token),
+        )
+        _expect_status(viewer_spotify, 200, "viewer Top 3 Spotify composition")
+        viewer_first_picks = [
+            item["picks"][0]
+            for item in (viewer_spotify.json().get("top3") or {}).get(
+                "contributors", []
+            )
+        ]
+        _require(
+            set(viewer_first_picks[:2]) == {private_pick, viewer_pick}
+            and viewer_first_picks[2:] == [external_pick],
+            "Top 3 Spotify result did not include the viewer's own and revealed account lists before external results",
+        )
         repeated_spotify = await client.post(
             f"/api/top3/episodes/{idea_id}/spotify-results",
             json={"purpose": "spotify-overview"},
@@ -632,7 +652,7 @@ async def _exercise_top3(
         )
         _expect_status(repeated_spotify, 200, "repeated Top 3 Spotify composition")
         _require(
-            repeated_spotify.json() == spotify_payload,
+            repeated_spotify.json() == viewer_spotify.json(),
             "Top 3 Spotify result ordering or content was not deterministic",
         )
         preparation_after_spotify = await client.get(

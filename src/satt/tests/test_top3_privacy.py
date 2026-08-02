@@ -569,10 +569,50 @@ async def test_spotify_results_are_narrow_complete_deterministic_and_read_only(
         headers=_headers(103, "observer"),
     )
     assert invalid.status_code == 422
-    published = await db_client.post(
+    observer_results = await db_client.post(
         "/api/top3/episodes/top3-idea/spotify-results",
         json={"purpose": "spotify-overview"},
         headers=_headers(103, "observer"),
+    )
+    assert observer_results.status_code == 200
+    assert observer_results.json() == {
+        "top3": {
+            "listName": "Best dungeon snacks",
+            "contributors": [
+                {
+                    "displayName": "Guest & One",
+                    "picks": ["Guest one", "Guest two", "Guest three"],
+                },
+                {
+                    "displayName": "Listener Zed",
+                    "picks": ["Listener one", "Listener two", "Listener three"],
+                },
+            ],
+        },
+    }
+    assert "Rocket <one>" not in observer_results.text
+    assert "Trog one" not in observer_results.text
+
+    trog_before_reveal = await db_client.post(
+        "/api/top3/episodes/top3-idea/spotify-results",
+        json={"purpose": "spotify-overview"},
+        headers=_headers(102, "trog"),
+    )
+    assert trog_before_reveal.status_code == 200
+    assert "Trog one" in trog_before_reveal.text
+    assert "Rocket <one>" not in trog_before_reveal.text
+
+    revealed = await db_client.post(
+        "/api/top3/episodes/top3-idea/reveals/spotify-rocket",
+        headers=_headers(102, "trog"),
+    )
+    assert revealed.status_code == 200
+    revealed_revision = revealed.json()["revision"]
+
+    published = await db_client.post(
+        "/api/top3/episodes/top3-idea/spotify-results",
+        json={"purpose": "spotify-overview"},
+        headers=_headers(102, "trog"),
     )
     assert published.status_code == 200
     assert published.json() == {
@@ -612,12 +652,13 @@ async def test_spotify_results_are_narrow_complete_deterministic_and_read_only(
         assert forbidden not in published.text
 
     after = await db_client.get(
-        "/api/top3/episodes/top3-idea", headers=_headers(103, "observer")
+        "/api/top3/episodes/top3-idea", headers=_headers(102, "trog")
     )
-    assert after.json()["revision"] == before_revision
-    assert "Rocket <one>" not in after.text
-    assert "Trog one" not in after.text
-    assert await db_session.scalar(select(Top3Reveal.submission_id)) is None
+    assert after.json()["revision"] == revealed_revision
+    assert before_revision < revealed_revision
+    assert "Rocket <one>" in after.text
+    assert "Trog one" in after.text
+    assert await db_session.scalar(select(Top3Reveal.submission_id)) == "spotify-rocket"
 
 
 @pytest.mark.asyncio

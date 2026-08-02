@@ -512,8 +512,10 @@ async def get_viewer_assignment(
     }
 
 
-async def get_spotify_results(db: AsyncSession, *, idea_id: str) -> dict | None:
-    """Return the deliberately narrow, read-only publication projection."""
+async def get_spotify_results(
+    db: AsyncSession, *, idea_id: str, viewer_user_id: int
+) -> dict | None:
+    """Return the viewer-authorized, read-only publication projection."""
     assignment_row = (
         await db.execute(
             select(Top3Assignment, Top3Concept)
@@ -531,8 +533,29 @@ async def get_spotify_results(db: AsyncSession, *, idea_id: str) -> dict | None:
             .where(Top3Submission.assignment_idea_id == idea_id)
         )
     ).all()
+    revealed_submission_ids = set(
+        (
+            await db.execute(
+                select(Top3Reveal.submission_id)
+                .join(
+                    Top3Submission,
+                    Top3Submission.id == Top3Reveal.submission_id,
+                )
+                .where(
+                    Top3Reveal.viewer_user_id == viewer_user_id,
+                    Top3Submission.assignment_idea_id == idea_id,
+                )
+            )
+        ).scalars()
+    )
     ordered_contributors = []
     for submission, username in rows:
+        if (
+            submission.participant_type == "account"
+            and submission.account_user_id != viewer_user_id
+            and submission.id not in revealed_submission_ids
+        ):
+            continue
         display_name = (
             _account_display_name(username)
             if submission.participant_type == "account"

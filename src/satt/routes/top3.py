@@ -168,10 +168,14 @@ async def get_episode_top3(
 async def post_spotify_results(
     idea_id: str,
     _body: SpotifyResultsBody,
-    _user: dict = Depends(require_auth),
+    user: dict = Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    return {"top3": await get_spotify_results(db, idea_id=idea_id)}
+    return {
+        "top3": await get_spotify_results(
+            db, idea_id=idea_id, viewer_user_id=_user_id(user)
+        )
+    }
 
 
 @router.put("/top3/episodes/{idea_id}/assignment")

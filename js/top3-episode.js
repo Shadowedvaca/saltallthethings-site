@@ -22,6 +22,7 @@
   var errors = new Map();
   var editingExternal = new Map();
   var onChange = function() {};
+  var onDetailChange = function() {};
   var bound = false;
 
   function escapeHtml(value) {
@@ -183,6 +184,11 @@
     return (contributors || []).find(function(item) { return item.isCurrentUser; }) || null;
   }
 
+  function revealButtonMarkup(item) {
+    if (!item || !item.complete || item.contributorType !== 'account' || item.isCurrentUser || item.revealed) return '';
+    return '<button type="button" class="btn btn-ghost btn-sm" data-top3-action="reveal" data-submission-id="' + escapeHtml(item.submissionId) + '" data-display-name="' + escapeHtml(item.displayName) + '">Reveal picks</button>';
+  }
+
   function assignmentMarkup(ideaId, assignment) {
     var concept = assignment.concept;
     var own = ownSubmission(assignment.contributors);
@@ -228,10 +234,10 @@
           + (item.privateDiscussionNotes ? '<p>' + escapeHtml(item.privateDiscussionNotes) + '</p>' : '')
         : '';
       return '<li><div class="top3-contributor-heading"><strong>' + escapeHtml(item.displayName)
-        + (item.isCurrentUser ? ' (you)' : '') + '</strong><span class="badge ' + (item.complete ? 'badge-scheduled' : 'badge-draft') + '">'
-        + state + '</span></div>' + result + '</li>';
+        + (item.isCurrentUser ? ' (you)' : '') + '</strong><span class="top3-contributor-actions"><span class="badge ' + (item.complete ? 'badge-scheduled' : 'badge-draft') + '">'
+        + state + '</span>' + revealButtonMarkup(item) + '</span></div>' + result + '</li>';
     }).join('');
-    return '<div class="show-display-section"><h2>Top 3 concept</h2><h3>' + escapeHtml(concept.name) + '</h3>'
+    return '<div class="show-display-section" data-top3-idea-id="' + escapeHtml(ideaId) + '"><h2>Top 3 concept</h2><h3>' + escapeHtml(concept.name) + '</h3>'
       + '<p>' + escapeHtml(concept.description) + '</p>'
       + (concept.rules ? '<p><strong>Rules:</strong> ' + escapeHtml(concept.rules) + '</p>' : '')
       + examples + '<h3>Participant results</h3><ul class="top3-contributors">' + participantRows + '</ul></div>';
@@ -303,7 +309,9 @@
       var revealId = button.dataset.submissionId;
       var revealName = button.dataset.displayName || 'this contributor';
       if (!root.confirm('Reveal ' + revealName + '\'s private Top 3 picks and notes to your account? This cannot be undone.')) return;
-      return mutate(ideaId, '/top3/episodes/' + encodeURIComponent(ideaId) + '/reveals/' + encodeURIComponent(revealId), { method: 'POST' }, revealName + '\'s picks were revealed only to you.');
+      var revealed = await mutate(ideaId, '/top3/episodes/' + encodeURIComponent(ideaId) + '/reveals/' + encodeURIComponent(revealId), { method: 'POST' }, revealName + '\'s picks were revealed only to you.');
+      if (revealed) await onDetailChange(ideaId);
+      return revealed;
     }
     if (action === 'assign') {
       var select = section.querySelector('[data-top3-concept]');
@@ -419,8 +427,9 @@
     bound = true;
   }
 
-  async function start(changeCallback) {
+  async function start(changeCallback, detailChangeCallback) {
     onChange = typeof changeCallback === 'function' ? changeCallback : function() {};
+    onDetailChange = typeof detailChangeCallback === 'function' ? detailChangeCallback : function() {};
     bind();
     try {
       await loadConcepts();
@@ -436,6 +445,7 @@
     contributorsMarkup: contributorsMarkup,
     externalResultsMarkup: externalResultsMarkup,
     assignmentMarkup: assignmentMarkup,
+    revealButtonMarkup: revealButtonMarkup,
     summaryMarkup: summaryMarkup,
     render: render,
     loadConcepts: loadConcepts,

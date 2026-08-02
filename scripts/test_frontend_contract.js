@@ -727,6 +727,7 @@ function testTop3EpisodePlanningContract() {
   const showSummary = Top3EpisodePlanning.summaryMarkup("idea-summary");
   Top3EpisodePlanning._state.episodes.delete("idea-summary");
   assert.match(showSummary, /Top 3 concept/);
+  assert.match(showSummary, /data-top3-idea-id="idea-summary"/);
   assert.match(showSummary, /Dungeon &lt;snacks&gt;/);
   assert.match(showSummary, /Rank &amp; explain/);
   assert.match(showSummary, /Rules:/);
@@ -736,6 +737,8 @@ function testTop3EpisodePlanningContract() {
   assert.match(showSummary, /Revealed first|revealed notes/);
   assert.match(showSummary, /Guest &lt;first&gt;|Shared &lt;notes&gt;/);
   assert.match(showSummary, /Ready — hidden/);
+  assert.match(showSummary, /data-top3-action="reveal"/);
+  assert.match(showSummary, /Reveal picks/);
   assert.doesNotMatch(showSummary, /must-not-render/);
 
   const page = fs.readFileSync("show_management.html", "utf8");
@@ -897,7 +900,8 @@ async function testTop3EpisodeBrowserActionsUseViewerScopedApi() {
   vm.createContext(context);
   vm.runInContext(fs.readFileSync("js/top3-episode.js", "utf8"), context);
   const api = window.Top3EpisodePlanning;
-  await api.start(() => {});
+  let detailRefreshIdeaId = null;
+  await api.start(() => {}, async (ideaId) => { detailRefreshIdeaId = ideaId; });
   await api.loadEpisode("idea-1");
   assert.equal(listeners.click.capture, true);
 
@@ -969,6 +973,7 @@ async function testTop3EpisodeBrowserActionsUseViewerScopedApi() {
     stopPropagation() {},
   });
   assert.equal(assignment.contributors.find((item) => item.submissionId === "hidden-other").revealed, true);
+  assert.equal(detailRefreshIdeaId, "idea-1");
 
   const externalForm = {
     closest(selector) { return selector === "[data-top3-idea-id]" ? section : selector === "[data-top3-external-form]" ? externalForm : null; },

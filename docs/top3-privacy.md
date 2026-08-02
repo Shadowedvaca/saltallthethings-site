@@ -60,10 +60,12 @@ identity shape and pick integrity even if application validation is bypassed.
   shared guest/listener results. Bodies cannot select an account owner or alter
   the original entering account.
 - `POST /api/top3/episodes/{ideaId}/spotify-results` with the exact purpose
-  `spotify-overview` is the deliberate authenticated publication boundary. It
-  returns only the list name and each submitted contributor's display name and
-  three picks. It omits missing accounts and every note, definition field,
-  example, participant type, identifier, timestamp, and reveal field.
+  `spotify-overview` is the deliberate authenticated, viewer-scoped publication
+  boundary. It returns only the list name and the current viewer's own account
+  submission, account submissions that viewer has revealed, and shared external
+  results, each with a display name and three picks. It omits unrevealed account
+  picks, missing accounts, and every note, definition field, example,
+  participant type, identifier, timestamp, and reveal field.
 
 Mutations use the existing `If-Match` data revision guard. Responses carry the
 new revision, while hidden Top 3 content remains outside the general export
@@ -98,17 +100,21 @@ projection. Opening it does not create reveal rows: hidden account lists remain
 status-only, while the current account, lists already revealed to that viewer,
 and shared external results render as read-only preparation material.
 
-Opening the authenticated full-screen display separately requests the narrow
-Spotify result contract for composition. That response deliberately includes
-every completed account, guest, and listener list, regardless of preparation
-reveal state, but contains only `listName`, `displayName`, and exactly three
-ranked pick strings. Account usernames are display-cased without changing their
-stored login value. Submitted accounts are ordered first, case-insensitively by
-display name and then picks, followed by external contributors using the same
-ordering; accounts without a saved submission are omitted. Composition normalizes
-line-breaking whitespace so a name or pick cannot alter the compact format. The
-response is held only for the selectable Spotify overview and copy operation,
-never inserted into the preparation cache or projection.
+Opening the authenticated full-screen display separately requests the narrow,
+viewer-scoped Spotify result contract for composition. That response includes
+the viewer's completed account list, completed account lists already revealed
+to that viewer, and every shared guest or listener list. Other completed account
+lists remain omitted until the viewer confirms the irreversible reveal from the
+full-screen participant results or episode-preparation view. A successful reveal
+refreshes both the participant summary and Spotify overview. The result contains
+only `listName`, `displayName`, and exactly three ranked pick strings. Account
+usernames are display-cased without changing their stored login value. Eligible
+submitted accounts are ordered first, case-insensitively by display name and then
+picks, followed by external contributors using the same ordering; accounts
+without a saved submission are omitted. Composition normalizes line-breaking
+whitespace so a name or pick cannot alter the compact format. The response is
+held only for the selectable Spotify overview and copy operation, never inserted
+into the preparation cache or projection.
 
 Requesting, composing, rendering, and copying results are read-only. They do not
 bump the data revision, create a reveal, modify any Top 3 record, or publish to

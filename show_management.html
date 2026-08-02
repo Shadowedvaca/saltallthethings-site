@@ -1182,7 +1182,7 @@
       }
 
       // Update URL hash
-      history.pushState(null, '', '#show/' + slotId);
+      if (location.hash !== '#show/' + slotId) history.pushState(null, '', '#show/' + slotId);
 
       var title = idea.selectedTitle || (idea.titles && idea.titles[0]) || 'Untitled';
       var assignedJoke = Storage.getJokeForIdea(idea.id);
@@ -1469,6 +1469,10 @@
       await Top3EpisodePlanning.start(function(ideaId) {
         if (ideaId) rerenderIdeasPreservingExpansion(ideaId);
         else renderIdeasList();
+      }, async function(ideaId) {
+        if (!location.hash.startsWith('#show/')) return;
+        var slotId = location.hash.replace('#show/', '');
+        if (Storage.getAssignments()[slotId] === ideaId) await openShowDisplay(slotId);
       });
 
       // Check for hash-based show display on load
