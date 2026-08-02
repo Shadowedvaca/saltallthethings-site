@@ -126,6 +126,9 @@ def test_deployment_smoke_exercises_song_lifecycle_without_external_services():
     assert '"clipboard.writeText" in response.text' in source
     assert '"conceptCardMarkup" in response.text' in source
     assert '"Top3EpisodePlanning" in response.text' in source
+    assert '"Top 3 preparation" in response.text' in source
+    assert '"Top3EpisodePlanning.render" in response.text' in source
+    assert '"Top3EpisodePlanning.summaryMarkup" in response.text' in source
     assert '"/ai/top3-concept" in response.text' in source
     assert "/api/top3/concepts" in source
     assert "/api/top3/episodes/{idea_id}/submission" in source

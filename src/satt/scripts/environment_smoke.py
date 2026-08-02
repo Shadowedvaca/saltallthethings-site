@@ -683,8 +683,9 @@ async def run_smoke(
                     )
                 elif path == "/show_management.html":
                     _require(
-                        "Top 3 preparation" in response.text
-                        and "js/top3-episode.js" in response.text,
+                        "js/top3-episode.js" in response.text
+                        and "Top3EpisodePlanning.render" in response.text
+                        and "Top3EpisodePlanning.summaryMarkup" in response.text,
                         "deployed Show Management Top 3 controls are incomplete",
                     )
                 elif path == "/top3.html":
@@ -704,6 +705,7 @@ async def run_smoke(
                 elif path == "/js/top3-episode.js":
                     _require(
                         "Top3EpisodePlanning" in response.text
+                        and "Top 3 preparation" in response.text
                         and "/assignment" in response.text
                         and "/submission" in response.text
                         and "If-Match" in response.text,
