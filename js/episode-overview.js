@@ -39,13 +39,6 @@
       return { displayName: displayName, picks: picks };
     }).filter(Boolean);
     if (!contributors.length) return '';
-    contributors.sort(function(left, right) {
-      var leftKey = left.displayName.toLowerCase() + '\n' + left.picks.join('\n').toLowerCase();
-      var rightKey = right.displayName.toLowerCase() + '\n' + right.picks.join('\n').toLowerCase();
-      if (leftKey < rightKey) return -1;
-      if (leftKey > rightKey) return 1;
-      return 0;
-    });
     var lines = ['Top 3: ' + listName];
     contributors.forEach(function(contributor) {
       lines.push(

@@ -32,6 +32,11 @@ class Top3ConflictError(RuntimeError):
     pass
 
 
+def _account_display_name(username: str | None) -> str:
+    value = username or "Inactive account"
+    return value[:1].upper() + value[1:]
+
+
 async def _lock_top3_lifecycle(db: AsyncSession) -> None:
     await db.execute(select(func.pg_advisory_xact_lock(_TOP3_LIFECYCLE_LOCK_ID)))
 
@@ -453,7 +458,7 @@ async def get_viewer_assignment(
                     "submissionId": None,
                     "contributorType": "account",
                     "externalType": None,
-                    "displayName": user.username,
+                    "displayName": _account_display_name(user.username),
                     "complete": False,
                     "isCurrentUser": user.id == viewer_user_id,
                     "revealed": False,
@@ -464,7 +469,7 @@ async def get_viewer_assignment(
         contributors.append(
             serialize_top3_submission(
                 submission,
-                display_name=username or "Inactive account",
+                display_name=_account_display_name(username),
                 current_user_id=viewer_user_id,
                 revealed_at=revealed_at_by_id.get(submission.id),
             )
@@ -478,7 +483,7 @@ async def get_viewer_assignment(
         contributors.append(
             serialize_top3_submission(
                 submission,
-                display_name=username or "Inactive account",
+                display_name=_account_display_name(username),
                 current_user_id=viewer_user_id,
                 revealed_at=revealed_at_by_id.get(submission.id),
             )
@@ -526,24 +531,28 @@ async def get_spotify_results(db: AsyncSession, *, idea_id: str) -> dict | None:
             .where(Top3Submission.assignment_idea_id == idea_id)
         )
     ).all()
-    contributors = [
-        {
-            "displayName": (
-                username
-                if submission.participant_type == "account"
-                else submission.external_display_name
-            )
-            or "Inactive account",
-            "picks": [submission.pick_1, submission.pick_2, submission.pick_3],
-        }
-        for submission, username in rows
-    ]
-    contributors.sort(
-        key=lambda item: (
-            item["displayName"].casefold(),
-            item["displayName"],
-            tuple(pick.casefold() for pick in item["picks"]),
-            tuple(item["picks"]),
+    ordered_contributors = []
+    for submission, username in rows:
+        display_name = (
+            _account_display_name(username)
+            if submission.participant_type == "account"
+            else submission.external_display_name or "External contributor"
         )
-    )
-    return {"listName": concept.name, "contributors": contributors}
+        picks = [submission.pick_1, submission.pick_2, submission.pick_3]
+        ordered_contributors.append(
+            (
+                (
+                    0 if submission.participant_type == "account" else 1,
+                    display_name.casefold(),
+                    display_name,
+                    tuple(pick.casefold() for pick in picks),
+                    tuple(picks),
+                ),
+                {"displayName": display_name, "picks": picks},
+            )
+        )
+    ordered_contributors.sort(key=lambda item: item[0])
+    return {
+        "listName": concept.name,
+        "contributors": [item[1] for item in ordered_contributors],
+    }

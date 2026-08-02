@@ -441,10 +441,14 @@ async function testEpisodeOverviewContract() {
     listName: " Dungeon\n snacks & drinks ",
     contributors: [
       {
-        displayName: "rocket",
+        displayName: "Rocket",
         picks: ["Rock one", "Rock two", "Rock three"],
         privateDiscussionNotes: "PRIVATE TOP 3 NOTES",
         submissionId: "internal-submission",
+      },
+      {
+        displayName: "Trog",
+        picks: ["Trog one", "Trog two", "Trog three"],
       },
       {
         displayName: "Guest <One>",
@@ -463,10 +467,12 @@ async function testEpisodeOverviewContract() {
     + "\n\nFeatured song: Artist & Friends — Title <Live>"
     + "\nYouTube: https://youtu.be/abc123?si=safe&feature=share"
     + "\n\nTop 3: Dungeon snacks & drinks"
+    + "\n\nRocket"
+    + "\n1. Rock one\n2. Rock two\n3. Rock three"
+    + "\n\nTrog"
+    + "\n1. Trog one\n2. Trog two\n3. Trog three"
     + "\n\nGuest <One>"
-    + "\n1. Guest first\n2. Guest second\n3. Guest third"
-    + "\n\nrocket"
-    + "\n1. Rock one\n2. Rock two\n3. Rock three";
+    + "\n1. Guest first\n2. Guest second\n3. Guest third";
   const composed = EpisodeOverview.compose(summary, song, top3);
   assert.equal(composed, expected);
   assert.equal(EpisodeOverview.compose(summary, null), summary);
@@ -660,7 +666,7 @@ function testTop3EpisodePlanningContract() {
       {
         submissionId: "mine",
         contributorType: "account",
-        displayName: "rocket",
+        displayName: "Rocket",
         complete: true,
         isCurrentUser: true,
         picks: ["My first", "My second", "My third"],
@@ -669,7 +675,7 @@ function testTop3EpisodePlanningContract() {
       {
         submissionId: "other",
         contributorType: "account",
-        displayName: "trog <host>",
+        displayName: "Trog <host>",
         complete: true,
         isCurrentUser: false,
         picks: ["must-not-render-one", "must-not-render-two", "must-not-render-three"],
@@ -700,12 +706,12 @@ function testTop3EpisodePlanningContract() {
   const markup = Top3EpisodePlanning.assignmentMarkup("idea-1", assignment);
   assert.match(markup, /Dungeon &lt;snacks&gt;/);
   assert.match(markup, /Rank &amp; explain/);
-  assert.doesNotMatch(markup, /<script>|trog <host>/);
+  assert.doesNotMatch(markup, /<script>|Trog <host>/);
   assert.match(markup, /Shared fictional example/);
   assert.match(markup, /not a participant submission/);
   assert.match(markup, /My first/);
   assert.match(markup, /my private notes/);
-  assert.match(markup, /trog &lt;host&gt;/);
+  assert.match(markup, /Trog &lt;host&gt;/);
   assert.match(markup, /Ready — hidden/);
   assert.match(markup, /Reveal picks/);
   assert.match(markup, /Revealed only to you/);
@@ -790,7 +796,7 @@ async function testTop3EpisodeBrowserActionsUseViewerScopedApi() {
         contributors: [{
           submissionId: null,
           contributorType: "account",
-          displayName: "rocket",
+          displayName: "Rocket",
           complete: false,
           isCurrentUser: true,
         }],
@@ -813,7 +819,7 @@ async function testTop3EpisodeBrowserActionsUseViewerScopedApi() {
         contributors: [{
           submissionId: payload.id,
           contributorType: "account",
-          displayName: "rocket",
+          displayName: "Rocket",
           complete: true,
           isCurrentUser: true,
           picks: payload.picks,
@@ -936,14 +942,14 @@ async function testTop3EpisodeBrowserActionsUseViewerScopedApi() {
   assignment.contributors.push({
     submissionId: "hidden-other",
     contributorType: "account",
-    displayName: "trog",
+    displayName: "Trog",
     complete: true,
     isCurrentUser: false,
     revealed: false,
   });
   api._state.episodes.set("idea-1", assignment);
   const revealButton = {
-    dataset: { top3Action: "reveal", submissionId: "hidden-other", displayName: "trog" },
+    dataset: { top3Action: "reveal", submissionId: "hidden-other", displayName: "Trog" },
     closest(selector) { return selector === "[data-top3-idea-id]" ? section : null; },
   };
   confirmResult = false;

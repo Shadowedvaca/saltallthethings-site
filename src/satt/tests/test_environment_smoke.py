@@ -137,6 +137,7 @@ def test_deployment_smoke_exercises_song_lifecycle_without_external_services():
     assert "/api/top3/episodes/{idea_id}/external-submissions" in source
     assert "/api/top3/episodes/{idea_id}/spotify-results" in source
     assert "Top 3 Spotify result was not the narrow exact-three contributor contract" in source
+    assert "Top 3 Spotify result did not order proper-case accounts before external results" in source
     assert "Top 3 Spotify composition unexpectedly changed the data revision" in source
     assert "Spotify composition revealed a hidden list in preparation state" in source
     assert "Top 3 Spotify result ordering or content was not deterministic" in source

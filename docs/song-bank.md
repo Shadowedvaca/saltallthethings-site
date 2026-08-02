@@ -90,20 +90,26 @@ YouTube: https://youtu.be/video-id
 When no song is assigned, the overview is only the unchanged summary and no
 empty song heading or placeholder is emitted. When the episode has submitted
 Top 3 results, the composer appends exactly one blank line and this compact
-format, ordered case-insensitively by contributor display name and then picks:
+format. Display-cased account contributors appear first alphabetically, followed
+by external contributors alphabetically; picks provide a deterministic tie-break:
 
 ```text
 Top 3: Best dungeon snacks
 
-Guest One
+Rocket
+1. Pretzels
+2. Trail mix
+3. Crackers
+
+Trog
 1. Cheese
 2. Jerky
 3. Fruit
 
-rocket
-1. Pretzels
-2. Trail mix
-3. Crackers
+Guest One
+1. Chips
+2. Nuts
+3. Cookies
 ```
 
 Accounts without a saved submission are omitted. The Top 3 block contains only

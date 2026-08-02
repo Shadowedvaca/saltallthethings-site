@@ -595,6 +595,13 @@ async def _exercise_top3(
             and all(len(item["picks"]) == 3 for item in result_contributors),
             "Top 3 Spotify result was not the narrow exact-three contributor contract",
         )
+        result_first_picks = [item["picks"][0] for item in result_contributors]
+        _require(
+            set(result_first_picks[:2]) == {private_pick, viewer_pick}
+            and result_first_picks[2] == external_pick
+            and all(item["displayName"][:1].isupper() for item in result_contributors[:2]),
+            "Top 3 Spotify result did not order proper-case accounts before external results",
+        )
         spotify_text = spotify_results.text
         for expected_pick in (private_pick, viewer_pick, external_pick):
             _require(

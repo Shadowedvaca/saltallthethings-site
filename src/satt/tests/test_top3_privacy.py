@@ -190,7 +190,7 @@ async def test_viewer_projection_redacts_other_accounts_even_for_admin(
     )
     assert saved.status_code == 200
     own = saved.json()["assignment"]["contributors"]
-    rocket = next(item for item in own if item["displayName"] == "rocket")
+    rocket = next(item for item in own if item["displayName"] == "Rocket")
     assert rocket["picks"][0] == rocket_secret
     assert rocket["privateDiscussionNotes"] == "rocket-private-notes"
 
@@ -204,13 +204,13 @@ async def test_viewer_projection_redacts_other_accounts_even_for_admin(
         rocket = next(
             item
             for item in response.json()["assignment"]["contributors"]
-            if item["displayName"] == "rocket"
+            if item["displayName"] == "Rocket"
         )
         assert rocket == {
             "submissionId": "rocket-submission",
             "contributorType": "account",
             "externalType": None,
-            "displayName": "rocket",
+            "displayName": "Rocket",
             "complete": True,
             "isCurrentUser": False,
             "revealed": False,
@@ -219,7 +219,7 @@ async def test_viewer_projection_redacts_other_accounts_even_for_admin(
     incomplete = next(
         item
         for item in saved.json()["assignment"]["contributors"]
-        if item["displayName"] == "trog"
+        if item["displayName"] == "Trog"
     )
     assert incomplete["complete"] is False
     assert "picks" not in incomplete
@@ -580,20 +580,20 @@ async def test_spotify_results_are_narrow_complete_deterministic_and_read_only(
             "listName": "Best dungeon snacks",
             "contributors": [
                 {
+                    "displayName": "Rocket",
+                    "picks": ["Rocket <one>", "Rocket two", "Rocket three"],
+                },
+                {
+                    "displayName": "Trog",
+                    "picks": ["Trog one", "Trog two", "Trog three"],
+                },
+                {
                     "displayName": "Guest & One",
                     "picks": ["Guest one", "Guest two", "Guest three"],
                 },
                 {
                     "displayName": "Listener Zed",
                     "picks": ["Listener one", "Listener two", "Listener three"],
-                },
-                {
-                    "displayName": "rocket",
-                    "picks": ["Rocket <one>", "Rocket two", "Rocket three"],
-                },
-                {
-                    "displayName": "trog",
-                    "picks": ["Trog one", "Trog two", "Trog three"],
                 },
             ],
         },
