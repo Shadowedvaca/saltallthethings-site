@@ -21,7 +21,11 @@ from satt.models import (
     Top3Submission,
     User,
 )
-from satt.top3_crud import Top3ConflictError, save_current_submission
+from satt.top3_crud import (
+    Top3ConflictError,
+    reveal_submission,
+    save_current_submission,
+)
 
 
 def _headers(user_id: int, username: str, *, admin: bool = False) -> dict[str, str]:
@@ -105,6 +109,20 @@ async def test_top3_routes_require_authentication(client: AsyncClient):
         await client.put(
             "/api/top3/episodes/idea/submission",
             json={"id": "x", "picks": ["a", "b", "c"]},
+        )
+    ).status_code == 401
+    assert (
+        await client.post("/api/top3/episodes/idea/reveals/submission")
+    ).status_code == 401
+    assert (
+        await client.post(
+            "/api/top3/episodes/idea/external-submissions",
+            json={
+                "id": "external",
+                "displayName": "Guest",
+                "externalType": "guest",
+                "picks": ["One", "Two", "Three"],
+            },
         )
     ).status_code == 401
 
@@ -243,6 +261,237 @@ async def test_reveal_is_viewer_specific_and_external_results_are_shared(
     assert "Rocket One" not in observer.text
     assert "revealed notes" not in observer.text
     assert "Guest Pick One" in trog.text and "Guest Pick One" in observer.text
+
+
+@pytest.mark.asyncio
+async def test_reveal_route_is_viewer_specific_persistent_audited_and_idempotent(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await _assigned(db_client, db_session)
+    for user_id, username, submission_id, prefix in (
+        (101, "rocket", "rocket-reveal", "Rocket Secret"),
+        (102, "trog", "trog-reveal", "Trog Secret"),
+    ):
+        saved = await db_client.put(
+            "/api/top3/episodes/top3-idea/submission",
+            json={
+                "id": submission_id,
+                "picks": [f"{prefix} One", f"{prefix} Two", f"{prefix} Three"],
+                "privateDiscussionNotes": f"{prefix} Notes",
+            },
+            headers=_headers(user_id, username),
+        )
+        assert saved.status_code == 200
+
+    before = await db_client.get(
+        "/api/top3/episodes/top3-idea", headers=_headers(102, "trog")
+    )
+    assert "Rocket Secret" not in before.text
+    revealed = await db_client.post(
+        "/api/top3/episodes/top3-idea/reveals/rocket-reveal",
+        headers=_headers(102, "trog"),
+    )
+    assert revealed.status_code == 200
+    rocket = next(
+        item
+        for item in revealed.json()["assignment"]["contributors"]
+        if item["submissionId"] == "rocket-reveal"
+    )
+    assert rocket["picks"] == [
+        "Rocket Secret One",
+        "Rocket Secret Two",
+        "Rocket Secret Three",
+    ]
+    assert rocket["privateDiscussionNotes"] == "Rocket Secret Notes"
+    assert rocket["revealed"] is True
+    assert datetime.fromisoformat(rocket["revealedAt"].replace("Z", "+00:00"))
+
+    audit = await db_session.scalar(
+        select(Top3Reveal).where(
+            Top3Reveal.viewer_user_id == 102,
+            Top3Reveal.submission_id == "rocket-reveal",
+        )
+    )
+    assert audit is not None
+    revealed_at = audit.revealed_at
+
+    reloaded = await db_client.get(
+        "/api/top3/episodes/top3-idea", headers=_headers(102, "trog")
+    )
+    assert "Rocket Secret One" in reloaded.text
+    repeated = await db_client.post(
+        "/api/top3/episodes/top3-idea/reveals/rocket-reveal",
+        headers=_headers(102, "trog"),
+    )
+    assert repeated.status_code == 200
+    assert repeated.json()["revision"] == reloaded.json()["revision"]
+    await db_session.refresh(audit)
+    assert audit.revealed_at == revealed_at
+
+    for user_id, username in ((101, "rocket"), (103, "observer")):
+        isolated = await db_client.get(
+            "/api/top3/episodes/top3-idea", headers=_headers(user_id, username)
+        )
+        if user_id == 101:
+            assert "Trog Secret" not in isolated.text
+        else:
+            assert "Rocket Secret" not in isolated.text
+            assert "Trog Secret" not in isolated.text
+    rows = list((await db_session.execute(select(Top3Reveal))).scalars())
+    assert [(row.viewer_user_id, row.submission_id) for row in rows] == [
+        (102, "rocket-reveal")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_reveal_rejects_own_external_and_wrong_episode_submissions(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await _assigned(db_client, db_session)
+    await db_client.put(
+        "/api/top3/episodes/top3-idea/submission",
+        json={"id": "own-reveal", "picks": ["One", "Two", "Three"]},
+        headers=_headers(101, "rocket"),
+    )
+    own = await db_client.post(
+        "/api/top3/episodes/top3-idea/reveals/own-reveal",
+        headers=_headers(101, "rocket"),
+    )
+    assert own.status_code == 409
+    missing = await db_client.post(
+        "/api/top3/episodes/top3-idea/reveals/not-here",
+        headers=_headers(102, "trog"),
+    )
+    assert missing.status_code == 404
+
+    external = await db_client.post(
+        "/api/top3/episodes/top3-idea/external-submissions",
+        json={
+            "id": "shared-result",
+            "displayName": "Guest",
+            "externalType": "guest",
+            "picks": ["Four", "Five", "Six"],
+        },
+        headers=_headers(101, "rocket"),
+    )
+    assert external.status_code == 201
+    unnecessary = await db_client.post(
+        "/api/top3/episodes/top3-idea/reveals/shared-result",
+        headers=_headers(102, "trog"),
+    )
+    assert unnecessary.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_external_results_are_shared_and_any_authenticated_host_can_crud(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await _assigned(db_client, db_session)
+    for invalid in (
+        {
+            "id": "invalid",
+            "displayName": "",
+            "externalType": "guest",
+            "picks": ["One", "Two", "Three"],
+        },
+        {
+            "id": "invalid",
+            "displayName": "Guest",
+            "externalType": "host",
+            "picks": ["One", "Two", "Three"],
+        },
+        {
+            "id": "invalid",
+            "displayName": "Guest",
+            "externalType": "guest",
+            "picks": ["One", "Two"],
+        },
+    ):
+        assert (
+            await db_client.post(
+                "/api/top3/episodes/top3-idea/external-submissions",
+                json=invalid,
+                headers=_headers(101, "rocket"),
+            )
+        ).status_code == 422
+
+    spoof = await db_client.post(
+        "/api/top3/episodes/top3-idea/external-submissions",
+        json={
+            "id": "external-spoof",
+            "displayName": "Guest",
+            "externalType": "guest",
+            "picks": ["One", "Two", "Three"],
+            "accountUserId": 101,
+        },
+        headers=_headers(101, "rocket"),
+    )
+    assert spoof.status_code == 422
+
+    created = await db_client.post(
+        "/api/top3/episodes/top3-idea/external-submissions",
+        json={
+            "id": "external-shared",
+            "displayName": "Guest <One>",
+            "externalType": "guest",
+            "picks": ["Guest One", "Guest Two", "Guest Three"],
+            "privateDiscussionNotes": "Shared guest notes",
+        },
+        headers=_headers(101, "rocket"),
+    )
+    assert created.status_code == 201
+    external = next(
+        item
+        for item in created.json()["assignment"]["contributors"]
+        if item["submissionId"] == "external-shared"
+    )
+    assert external["enteredByUserId"] == 101
+    assert external["picks"] == ["Guest One", "Guest Two", "Guest Three"]
+
+    shared_read = await db_client.get(
+        "/api/top3/episodes/top3-idea", headers=_headers(102, "trog")
+    )
+    assert "Guest One" in shared_read.text and "Shared guest notes" in shared_read.text
+    edited = await db_client.put(
+        "/api/top3/episodes/top3-idea/external-submissions/external-shared",
+        json={
+            "displayName": "Listener One",
+            "externalType": "listener",
+            "picks": ["Listener One", "Listener Two", "Listener Three"],
+            "privateDiscussionNotes": "Edited by another host",
+        },
+        headers=_headers(102, "trog"),
+    )
+    assert edited.status_code == 200
+    external = next(
+        item
+        for item in edited.json()["assignment"]["contributors"]
+        if item["submissionId"] == "external-shared"
+    )
+    assert external["displayName"] == "Listener One"
+    assert external["externalType"] == "listener"
+    assert external["enteredByUserId"] == 101
+    assert external["privateDiscussionNotes"] == "Edited by another host"
+
+    account_only = await db_client.put(
+        "/api/top3/episodes/top3-idea/submission",
+        json={"id": "account-only", "picks": ["A", "B", "C"]},
+        headers=_headers(103, "observer"),
+    )
+    assert account_only.status_code == 200
+    wrong_contract = await db_client.delete(
+        "/api/top3/episodes/top3-idea/external-submissions/account-only",
+        headers=_headers(102, "trog"),
+    )
+    assert wrong_contract.status_code == 404
+
+    removed = await db_client.delete(
+        "/api/top3/episodes/top3-idea/external-submissions/external-shared",
+        headers=_headers(103, "observer"),
+    )
+    assert removed.status_code == 200
+    assert "Listener One" not in removed.text
+    assert await db_session.get(Top3Submission, "external-shared") is None
 
 
 @pytest.mark.asyncio
@@ -625,5 +874,84 @@ async def test_concurrent_first_submissions_preserve_one_owner_row(
                 delete(Top3Concept).where(Top3Concept.id == "concurrent-top3-concept")
             )
             await cleanup.execute(delete(Idea).where(Idea.id == "concurrent-top3-idea"))
+            await cleanup.execute(delete(User).where(User.id.in_([101, 102, 103])))
+            await cleanup.commit()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_reveal_requests_create_one_audit_row(
+    db_session: AsyncSession,
+):
+    await _users(db_session)
+    db_session.add(Idea(id="concurrent-reveal-idea"))
+    db_session.add(
+        Top3Concept(
+            id="concurrent-reveal-concept",
+            name="Concurrent reveal",
+            description="Concurrent reveal test",
+            created_by_user_id=101,
+        )
+    )
+    db_session.add(
+        Top3Assignment(
+            idea_id="concurrent-reveal-idea",
+            concept_id="concurrent-reveal-concept",
+            assigned_by_user_id=101,
+        )
+    )
+    db_session.add(
+        Top3Submission(
+            id="concurrent-reveal-submission",
+            assignment_idea_id="concurrent-reveal-idea",
+            participant_type="account",
+            account_user_id=101,
+            pick_1="One",
+            pick_2="Two",
+            pick_3="Three",
+        )
+    )
+    await db_session.commit()
+    factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
+
+    async def reveal():
+        async with factory() as session:
+            await reveal_submission(
+                session,
+                idea_id="concurrent-reveal-idea",
+                submission_id="concurrent-reveal-submission",
+                viewer_user_id=102,
+            )
+            await session.commit()
+
+    try:
+        await asyncio.gather(reveal(), reveal())
+        async with factory() as verify:
+            rows = list(
+                (
+                    await verify.execute(
+                        select(Top3Reveal).where(
+                            Top3Reveal.viewer_user_id == 102,
+                            Top3Reveal.submission_id
+                            == "concurrent-reveal-submission",
+                        )
+                    )
+                ).scalars()
+            )
+            assert len(rows) == 1
+    finally:
+        async with factory() as cleanup:
+            await cleanup.execute(
+                delete(Top3Assignment).where(
+                    Top3Assignment.idea_id == "concurrent-reveal-idea"
+                )
+            )
+            await cleanup.execute(
+                delete(Top3Concept).where(
+                    Top3Concept.id == "concurrent-reveal-concept"
+                )
+            )
+            await cleanup.execute(
+                delete(Idea).where(Idea.id == "concurrent-reveal-idea")
+            )
             await cleanup.execute(delete(User).where(User.id.in_([101, 102, 103])))
             await cleanup.commit()

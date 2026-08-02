@@ -132,6 +132,12 @@ def test_deployment_smoke_exercises_song_lifecycle_without_external_services():
     assert '"/ai/top3-concept" in response.text' in source
     assert "/api/top3/concepts" in source
     assert "/api/top3/episodes/{idea_id}/submission" in source
+    assert "/api/top3/episodes/{idea_id}/reveals/{submission_id}" in source
+    assert "/api/top3/episodes/{idea_id}/external-submissions" in source
+    assert "repeated reveal changed revision or audit timestamp" in source
+    assert "viewer-specific reveal leaked in the opposite direction" in source
+    assert "external Top 3 edit changed immutable entry attribution" in source
+    assert "external Top 3 account-owner spoof" in source
     assert "another user received a private pick" in source
     assert "general export unexpectedly contains Top 3 data" in source
     assert "replacement retained picks from the prior concept" in source

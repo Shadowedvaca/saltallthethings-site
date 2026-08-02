@@ -16,10 +16,13 @@ Top 3 records are intentionally absent from the general `/api/export`,
   until a reveal row exists for that specific viewer and submission.
 - Administrator status does not bypass participant redaction.
 - External submissions have no account owner, retain a guest or listener type
-  plus the entering account for audit, and are shared episode results. Their
-  write routes are intentionally deferred to child #29.
-- Reveal creation is intentionally deferred to child #29. The viewer-scoped
-  projection already honors persisted reveal rows without making them global.
+  plus the original entering account for audit, and are shared episode results.
+  Any authenticated host may add, edit, or remove them; editing never changes
+  the original entry attribution.
+- An authenticated viewer may deliberately and irreversibly reveal another
+  account's completed submission only to that viewer. The audit row records the
+  viewer, submission, and timestamp. Repeating the request is idempotent, and
+  neither administrator status nor one viewer's reveal makes the data global.
 
 ## Schema
 
@@ -49,6 +52,13 @@ identity shape and pick integrity even if application validation is bypassed.
   or removes an assignment.
 - `PUT` or `DELETE /api/top3/episodes/{ideaId}/submission` affects only the
   authenticated user's submission.
+- `POST /api/top3/episodes/{ideaId}/reveals/{submissionId}` creates the
+  viewer-specific reveal audit record. It rejects the viewer's own submission,
+  external results, and submissions from another episode.
+- `POST /api/top3/episodes/{ideaId}/external-submissions` and `PUT` or `DELETE`
+  on `/api/top3/episodes/{ideaId}/external-submissions/{submissionId}` manage
+  shared guest/listener results. Bodies cannot select an account owner or alter
+  the original entering account.
 
 Mutations use the existing `If-Match` data revision guard. Responses carry the
 new revision, while hidden Top 3 content remains outside the general export
@@ -65,12 +75,15 @@ shared concept name, description, rules, and clearly separated fictional AI
 example. The full-screen show display repeats those shared fields as read-only
 planning material without rendering participant submissions.
 
-Contributor readiness lists account display names and Ready/Waiting state only.
-The page renders picks and private notes only for the current user's submission,
-even if a future reveal makes additional fields available from the API. A
-revision conflict reloads the latest assignment and requires the host to review
-before retrying. Replacement and removal confirmations explicitly warn that all
-submissions tied to the old assignment will be deleted.
+Contributor readiness lists account display names and Ready/Waiting state.
+Completed submissions remain hidden until the viewer confirms an irreversible,
+viewer-only reveal; cancelling the confirmation sends no request. Revealed picks,
+notes, and timestamps render only from that viewer's projection. The page also
+captures exact-three shared guest/listener results and states that any
+authenticated host may edit or remove them. A revision conflict reloads the
+latest assignment and requires the host to review before retrying. Replacement
+and removal confirmations explicitly warn that all submissions tied to the old
+assignment will be deleted.
 
 ## Lifecycle and rollback
 

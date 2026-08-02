@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from satt.crud import bump_data_revision, get_data_revision
@@ -286,6 +287,114 @@ async def delete_current_submission(
     await bump_data_revision(db)
 
 
+async def reveal_submission(
+    db: AsyncSession, *, idea_id: str, submission_id: str, viewer_user_id: int
+) -> None:
+    await _lock_top3_lifecycle(db)
+    submission = await db.scalar(
+        select(Top3Submission)
+        .where(
+            Top3Submission.id == submission_id,
+            Top3Submission.assignment_idea_id == idea_id,
+        )
+        .with_for_update()
+    )
+    if submission is None:
+        raise Top3NotFoundError("Top 3 submission not found for this episode")
+    if submission.participant_type != "account":
+        raise Top3ConflictError("External Top 3 results are already shared")
+    if submission.account_user_id == viewer_user_id:
+        raise Top3ConflictError("A user cannot reveal their own Top 3 submission")
+    result = await db.execute(
+        insert(Top3Reveal)
+        .values(viewer_user_id=viewer_user_id, submission_id=submission_id)
+        .on_conflict_do_nothing(
+            index_elements=[Top3Reveal.viewer_user_id, Top3Reveal.submission_id]
+        )
+    )
+    await db.flush()
+    if result.rowcount:
+        await bump_data_revision(db)
+
+
+async def create_external_submission(
+    db: AsyncSession, *, idea_id: str, user_id: int, submission: dict
+) -> None:
+    await _lock_top3_lifecycle(db)
+    assignment = await db.scalar(
+        select(Top3Assignment.idea_id)
+        .where(Top3Assignment.idea_id == idea_id)
+        .with_for_update()
+    )
+    if assignment is None:
+        raise Top3NotFoundError("Top 3 assignment not found")
+    duplicate = await db.scalar(
+        select(Top3Submission.id).where(Top3Submission.id == submission["id"])
+    )
+    if duplicate is not None:
+        raise Top3ConflictError("Top 3 submission id already exists")
+    db.add(
+        Top3Submission(
+            id=submission["id"],
+            assignment_idea_id=idea_id,
+            participant_type="external",
+            external_display_name=submission["displayName"],
+            external_type=submission["externalType"],
+            entered_by_user_id=user_id,
+            pick_1=submission["picks"][0],
+            pick_2=submission["picks"][1],
+            pick_3=submission["picks"][2],
+            private_discussion_notes=submission["privateDiscussionNotes"],
+        )
+    )
+    await db.flush()
+    await bump_data_revision(db)
+
+
+async def update_external_submission(
+    db: AsyncSession, *, idea_id: str, submission: dict
+) -> None:
+    await _lock_top3_lifecycle(db)
+    row = await db.scalar(
+        select(Top3Submission)
+        .where(
+            Top3Submission.id == submission["id"],
+            Top3Submission.assignment_idea_id == idea_id,
+            Top3Submission.participant_type == "external",
+        )
+        .with_for_update()
+    )
+    if row is None:
+        raise Top3NotFoundError("External Top 3 submission not found")
+    row.external_display_name = submission["displayName"]
+    row.external_type = submission["externalType"]
+    row.pick_1, row.pick_2, row.pick_3 = submission["picks"]
+    row.private_discussion_notes = submission["privateDiscussionNotes"]
+    row.updated_at = datetime.now(timezone.utc)
+    await db.flush()
+    await bump_data_revision(db)
+
+
+async def delete_external_submission(
+    db: AsyncSession, *, idea_id: str, submission_id: str
+) -> None:
+    await _lock_top3_lifecycle(db)
+    row = await db.scalar(
+        select(Top3Submission)
+        .where(
+            Top3Submission.id == submission_id,
+            Top3Submission.assignment_idea_id == idea_id,
+            Top3Submission.participant_type == "external",
+        )
+        .with_for_update()
+    )
+    if row is None:
+        raise Top3NotFoundError("External Top 3 submission not found")
+    await db.delete(row)
+    await db.flush()
+    await bump_data_revision(db)
+
+
 async def get_viewer_assignment(
     db: AsyncSession, *, idea_id: str, viewer_user_id: int
 ) -> dict:
@@ -309,14 +418,17 @@ async def get_viewer_assignment(
             .order_by(Top3Submission.created_at, Top3Submission.id)
         )
     ).all()
-    revealed_ids = set(
+    revealed_at_by_id = dict(
         (
             await db.execute(
-                select(Top3Reveal.submission_id).where(
-                    Top3Reveal.viewer_user_id == viewer_user_id
+                select(Top3Reveal.submission_id, Top3Reveal.revealed_at)
+                .join(Top3Submission, Top3Submission.id == Top3Reveal.submission_id)
+                .where(
+                    Top3Reveal.viewer_user_id == viewer_user_id,
+                    Top3Submission.assignment_idea_id == idea_id,
                 )
             )
-        ).scalars()
+        ).all()
     )
     active_users = list(
         (
@@ -354,7 +466,7 @@ async def get_viewer_assignment(
                 submission,
                 display_name=username or "Inactive account",
                 current_user_id=viewer_user_id,
-                revealed=submission.id in revealed_ids,
+                revealed_at=revealed_at_by_id.get(submission.id),
             )
         )
 
@@ -368,7 +480,7 @@ async def get_viewer_assignment(
                 submission,
                 display_name=username or "Inactive account",
                 current_user_id=viewer_user_id,
-                revealed=submission.id in revealed_ids,
+                revealed_at=revealed_at_by_id.get(submission.id),
             )
         )
     for submission, _username in submission_rows:
@@ -379,7 +491,7 @@ async def get_viewer_assignment(
                 submission,
                 display_name=submission.external_display_name or "External contributor",
                 current_user_id=viewer_user_id,
-                revealed=False,
+                revealed_at=None,
             )
         )
 

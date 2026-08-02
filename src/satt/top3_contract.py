@@ -131,3 +131,32 @@ def validate_account_submission(value: Any) -> dict:
             required=False,
         ),
     }
+
+
+def validate_external_submission(
+    value: Any, *, submission_id: str | None = None
+) -> dict:
+    if not isinstance(value, dict):
+        raise Top3ContractError("external submission must be an object")
+    canonical_id = _text(
+        submission_id if submission_id is not None else value.get("id"),
+        label="submission id",
+        maximum=255,
+    )
+    external_type = value.get("externalType")
+    if external_type not in {"guest", "listener"}:
+        raise Top3ContractError("externalType must be guest or listener")
+    return {
+        "id": canonical_id,
+        "displayName": _text(
+            value.get("displayName"), label="displayName", maximum=200
+        ),
+        "externalType": external_type,
+        "picks": validate_picks(value.get("picks")),
+        "privateDiscussionNotes": _text(
+            value.get("privateDiscussionNotes", ""),
+            label="privateDiscussionNotes",
+            maximum=8000,
+            required=False,
+        ),
+    }

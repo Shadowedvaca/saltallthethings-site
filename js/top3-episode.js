@@ -20,6 +20,7 @@
   var episodes = new Map();
   var loading = new Set();
   var errors = new Map();
+  var editingExternal = new Map();
   var onChange = function() {};
   var bound = false;
 
@@ -128,10 +129,46 @@
     var accounts = (contributors || []).filter(function(item) { return item.contributorType === 'account'; });
     if (!accounts.length) return '<p class="text-sm text-muted">No account contributors are available.</p>';
     return '<ul class="top3-contributors">' + accounts.map(function(item) {
-      return '<li><span>' + escapeHtml(item.displayName) + (item.isCurrentUser ? ' (you)' : '') + '</span>'
-        + '<span class="badge ' + (item.complete ? 'badge-scheduled' : 'badge-draft') + '">'
-        + (item.complete ? 'Ready' : 'Waiting') + '</span></li>';
-    }).join('') + '</ul><p class="text-xs text-muted">Status only. Other contributors\' picks and private notes are never loaded into this page.</p>';
+      var status = '<span class="badge ' + (item.complete ? 'badge-scheduled' : 'badge-draft') + '">'
+        + (item.complete ? (item.isCurrentUser || item.revealed ? 'Ready' : 'Ready — hidden') : 'Waiting') + '</span>';
+      var action = item.complete && !item.isCurrentUser && !item.revealed
+        ? '<button type="button" class="btn btn-ghost btn-sm" data-top3-action="reveal" data-submission-id="' + escapeHtml(item.submissionId) + '" data-display-name="' + escapeHtml(item.displayName) + '">Reveal picks</button>'
+        : '';
+      var revealed = item.revealed && Array.isArray(item.picks)
+        ? '<div class="top3-revealed" data-revealed-submission="' + escapeHtml(item.submissionId) + '"><strong>Revealed only to you</strong><ol>'
+          + item.picks.map(function(pick) { return '<li>' + escapeHtml(pick) + '</li>'; }).join('') + '</ol>'
+          + (item.privateDiscussionNotes ? '<p>' + escapeHtml(item.privateDiscussionNotes) + '</p>' : '')
+          + '<span class="text-xs text-muted">Revealed ' + escapeHtml(item.revealedAt || '') + '</span></div>'
+        : '';
+      return '<li><div class="top3-contributor-heading"><span>' + escapeHtml(item.displayName) + (item.isCurrentUser ? ' (you)' : '') + '</span>'
+        + '<span class="top3-contributor-actions">' + status + action + '</span></div>' + revealed + '</li>';
+    }).join('') + '</ul><p class="text-xs text-muted">Hidden submissions expose status only. Reveal is irreversible for your account and never reveals your picks to anyone else.</p>';
+  }
+
+  function externalResultsMarkup(ideaId, contributors) {
+    var external = (contributors || []).filter(function(item) { return item.contributorType === 'external'; });
+    var editingId = editingExternal.get(ideaId) || null;
+    var editing = external.find(function(item) { return item.submissionId === editingId; }) || null;
+    var picks = editing && Array.isArray(editing.picks) ? editing.picks : ['', '', ''];
+    var cards = external.length ? '<div class="top3-external-list">' + external.map(function(item) {
+      return '<article class="top3-external-result"><div class="top3-contributor-heading"><strong>' + escapeHtml(item.displayName) + '</strong>'
+        + '<span class="badge badge-scheduled">' + escapeHtml(item.externalType) + ' — shared</span></div><ol>'
+        + (item.picks || []).map(function(pick) { return '<li>' + escapeHtml(pick) + '</li>'; }).join('') + '</ol>'
+        + (item.privateDiscussionNotes ? '<p>' + escapeHtml(item.privateDiscussionNotes) + '</p>' : '')
+        + '<div class="top3-control-row"><button type="button" class="btn btn-ghost btn-sm" data-top3-action="edit-external" data-submission-id="' + escapeHtml(item.submissionId) + '">Edit</button>'
+        + '<button type="button" class="btn btn-ghost btn-sm" data-top3-action="delete-external" data-submission-id="' + escapeHtml(item.submissionId) + '" data-display-name="' + escapeHtml(item.displayName) + '">Remove</button></div></article>';
+    }).join('') + '</div>' : '<p class="text-sm text-muted">No guest or listener results captured.</p>';
+    var pickFields = picks.map(function(pick, index) {
+      return '<label>Rank ' + (index + 1) + '<input class="edit-field edit-field-sm" data-top3-external-pick="' + index + '" maxlength="200" value="' + escapeHtml(pick) + '" required></label>';
+    }).join('');
+    return '<section class="top3-external"><h5>Guest and listener results</h5>' + cards
+      + '<form data-top3-external-form><h6>' + (editing ? 'Edit shared result' : 'Capture shared result') + '</h6>'
+      + '<div class="top3-external-identity"><label>Contributor name<input class="edit-field edit-field-sm" data-top3-external-name maxlength="200" value="' + escapeHtml(editing ? editing.displayName : '') + '" required></label>'
+      + '<label>Contributor type<select class="edit-field edit-field-sm" data-top3-external-type><option value="guest"' + (editing && editing.externalType === 'guest' ? ' selected' : '') + '>Guest</option><option value="listener"' + (editing && editing.externalType === 'listener' ? ' selected' : '') + '>Listener</option></select></label></div>'
+      + '<div class="top3-picks">' + pickFields + '</div><label>Shared discussion notes<textarea class="edit-field" data-top3-external-notes rows="2" maxlength="8000">' + escapeHtml(editing ? editing.privateDiscussionNotes : '') + '</textarea></label>'
+      + '<div class="top3-control-row"><button type="submit" class="btn btn-secondary btn-sm">' + (editing ? 'Save shared changes' : 'Add shared result') + '</button>'
+      + (editing ? '<button type="button" class="btn btn-ghost btn-sm" data-top3-action="cancel-external">Cancel edit</button>' : '') + '</div>'
+      + '<p class="text-xs text-muted">External results have no account owner. Any authenticated host may edit or remove these shared recording results.</p></form></section>';
   }
 
   function ownSubmission(contributors) {
@@ -163,7 +200,8 @@
       + '<label>Private discussion notes<textarea class="edit-field" data-top3-notes rows="3" maxlength="8000" placeholder="Optional notes visible only to you before reveal">' + escapeHtml(notes) + '</textarea></label>'
       + '<div class="top3-control-row"><button type="submit" class="btn btn-primary btn-sm">' + (own && own.complete ? 'Save private changes' : 'Save my three picks') + '</button>'
       + (own && own.complete ? '<button type="button" class="btn btn-ghost btn-sm" data-top3-action="delete-submission">Delete my submission</button>' : '')
-      + '</div><p class="text-xs text-muted">Your account owns this single submission. Picks and notes are sent only to the viewer-scoped Top 3 API.</p></form></div>';
+      + '</div><p class="text-xs text-muted">Your account owns this single submission. Picks and notes are sent only to the viewer-scoped Top 3 API.</p></form></div>'
+      + externalResultsMarkup(ideaId, assignment.contributors);
   }
 
   function summaryMarkup(ideaId) {
@@ -211,6 +249,7 @@
       var body = await apiRequest(path, Object.assign({}, options, { mutation: true }));
       episodes.set(ideaId, body.assignment || null);
       if (root.Toast && successMessage) root.Toast.success(successMessage);
+      return true;
     } catch (error) {
       if (error.status === 409) {
         await loadConcepts().catch(function() {});
@@ -220,6 +259,7 @@
         errors.set(ideaId, error.message);
       }
       if (root.Toast) root.Toast.error(errors.get(ideaId));
+      return false;
     } finally {
       loading.delete(ideaId);
       onChange(ideaId);
@@ -240,6 +280,12 @@
     var ideaId = section.dataset.top3IdeaId;
     var action = button.dataset.top3Action;
     if (action === 'reload') return reload(ideaId);
+    if (action === 'reveal') {
+      var revealId = button.dataset.submissionId;
+      var revealName = button.dataset.displayName || 'this contributor';
+      if (!root.confirm('Reveal ' + revealName + '\'s private Top 3 picks and notes to your account? This cannot be undone.')) return;
+      return mutate(ideaId, '/top3/episodes/' + encodeURIComponent(ideaId) + '/reveals/' + encodeURIComponent(revealId), { method: 'POST' }, revealName + '\'s picks were revealed only to you.');
+    }
     if (action === 'assign') {
       var select = section.querySelector('[data-top3-concept]');
       var conceptId = select && select.value;
@@ -260,9 +306,66 @@
       if (!root.confirm('Delete your private Top 3 submission? This cannot be undone.')) return;
       return mutate(ideaId, '/top3/episodes/' + encodeURIComponent(ideaId) + '/submission', { method: 'DELETE' }, 'Your Top 3 submission was deleted.');
     }
+    if (action === 'edit-external') {
+      editingExternal.set(ideaId, button.dataset.submissionId);
+      errors.delete(ideaId);
+      onChange(ideaId);
+      return;
+    }
+    if (action === 'cancel-external') {
+      editingExternal.delete(ideaId);
+      errors.delete(ideaId);
+      onChange(ideaId);
+      return;
+    }
+    if (action === 'delete-external') {
+      var externalId = button.dataset.submissionId;
+      var externalName = button.dataset.displayName || 'this external result';
+      if (!root.confirm('Remove the shared Top 3 result for ' + externalName + '? This cannot be undone.')) return;
+      var removed = await mutate(ideaId, '/top3/episodes/' + encodeURIComponent(ideaId) + '/external-submissions/' + encodeURIComponent(externalId), { method: 'DELETE' }, 'Shared external result removed.');
+      if (removed && editingExternal.get(ideaId) === externalId) editingExternal.delete(ideaId);
+      return;
+    }
   }
 
   async function handleSubmit(event) {
+    var externalForm = event.target.closest && event.target.closest('[data-top3-external-form]');
+    if (externalForm) {
+      event.preventDefault();
+      event.stopPropagation();
+      var externalSection = sectionFor(externalForm);
+      var externalIdeaId = externalSection.dataset.top3IdeaId;
+      try {
+        var externalName = String(externalForm.querySelector('[data-top3-external-name]').value || '').trim();
+        if (!externalName) throw new Error('External contributor name is required.');
+        if (externalName.length > 200) throw new Error('External contributor name must be at most 200 characters.');
+        var externalType = externalForm.querySelector('[data-top3-external-type]').value;
+        if (externalType !== 'guest' && externalType !== 'listener') throw new Error('External contributor type must be guest or listener.');
+        var externalPickInputs = Array.from(externalForm.querySelectorAll('[data-top3-external-pick]'));
+        externalPickInputs.sort(function(a, b) { return Number(a.dataset.top3ExternalPick) - Number(b.dataset.top3ExternalPick); });
+        var externalPicks = validatePicks(externalPickInputs.map(function(input) { return input.value; }));
+        var externalNotes = String(externalForm.querySelector('[data-top3-external-notes]').value || '').trim();
+        if (externalNotes.length > 8000) throw new Error('Shared discussion notes must be at most 8000 characters.');
+        var editingId = editingExternal.get(externalIdeaId) || null;
+        var externalPath = '/top3/episodes/' + encodeURIComponent(externalIdeaId) + '/external-submissions' + (editingId ? '/' + encodeURIComponent(editingId) : '');
+        var externalSaved = await mutate(externalIdeaId, externalPath, {
+          method: editingId ? 'PUT' : 'POST',
+          body: {
+            id: editingId || generateId(),
+            displayName: externalName,
+            externalType: externalType,
+            picks: externalPicks,
+            privateDiscussionNotes: externalNotes
+          }
+        }, editingId ? 'Shared external result updated.' : 'Shared external result added.');
+        if (externalSaved) editingExternal.delete(externalIdeaId);
+      } catch (error) {
+        errors.set(externalIdeaId, error.message);
+        if (root.Toast) root.Toast.error(error.message);
+        onChange(externalIdeaId);
+      }
+      return;
+    }
     var form = event.target.closest && event.target.closest('[data-top3-form]');
     if (!form) return;
     event.preventDefault();
@@ -312,6 +415,7 @@
     escapeHtml: escapeHtml,
     validatePicks: validatePicks,
     contributorsMarkup: contributorsMarkup,
+    externalResultsMarkup: externalResultsMarkup,
     assignmentMarkup: assignmentMarkup,
     summaryMarkup: summaryMarkup,
     render: render,

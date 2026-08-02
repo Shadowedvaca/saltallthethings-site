@@ -644,6 +644,26 @@ function testTop3EpisodePlanningContract() {
         picks: ["must-not-render-one", "must-not-render-two", "must-not-render-three"],
         privateDiscussionNotes: "must-not-render-notes",
       },
+      {
+        submissionId: "revealed-other",
+        contributorType: "account",
+        displayName: "observer",
+        complete: true,
+        isCurrentUser: false,
+        revealed: true,
+        revealedAt: "2026-08-01T12:00:00Z",
+        picks: ["Revealed first", "Revealed second", "Revealed third"],
+        privateDiscussionNotes: "revealed notes",
+      },
+      {
+        submissionId: "external-one",
+        contributorType: "external",
+        externalType: "guest",
+        displayName: "Guest <One>",
+        complete: true,
+        picks: ["Guest <first>", "Guest second", "Guest third"],
+        privateDiscussionNotes: "Shared <notes>",
+      },
     ],
   };
   const markup = Top3EpisodePlanning.assignmentMarkup("idea-1", assignment);
@@ -655,7 +675,15 @@ function testTop3EpisodePlanningContract() {
   assert.match(markup, /My first/);
   assert.match(markup, /my private notes/);
   assert.match(markup, /trog &lt;host&gt;/);
-  assert.match(markup, /Status only/);
+  assert.match(markup, /Ready — hidden/);
+  assert.match(markup, /Reveal picks/);
+  assert.match(markup, /Revealed only to you/);
+  assert.match(markup, /Revealed first/);
+  assert.match(markup, /revealed notes/);
+  assert.match(markup, /Guest &lt;One&gt;/);
+  assert.match(markup, /Guest &lt;first&gt;/);
+  assert.match(markup, /Shared &lt;notes&gt;/);
+  assert.match(markup, /Any authenticated host may edit or remove/);
   assert.doesNotMatch(markup, /must-not-render/);
   assert.match(markup, /permanently clears every submission/);
   Top3EpisodePlanning._state.episodes.set("idea-summary", assignment);
@@ -678,6 +706,9 @@ function testTop3EpisodePlanningContract() {
   assert.match(page, /@media \(max-width: 800px\)/);
   assert.match(script, /\/top3\/episodes\/.*\/assignment/);
   assert.match(script, /\/top3\/episodes\/.*\/submission/);
+  assert.match(script, /\/reveals\//);
+  assert.match(script, /\/external-submissions/);
+  assert.match(script, /This cannot be undone/);
   assert.match(script, /headers\['If-Match'\]/);
   assert.match(script, /await loadEpisode\(ideaId\)/);
   assert.match(script, /changed on the server/);
@@ -691,6 +722,7 @@ async function testTop3EpisodeBrowserActionsUseViewerScopedApi() {
   const listeners = {};
   const requests = [];
   let revision = 40;
+  let confirmResult = true;
   const concept = {
     id: "concept-1",
     name: "Shared concept",
@@ -753,12 +785,48 @@ async function testTop3EpisodeBrowserActionsUseViewerScopedApi() {
       };
       return response(200, { revision, assignment });
     }
+    if (url === "/api/top3/episodes/idea-1/reveals/hidden-other" && options.method === "POST") {
+      assert.equal(options.headers["If-Match"], String(revision));
+      revision += 1;
+      const hidden = assignment.contributors.find((item) => item.submissionId === "hidden-other");
+      Object.assign(hidden, {
+        revealed: true,
+        revealedAt: "2026-08-01T12:00:00Z",
+        picks: ["Hidden first", "Hidden second", "Hidden third"],
+        privateDiscussionNotes: "Hidden notes",
+      });
+      return response(200, { revision, assignment });
+    }
+    if (url === "/api/top3/episodes/idea-1/external-submissions" && options.method === "POST") {
+      assert.equal(options.headers["If-Match"], String(revision));
+      const payload = JSON.parse(options.body);
+      assert.deepEqual(payload, {
+        id: "top3-submission-external-browser-id",
+        displayName: "Guest Browser",
+        externalType: "guest",
+        picks: ["Guest First", "Guest Second", "Guest Third"],
+        privateDiscussionNotes: "Shared browser notes",
+      });
+      assert.equal(Object.prototype.hasOwnProperty.call(payload, "accountUserId"), false);
+      revision += 1;
+      assignment.contributors.push({
+        submissionId: payload.id,
+        contributorType: "external",
+        displayName: payload.displayName,
+        externalType: payload.externalType,
+        complete: true,
+        picks: payload.picks,
+        privateDiscussionNotes: payload.privateDiscussionNotes,
+      });
+      return response(201, { revision, assignment });
+    }
     throw new Error(`Unexpected Top 3 request ${url}`);
   };
+  let uuidCounter = 0;
   const window = {
     document,
-    confirm: () => true,
-    crypto: { randomUUID: () => "browser-id" },
+    confirm: () => confirmResult,
+    crypto: { randomUUID: () => (++uuidCounter === 1 ? "browser-id" : "external-browser-id") },
     fetch,
   };
   const context = {
@@ -808,7 +876,56 @@ async function testTop3EpisodeBrowserActionsUseViewerScopedApi() {
     },
   };
   await listeners.submit.handler({
-    target: { closest: () => form },
+    target: { closest: (selector) => selector === "[data-top3-form]" ? form : null },
+    preventDefault() {},
+    stopPropagation() {},
+  });
+
+  assignment.contributors.push({
+    submissionId: "hidden-other",
+    contributorType: "account",
+    displayName: "trog",
+    complete: true,
+    isCurrentUser: false,
+    revealed: false,
+  });
+  api._state.episodes.set("idea-1", assignment);
+  const revealButton = {
+    dataset: { top3Action: "reveal", submissionId: "hidden-other", displayName: "trog" },
+    closest(selector) { return selector === "[data-top3-idea-id]" ? section : null; },
+  };
+  confirmResult = false;
+  const beforeCancel = requests.length;
+  await listeners.click.handler({
+    target: { closest: () => revealButton },
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  assert.equal(requests.length, beforeCancel);
+  assert.equal(assignment.contributors.find((item) => item.submissionId === "hidden-other").revealed, false);
+
+  confirmResult = true;
+  await listeners.click.handler({
+    target: { closest: () => revealButton },
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  assert.equal(assignment.contributors.find((item) => item.submissionId === "hidden-other").revealed, true);
+
+  const externalForm = {
+    closest(selector) { return selector === "[data-top3-idea-id]" ? section : selector === "[data-top3-external-form]" ? externalForm : null; },
+    querySelectorAll() {
+      return ["Guest First", "Guest Second", "Guest Third"].map((value, index) => ({ value, dataset: { top3ExternalPick: String(index) } }));
+    },
+    querySelector(selector) {
+      if (selector === "[data-top3-external-name]") return { value: "Guest Browser" };
+      if (selector === "[data-top3-external-type]") return { value: "guest" };
+      if (selector === "[data-top3-external-notes]") return { value: "Shared browser notes" };
+      throw new Error(`Unexpected external form selector ${selector}`);
+    },
+  };
+  await listeners.submit.handler({
+    target: { closest: (selector) => selector === "[data-top3-external-form]" ? externalForm : null },
     preventDefault() {},
     stopPropagation() {},
   });
@@ -818,6 +935,8 @@ async function testTop3EpisodeBrowserActionsUseViewerScopedApi() {
     "/api/top3/episodes/idea-1/assignment",
     "/api/top3/episodes/idea-1/submission",
   ]);
+  assert.equal(requests.some((request) => request.url.endsWith("/reveals/hidden-other") && request.options.method === "POST"), true);
+  assert.equal(requests.some((request) => request.url.endsWith("/external-submissions") && request.options.method === "POST"), true);
   for (const request of requests) {
     assert.equal(request.options.headers.Authorization, "Bearer viewer-token");
     assert.match(request.url, /^\/api\//);

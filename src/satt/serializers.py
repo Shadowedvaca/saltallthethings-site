@@ -78,11 +78,12 @@ def serialize_top3_submission(
     *,
     display_name: str,
     current_user_id: int,
-    revealed: bool,
+    revealed_at: Any = None,
 ) -> dict:
     is_current_user = (
         row.participant_type == "account" and row.account_user_id == current_user_id
     )
+    revealed = revealed_at is not None
     can_read_private = row.participant_type == "external" or is_current_user or revealed
     result = {
         "submissionId": row.id,
@@ -98,6 +99,10 @@ def serialize_top3_submission(
         result["privateDiscussionNotes"] = row.private_discussion_notes
         result["createdAt"] = _iso(row.created_at)
         result["updatedAt"] = _iso(row.updated_at)
+    if revealed:
+        result["revealedAt"] = _iso(revealed_at)
+    if row.participant_type == "external":
+        result["enteredByUserId"] = row.entered_by_user_id
     return result
 
 

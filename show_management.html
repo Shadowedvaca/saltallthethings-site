@@ -118,7 +118,7 @@
 
     /* Viewer-scoped Top 3 episode preparation */
     .top3-episode { margin: var(--space-md) 0; padding: var(--space-md); border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface); }
-    .top3-section-heading, .top3-control-row, .top3-contributors li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }
+    .top3-section-heading, .top3-control-row, .top3-contributor-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }
     .top3-section-heading { margin-bottom: var(--space-sm); }
     .top3-section-heading h4, .top3-preparation-grid h5 { color: var(--text-gold); }
     .top3-section-heading a { color: var(--ice); font-size: 0.75rem; }
@@ -132,11 +132,19 @@
     .top3-preparation-grid { display: grid; grid-template-columns: minmax(220px, 0.8fr) minmax(300px, 1.2fr); gap: var(--space-md); margin-top: var(--space-md); }
     .top3-contributors { list-style: none; margin-top: var(--space-sm); }
     .top3-contributors li { padding: var(--space-xs) 0; border-bottom: 1px solid var(--border-subtle); font-size: 0.8rem; }
+    .top3-contributor-actions { display: flex; align-items: center; gap: var(--space-xs); }
+    .top3-revealed, .top3-external-result { margin-top: var(--space-xs); padding: var(--space-sm); border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-card); }
+    .top3-revealed ol, .top3-external-result ol { margin: var(--space-xs) 0 var(--space-xs) var(--space-lg); }
+    .top3-external { margin-top: var(--space-lg); padding-top: var(--space-md); border-top: 1px solid var(--border-subtle); }
+    .top3-external h5, .top3-external h6 { color: var(--ice-bright); margin-bottom: var(--space-sm); }
+    .top3-external-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-sm); margin-bottom: var(--space-md); }
+    .top3-external-identity { display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-sm); }
+    .top3-external label { display: block; font-size: 0.75rem; color: var(--text-muted); }
     .top3-picks { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-sm); margin: var(--space-sm) 0; }
     .top3-picks label, [data-top3-form] > label, .top3-assignment-controls > label { display: block; font-size: 0.75rem; color: var(--text-muted); }
     .top3-picks input, [data-top3-notes] { margin-top: 4px; }
     .top3-error { color: var(--danger); font-size: 0.8rem; margin-bottom: var(--space-sm); }
-    @media (max-width: 800px) { .top3-preparation-grid, .top3-picks { grid-template-columns: 1fr; } }
+    @media (max-width: 800px) { .top3-preparation-grid, .top3-picks, .top3-external-identity { grid-template-columns: 1fr; } }
 
     /* Past episodes collapsible section */
     .past-section { margin-top: var(--space-lg); }

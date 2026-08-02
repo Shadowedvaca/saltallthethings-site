@@ -355,6 +355,10 @@ async def _exercise_top3(
     private_pick = f"private-top3-pick-{suffix}"
     private_notes = f"private-top3-notes-{suffix}"
     submission_id = f"deploy-smoke-top3-submission-{suffix}"
+    viewer_pick = f"viewer-private-top3-pick-{suffix}"
+    viewer_submission_id = f"deploy-smoke-top3-viewer-submission-{suffix}"
+    external_submission_id = f"deploy-smoke-top3-external-{suffix}"
+    external_pick = f"shared-external-top3-pick-{suffix}"
     try:
         state = await _latest_state(client, owner_token)
         idea = {
@@ -460,6 +464,140 @@ async def _exercise_top3(
             "redacted viewer received no metadata-only completed contributor",
         )
 
+        viewer_saved = await client.put(
+            f"/api/top3/episodes/{idea_id}/submission",
+            json={
+                "id": viewer_submission_id,
+                "picks": [viewer_pick, "Viewer Rank Two", "Viewer Rank Three"],
+                "privateDiscussionNotes": f"viewer-private-notes-{suffix}",
+            },
+            headers=_headers(viewer_token, redacted.json()["revision"]),
+        )
+        _expect_status(viewer_saved, 200, "Top 3 viewer submission")
+        owner_before_reveal = await client.get(
+            f"/api/top3/episodes/{idea_id}", headers=_headers(owner_token)
+        )
+        _expect_status(owner_before_reveal, 200, "Top 3 reverse-direction privacy")
+        _require(
+            viewer_pick not in owner_before_reveal.text,
+            "owner received another user's unrevealed Top 3 pick",
+        )
+
+        revealed = await client.post(
+            f"/api/top3/episodes/{idea_id}/reveals/{submission_id}",
+            headers=_headers(viewer_token, viewer_saved.json()["revision"]),
+        )
+        _expect_status(revealed, 200, "Top 3 deliberate reveal")
+        revealed_owner = next(
+            item
+            for item in revealed.json()["assignment"]["contributors"]
+            if item["submissionId"] == submission_id
+        )
+        _require(
+            revealed_owner.get("revealed") is True
+            and revealed_owner.get("picks", [None])[0] == private_pick
+            and revealed_owner.get("privateDiscussionNotes") == private_notes
+            and bool(revealed_owner.get("revealedAt")),
+            "viewer-specific reveal did not return picks, notes, and audit timestamp",
+        )
+        repeated_reveal = await client.post(
+            f"/api/top3/episodes/{idea_id}/reveals/{submission_id}",
+            headers=_headers(viewer_token, revealed.json()["revision"]),
+        )
+        _expect_status(repeated_reveal, 200, "Top 3 repeated reveal")
+        repeated_owner = next(
+            item
+            for item in repeated_reveal.json()["assignment"]["contributors"]
+            if item["submissionId"] == submission_id
+        )
+        _require(
+            repeated_reveal.json()["revision"] == revealed.json()["revision"]
+            and repeated_owner.get("revealedAt") == revealed_owner.get("revealedAt"),
+            "repeated reveal changed revision or audit timestamp",
+        )
+        owner_after_reveal = await client.get(
+            f"/api/top3/episodes/{idea_id}", headers=_headers(owner_token)
+        )
+        _expect_status(owner_after_reveal, 200, "Top 3 reveal direction isolation")
+        _require(
+            viewer_pick not in owner_after_reveal.text,
+            "viewer-specific reveal leaked in the opposite direction",
+        )
+
+        external_created = await client.post(
+            f"/api/top3/episodes/{idea_id}/external-submissions",
+            json={
+                "id": external_submission_id,
+                "displayName": "Deployment Guest",
+                "externalType": "guest",
+                "picks": [external_pick, "Shared Rank Two", "Shared Rank Three"],
+                "privateDiscussionNotes": f"shared-external-notes-{suffix}",
+            },
+            headers=_headers(owner_token, repeated_reveal.json()["revision"]),
+        )
+        _expect_status(external_created, 201, "shared external Top 3 creation")
+        created_external = next(
+            item
+            for item in external_created.json()["assignment"]["contributors"]
+            if item["submissionId"] == external_submission_id
+        )
+        entered_by_user_id = created_external.get("enteredByUserId")
+        _require(
+            external_pick in external_created.text and entered_by_user_id is not None,
+            "external Top 3 result was not shared with audit attribution",
+        )
+        external_view = await client.get(
+            f"/api/top3/episodes/{idea_id}", headers=_headers(viewer_token)
+        )
+        _expect_status(external_view, 200, "shared external Top 3 viewer read")
+        _require(
+            external_pick in external_view.text,
+            "external Top 3 result was not shared across authenticated hosts",
+        )
+        external_edited = await client.put(
+            f"/api/top3/episodes/{idea_id}/external-submissions/{external_submission_id}",
+            json={
+                "id": external_submission_id,
+                "displayName": "Deployment Listener",
+                "externalType": "listener",
+                "picks": [external_pick, "Edited Rank Two", "Edited Rank Three"],
+                "privateDiscussionNotes": f"edited-shared-notes-{suffix}",
+            },
+            headers=_headers(viewer_token, external_view.json()["revision"]),
+        )
+        _expect_status(external_edited, 200, "shared external Top 3 cross-user edit")
+        edited_external = next(
+            item
+            for item in external_edited.json()["assignment"]["contributors"]
+            if item["submissionId"] == external_submission_id
+        )
+        _require(
+            edited_external.get("externalType") == "listener"
+            and edited_external.get("enteredByUserId") == entered_by_user_id,
+            "external Top 3 edit changed immutable entry attribution",
+        )
+        external_spoof = await client.post(
+            f"/api/top3/episodes/{idea_id}/external-submissions",
+            json={
+                "id": f"spoofed-external-{suffix}",
+                "displayName": "Spoof",
+                "externalType": "guest",
+                "picks": ["One", "Two", "Three"],
+                "accountUserId": 1,
+            },
+            headers=_headers(owner_token, external_edited.json()["revision"]),
+        )
+        _expect_status(external_spoof, 422, "external Top 3 account-owner spoof")
+        external_deleted = await client.delete(
+            f"/api/top3/episodes/{idea_id}/external-submissions/{external_submission_id}",
+            headers=_headers(owner_token, external_edited.json()["revision"]),
+        )
+        _expect_status(external_deleted, 200, "shared external Top 3 cross-user delete")
+        _require(
+            external_pick not in external_deleted.text,
+            "deleted external Top 3 result survived response reload",
+        )
+
         spoof = await client.put(
             f"/api/top3/episodes/{idea_id}/submission",
             json={
@@ -467,7 +605,7 @@ async def _exercise_top3(
                 "picks": ["One", "Two", "Three"],
                 "accountUserId": 1,
             },
-            headers=_headers(viewer_token, saved.json()["revision"]),
+            headers=_headers(viewer_token, external_deleted.json()["revision"]),
         )
         _expect_status(spoof, 422, "Top 3 owner spoof attempt")
 
