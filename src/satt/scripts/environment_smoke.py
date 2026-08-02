@@ -30,6 +30,18 @@ def _require(condition: bool, message: str) -> None:
         raise SmokeFailure(message)
 
 
+def _contains_forbidden_key(value: object, forbidden: set[str]) -> bool:
+    """Inspect response structure without treating ordinary text as a leaked field."""
+    if isinstance(value, dict):
+        return any(
+            key in forbidden or _contains_forbidden_key(item, forbidden)
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_forbidden_key(item, forbidden) for item in value)
+    return False
+
+
 def validate_target(base_url: str, expected_environment: str) -> None:
     """Refuse production and cross-environment smoke targets."""
     settings = get_settings()
@@ -401,10 +413,11 @@ async def _exercise_top3(
             ],
             "Top 3 Bank did not report assignment metadata",
         )
-        _require("picks" not in bank.text, "Top 3 Bank exposed participant picks")
         _require(
-            "privateDiscussionNotes" not in bank.text,
-            "Top 3 Bank exposed participant discussion notes",
+            not _contains_forbidden_key(
+                bank.json(), {"picks", "privateDiscussionNotes"}
+            ),
+            "Top 3 Bank exposed participant submission fields",
         )
         saved = await client.put(
             f"/api/top3/episodes/{idea_id}/submission",

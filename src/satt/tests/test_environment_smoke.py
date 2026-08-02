@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from satt.scripts.environment_smoke import SmokeFailure, validate_target
+from satt.scripts.environment_smoke import (
+    SmokeFailure,
+    _contains_forbidden_key,
+    validate_target,
+)
 
 
 def _settings(environment: str, database_environment: str, external: bool = False):
@@ -26,6 +30,24 @@ def test_smoke_accepts_matching_test_runtime_and_loopback_origin():
         return_value=_settings("test", "test"),
     ):
         validate_target("http://127.0.0.1:8200", "test")
+
+
+def test_top3_smoke_checks_response_keys_not_legitimate_concept_prose():
+    concept_bank = {
+        "concepts": [
+            {
+                "rules": "Exactly three distinct picks.",
+                "assignedEpisodes": [{"title": "Picking favorites"}],
+            }
+        ]
+    }
+    assert not _contains_forbidden_key(
+        concept_bank, {"picks", "privateDiscussionNotes"}
+    )
+    concept_bank["concepts"][0]["submission"] = {"picks": ["A", "B", "C"]}
+    assert _contains_forbidden_key(
+        concept_bank, {"picks", "privateDiscussionNotes"}
+    )
 
 
 @pytest.mark.parametrize(
