@@ -54,6 +54,24 @@ Mutations use the existing `If-Match` data revision guard. Responses carry the
 new revision, while hidden Top 3 content remains outside the general export
 payload used to obtain that revision.
 
+## Episode preparation workflow
+
+Show Management loads Top 3 planning through the dedicated viewer-scoped API,
+not through the shared `Storage` cache. An authenticated host may assign an
+active banked concept, replace or remove the current assignment, and save one
+owner-bound submission containing exactly three distinct ranked picks plus
+optional private discussion notes. The expanded episode summary displays the
+shared concept name, description, rules, and clearly separated fictional AI
+example. The full-screen show display repeats those shared fields as read-only
+planning material without rendering participant submissions.
+
+Contributor readiness lists account display names and Ready/Waiting state only.
+The page renders picks and private notes only for the current user's submission,
+even if a future reveal makes additional fields available from the API. A
+revision conflict reloads the latest assignment and requires the host to review
+before retrying. Replacement and removal confirmations explicitly warn that all
+submissions tied to the old assignment will be deleted.
+
 ## Lifecycle and rollback
 
 - Replacing or removing an episode assignment deletes its submissions and

@@ -354,6 +354,7 @@ async def _exercise_top3(
     )
     private_pick = f"private-top3-pick-{suffix}"
     private_notes = f"private-top3-notes-{suffix}"
+    submission_id = f"deploy-smoke-top3-submission-{suffix}"
     try:
         state = await _latest_state(client, owner_token)
         idea = {
@@ -422,7 +423,7 @@ async def _exercise_top3(
         saved = await client.put(
             f"/api/top3/episodes/{idea_id}/submission",
             json={
-                "id": f"deploy-smoke-top3-submission-{suffix}",
+                "id": submission_id,
                 "picks": [private_pick, "Private Rank Two", "Private Rank Three"],
                 "privateDiscussionNotes": private_notes,
             },
@@ -431,6 +432,21 @@ async def _exercise_top3(
         _expect_status(saved, 200, "Top 3 owner submission")
         _require(private_pick in saved.text, "owner cannot reload their Top 3 picks")
         _require(private_notes in saved.text, "owner cannot reload their Top 3 notes")
+
+        private_pick = f"updated-private-top3-pick-{suffix}"
+        private_notes = f"updated-private-top3-notes-{suffix}"
+        saved = await client.put(
+            f"/api/top3/episodes/{idea_id}/submission",
+            json={
+                "id": submission_id,
+                "picks": [private_pick, "Updated Rank Two", "Updated Rank Three"],
+                "privateDiscussionNotes": private_notes,
+            },
+            headers=_headers(owner_token, saved.json()["revision"]),
+        )
+        _expect_status(saved, 200, "Top 3 owner submission update")
+        _require(private_pick in saved.text, "owner edit did not persist")
+        _require(private_notes in saved.text, "owner note edit did not persist")
 
         redacted = await client.get(
             f"/api/top3/episodes/{idea_id}", headers=_headers(viewer_token)
@@ -537,6 +553,23 @@ async def _exercise_top3(
             ),
             "deleted Top 3 concept survived reload",
         )
+        removed = await client.delete(
+            f"/api/top3/episodes/{idea_id}/assignment",
+            headers=_headers(owner_token, reloaded.json()["revision"]),
+        )
+        _expect_status(removed, 200, "Top 3 assignment removal")
+        _require(
+            removed.json()["assignment"] is None,
+            "removed Top 3 assignment survived response reload",
+        )
+        removal_reload = await client.get(
+            f"/api/top3/episodes/{idea_id}", headers=_headers(viewer_token)
+        )
+        _expect_status(removal_reload, 200, "Top 3 assignment removal reload")
+        _require(
+            removal_reload.json()["assignment"] is None,
+            "removed Top 3 assignment survived viewer reload",
+        )
     finally:
         await _cleanup_top3_records(idea_id, concept_ids)
 
@@ -631,12 +664,14 @@ async def run_smoke(
             for path in (
                 "/",
                 "/register.html",
+                "/show_management.html",
                 "/songs.html",
                 "/top3.html",
                 "/js/show-song.js",
                 "/js/episode-overview.js",
                 "/js/songs.js",
                 "/js/top3-bank.js",
+                "/js/top3-episode.js",
                 "/public/homepage",
             ):
                 response = await client.get(path)
@@ -645,6 +680,12 @@ async def run_smoke(
                     _require(
                         "Song Bank" in response.text and "js/songs.js" in response.text,
                         "deployed Song Bank page is incomplete",
+                    )
+                elif path == "/show_management.html":
+                    _require(
+                        "Top 3 preparation" in response.text
+                        and "js/top3-episode.js" in response.text,
+                        "deployed Show Management Top 3 controls are incomplete",
                     )
                 elif path == "/top3.html":
                     _require(
@@ -659,6 +700,14 @@ async def run_smoke(
                         and "/ai/top3-concept" in response.text
                         and "If-Match" in response.text,
                         "deployed Top 3 Bank script is incomplete",
+                    )
+                elif path == "/js/top3-episode.js":
+                    _require(
+                        "Top3EpisodePlanning" in response.text
+                        and "/assignment" in response.text
+                        and "/submission" in response.text
+                        and "If-Match" in response.text,
+                        "deployed Top 3 episode-planning script is incomplete",
                     )
                 elif path == "/js/songs.js":
                     _require(

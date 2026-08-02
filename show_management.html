@@ -116,6 +116,28 @@
     .date-badge.release.override { background: rgba(255,200,50,0.15); color: var(--gold-bright); border-color: rgba(255,200,50,0.3); }
     .date-badge.ep { background: rgba(200,168,78,0.1); color: var(--gold); border: 1px solid rgba(200,168,78,0.2); }
 
+    /* Viewer-scoped Top 3 episode preparation */
+    .top3-episode { margin: var(--space-md) 0; padding: var(--space-md); border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface); }
+    .top3-section-heading, .top3-control-row, .top3-contributors li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }
+    .top3-section-heading { margin-bottom: var(--space-sm); }
+    .top3-section-heading h4, .top3-preparation-grid h5 { color: var(--text-gold); }
+    .top3-section-heading a { color: var(--ice); font-size: 0.75rem; }
+    .top3-control-row { justify-content: flex-start; flex-wrap: wrap; margin-top: var(--space-sm); }
+    .top3-control-row select { flex: 1 1 260px; }
+    .top3-concept-summary { padding: var(--space-sm); border-left: 3px solid var(--gold-dim); }
+    .top3-concept-summary p { margin-top: var(--space-xs); font-size: 0.85rem; line-height: 1.5; white-space: pre-wrap; }
+    .top3-shared-example { margin-top: var(--space-sm); padding: var(--space-sm); border: 1px dashed var(--border-default); border-radius: var(--radius-sm); font-size: 0.8rem; }
+    .top3-shared-example ol { margin: var(--space-xs) 0 0 var(--space-lg); }
+    .top3-assignment-controls { margin-top: var(--space-md); }
+    .top3-preparation-grid { display: grid; grid-template-columns: minmax(220px, 0.8fr) minmax(300px, 1.2fr); gap: var(--space-md); margin-top: var(--space-md); }
+    .top3-contributors { list-style: none; margin-top: var(--space-sm); }
+    .top3-contributors li { padding: var(--space-xs) 0; border-bottom: 1px solid var(--border-subtle); font-size: 0.8rem; }
+    .top3-picks { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-sm); margin: var(--space-sm) 0; }
+    .top3-picks label, [data-top3-form] > label, .top3-assignment-controls > label { display: block; font-size: 0.75rem; color: var(--text-muted); }
+    .top3-picks input, [data-top3-notes] { margin-top: 4px; }
+    .top3-error { color: var(--danger); font-size: 0.8rem; margin-bottom: var(--space-sm); }
+    @media (max-width: 800px) { .top3-preparation-grid, .top3-picks { grid-template-columns: 1fr; } }
+
     /* Past episodes collapsible section */
     .past-section { margin-top: var(--space-lg); }
     .past-section-header {
@@ -402,6 +424,7 @@
   <script src="js/show-song.js"></script>
   <script src="js/episode-overview.js"></script>
   <script src="js/toast.js"></script>
+  <script src="js/top3-episode.js"></script>
   <script>
     // Init auth gate
     Auth.init();
@@ -683,6 +706,8 @@
         + '<label class="text-xs text-muted" style="display:block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Episode Song</label>'
         + songHtml + '</div>';
 
+      html += Top3EpisodePlanning.render(idea.id);
+
       // Summary
       html += '<div class="mb-md">'
         + '<label class="text-xs text-muted" style="display:block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Summary</label>'
@@ -770,6 +795,8 @@
       html += '<div class="mb-md">'
         + '<label class="text-xs text-muted" style="display:block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Episode Song</label>'
         + songHtml + '</div>';
+
+      html += Top3EpisodePlanning.render(idea.id);
 
       // Editable summary
       html += '<div class="mb-md" onclick="event.stopPropagation()">'
@@ -1121,7 +1148,7 @@
     // ============================================
     var currentSpotifyOverview = '';
 
-    function openShowDisplay(slotId) {
+    async function openShowDisplay(slotId) {
       var slots = Storage.getShowSlots();
       var assignments = Storage.getAssignments();
       var ideas = Storage.getIdeas();
@@ -1133,6 +1160,12 @@
       var idea = ideaId ? ideas.find(function(i) { return i.id === ideaId; }) : null;
 
       if (!idea) { Toast.error('No idea assigned to this slot.'); return; }
+
+      try {
+        await Top3EpisodePlanning.loadEpisode(idea.id);
+      } catch (error) {
+        Toast.error('Top 3 planning could not be loaded for the show display.');
+      }
 
       // Update URL hash
       history.pushState(null, '', '#show/' + slotId);
@@ -1234,6 +1267,8 @@
         status.textContent = 'Copy failed. Select the overview text and copy it manually.';
         Toast.error('Copy failed. Select the overview text and copy it manually.');
       }
+
+      html += Top3EpisodePlanning.summaryMarkup(idea.id);
     }
 
     function closeShowDisplay() {
@@ -1414,9 +1449,13 @@
     // ============================================
     // Init — called by Auth after Storage.init()
     // ============================================
-    function onStorageReady() {
+    async function onStorageReady() {
       ShowEngine.ensureSlots();
       renderIdeasList();
+      await Top3EpisodePlanning.start(function(ideaId) {
+        if (ideaId) rerenderIdeasPreservingExpansion(ideaId);
+        else renderIdeasList();
+      });
 
       // Check for hash-based show display on load
       if (location.hash.startsWith('#show/')) {

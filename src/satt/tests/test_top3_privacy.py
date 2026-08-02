@@ -305,6 +305,78 @@ async def test_submission_contract_cannot_spoof_owner_or_write_another_object(
 
 
 @pytest.mark.asyncio
+async def test_assignment_and_owner_submission_lifecycle_survives_reload(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await _assigned(db_client, db_session)
+    invalid = await db_client.put(
+        "/api/top3/episodes/top3-idea/submission",
+        json={"id": "invalid-three", "picks": ["One", "Two"]},
+        headers=_headers(101, "rocket"),
+    )
+    assert invalid.status_code == 422
+    assert "exactly three" in invalid.json()["detail"]
+
+    saved = await db_client.put(
+        "/api/top3/episodes/top3-idea/submission",
+        json={
+            "id": "owner-lifecycle",
+            "picks": ["One", "Two", "Three"],
+            "privateDiscussionNotes": "first private note",
+        },
+        headers=_headers(101, "rocket"),
+    )
+    assert saved.status_code == 200
+    updated = await db_client.put(
+        "/api/top3/episodes/top3-idea/submission",
+        json={
+            "id": "owner-lifecycle",
+            "picks": ["Four", "Five", "Six"],
+            "privateDiscussionNotes": "updated private note",
+        },
+        headers=_headers(101, "rocket"),
+    )
+    assert updated.status_code == 200
+
+    reloaded = await db_client.get(
+        "/api/top3/episodes/top3-idea", headers=_headers(101, "rocket")
+    )
+    own = next(
+        item
+        for item in reloaded.json()["assignment"]["contributors"]
+        if item["isCurrentUser"]
+    )
+    assert own["submissionId"] == "owner-lifecycle"
+    assert own["picks"] == ["Four", "Five", "Six"]
+    assert own["privateDiscussionNotes"] == "updated private note"
+
+    removed_submission = await db_client.delete(
+        "/api/top3/episodes/top3-idea/submission",
+        headers=_headers(101, "rocket"),
+    )
+    assert removed_submission.status_code == 200
+    own = next(
+        item
+        for item in removed_submission.json()["assignment"]["contributors"]
+        if item["isCurrentUser"]
+    )
+    assert own["complete"] is False
+    assert "picks" not in own and "privateDiscussionNotes" not in own
+
+    removed_assignment = await db_client.delete(
+        "/api/top3/episodes/top3-idea/assignment",
+        headers=_headers(101, "rocket"),
+    )
+    assert removed_assignment.status_code == 200
+    assert removed_assignment.json()["assignment"] is None
+    assert (
+        await db_client.get(
+            "/api/top3/episodes/top3-idea", headers=_headers(102, "trog")
+        )
+    ).json()["assignment"] is None
+
+
+@pytest.mark.asyncio
 async def test_database_constraints_reject_duplicate_owner_and_invalid_picks(
     db_session: AsyncSession,
 ):

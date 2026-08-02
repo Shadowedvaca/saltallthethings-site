@@ -113,22 +113,27 @@ def test_deployment_smoke_exercises_song_lifecycle_without_external_services():
     assert "private_sentinel not in public_episodes.text" in source
     assert "https://example.invalid/not-youtube" in source
     assert '"/songs.html"' in source
+    assert '"/show_management.html"' in source
     assert '"/top3.html"' in source
     assert '"/js/show-song.js"' in source
     assert '"/js/episode-overview.js"' in source
     assert '"/js/songs.js"' in source
     assert '"/js/top3-bank.js"' in source
+    assert '"/js/top3-episode.js"' in source
     assert '"validateSongInput" in response.text' in source
     assert '"renderPreparation" in response.text' in source
     assert '"publicSongBlock" in response.text' in source
     assert '"clipboard.writeText" in response.text' in source
     assert '"conceptCardMarkup" in response.text' in source
+    assert '"Top3EpisodePlanning" in response.text' in source
     assert '"/ai/top3-concept" in response.text' in source
     assert "/api/top3/concepts" in source
     assert "/api/top3/episodes/{idea_id}/submission" in source
     assert "another user received a private pick" in source
     assert "general export unexpectedly contains Top 3 data" in source
     assert "replacement retained picks from the prior concept" in source
+    assert "owner edit did not persist" in source
+    assert "removed Top 3 assignment survived viewer reload" in source
     assert "Top 3 Bank did not report assignment metadata" in source
     assert "Top 3 Bank edit and retirement" in source
     assert "Top 3 Bank restoration" in source

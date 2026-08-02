@@ -7,6 +7,7 @@ const SongBankPage = require("../js/songs.js");
 const SongPreparation = require("../js/show-song.js");
 const EpisodeOverview = require("../js/episode-overview.js");
 const Top3BankPage = require("../js/top3-bank.js");
+const Top3EpisodePlanning = require("../js/top3-episode.js");
 
 function domHarness() {
   const elements = new Map();
@@ -605,6 +606,224 @@ function testTop3BankBrowserStartupWithLexicalDependencies() {
   assert.equal(typeof window.onStorageReady, "function");
 }
 
+function testTop3EpisodePlanningContract() {
+  assert.deepEqual(
+    Top3EpisodePlanning.validatePicks([" First ", "Second", "Third"]),
+    ["First", "Second", "Third"],
+  );
+  assert.throws(() => Top3EpisodePlanning.validatePicks(["One", "Two"]), /exactly three/);
+  assert.throws(() => Top3EpisodePlanning.validatePicks(["One", "", "Three"]), /all three/);
+  assert.throws(() => Top3EpisodePlanning.validatePicks(["One", "one", "Three"]), /distinct/);
+
+  const assignment = {
+    ideaId: "idea-1",
+    concept: {
+      id: "concept-1",
+      name: "Dungeon <snacks>",
+      description: "Rank & explain",
+      rules: "No <script>rules</script>",
+      aiExample: ["Example <one>", "Example two", "Example three"],
+      status: "active",
+    },
+    contributors: [
+      {
+        submissionId: "mine",
+        contributorType: "account",
+        displayName: "rocket",
+        complete: true,
+        isCurrentUser: true,
+        picks: ["My first", "My second", "My third"],
+        privateDiscussionNotes: "my private notes",
+      },
+      {
+        submissionId: "other",
+        contributorType: "account",
+        displayName: "trog <host>",
+        complete: true,
+        isCurrentUser: false,
+        picks: ["must-not-render-one", "must-not-render-two", "must-not-render-three"],
+        privateDiscussionNotes: "must-not-render-notes",
+      },
+    ],
+  };
+  const markup = Top3EpisodePlanning.assignmentMarkup("idea-1", assignment);
+  assert.match(markup, /Dungeon &lt;snacks&gt;/);
+  assert.match(markup, /Rank &amp; explain/);
+  assert.doesNotMatch(markup, /<script>|trog <host>/);
+  assert.match(markup, /Shared fictional example/);
+  assert.match(markup, /not a participant submission/);
+  assert.match(markup, /My first/);
+  assert.match(markup, /my private notes/);
+  assert.match(markup, /trog &lt;host&gt;/);
+  assert.match(markup, /Status only/);
+  assert.doesNotMatch(markup, /must-not-render/);
+  assert.match(markup, /permanently clears every submission/);
+  Top3EpisodePlanning._state.episodes.set("idea-summary", assignment);
+  const showSummary = Top3EpisodePlanning.summaryMarkup("idea-summary");
+  Top3EpisodePlanning._state.episodes.delete("idea-summary");
+  assert.match(showSummary, /Top 3 concept/);
+  assert.match(showSummary, /Dungeon &lt;snacks&gt;/);
+  assert.match(showSummary, /Rank &amp; explain/);
+  assert.match(showSummary, /Rules:/);
+  assert.match(showSummary, /not participant picks/);
+  assert.doesNotMatch(showSummary, /My first|my private notes|must-not-render/);
+
+  const page = fs.readFileSync("show_management.html", "utf8");
+  const script = fs.readFileSync("js/top3-episode.js", "utf8");
+  assert.match(page, /js\/top3-episode\.js/);
+  assert.match(page, /Top3EpisodePlanning\.render\(idea\.id\)/);
+  assert.match(page, /await Top3EpisodePlanning\.start/);
+  assert.match(page, /await Top3EpisodePlanning\.loadEpisode\(idea\.id\)/);
+  assert.match(page, /Top3EpisodePlanning\.summaryMarkup\(idea\.id\)/);
+  assert.match(page, /@media \(max-width: 800px\)/);
+  assert.match(script, /\/top3\/episodes\/.*\/assignment/);
+  assert.match(script, /\/top3\/episodes\/.*\/submission/);
+  assert.match(script, /headers\['If-Match'\]/);
+  assert.match(script, /await loadEpisode\(ideaId\)/);
+  assert.match(script, /changed on the server/);
+  assert.match(script, /Every existing Top 3 submission/);
+  assert.match(script, /addEventListener\('click', handleClick, true\)/);
+  assert.match(script, /root\.fetch\('\/api' \+ path/);
+  assert.doesNotMatch(script, /Storage\./);
+}
+
+async function testTop3EpisodeBrowserActionsUseViewerScopedApi() {
+  const listeners = {};
+  const requests = [];
+  let revision = 40;
+  const concept = {
+    id: "concept-1",
+    name: "Shared concept",
+    description: "Shared description",
+    rules: "Shared rules",
+    aiExample: [],
+    status: "active",
+  };
+  let assignment = null;
+  const document = {
+    addEventListener(type, handler, capture) { listeners[type] = { handler, capture }; },
+  };
+  const fetch = async (url, options = {}) => {
+    requests.push({ url, options });
+    if (url === "/api/top3/concepts") {
+      return response(200, { revision, concepts: [concept] });
+    }
+    if (url === "/api/top3/episodes/idea-1" && (!options.method || options.method === "GET")) {
+      return response(200, { revision, assignment });
+    }
+    if (url === "/api/top3/episodes/idea-1/assignment" && options.method === "PUT") {
+      assert.equal(options.headers["If-Match"], String(revision));
+      assert.deepEqual(JSON.parse(options.body), { conceptId: "concept-1" });
+      revision += 1;
+      assignment = {
+        ideaId: "idea-1",
+        concept,
+        contributors: [{
+          submissionId: null,
+          contributorType: "account",
+          displayName: "rocket",
+          complete: false,
+          isCurrentUser: true,
+        }],
+      };
+      return response(200, { revision, assignment });
+    }
+    if (url === "/api/top3/episodes/idea-1/submission" && options.method === "PUT") {
+      assert.equal(options.headers["If-Match"], String(revision));
+      const payload = JSON.parse(options.body);
+      assert.deepEqual(payload, {
+        id: "top3-submission-browser-id",
+        picks: ["First", "Second", "Third"],
+        privateDiscussionNotes: "Only my notes",
+      });
+      assert.equal(Object.prototype.hasOwnProperty.call(payload, "accountUserId"), false);
+      revision += 1;
+      assignment = {
+        ideaId: "idea-1",
+        concept,
+        contributors: [{
+          submissionId: payload.id,
+          contributorType: "account",
+          displayName: "rocket",
+          complete: true,
+          isCurrentUser: true,
+          picks: payload.picks,
+          privateDiscussionNotes: payload.privateDiscussionNotes,
+        }],
+      };
+      return response(200, { revision, assignment });
+    }
+    throw new Error(`Unexpected Top 3 request ${url}`);
+  };
+  const window = {
+    document,
+    confirm: () => true,
+    crypto: { randomUUID: () => "browser-id" },
+    fetch,
+  };
+  const context = {
+    window,
+    Auth: { getToken: () => "viewer-token" },
+    Toast: { success() {}, error() {} },
+    Map,
+    Set,
+    Date,
+    Math,
+    Array,
+    JSON,
+    encodeURIComponent,
+  };
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync("js/top3-episode.js", "utf8"), context);
+  const api = window.Top3EpisodePlanning;
+  await api.start(() => {});
+  await api.loadEpisode("idea-1");
+  assert.equal(listeners.click.capture, true);
+
+  const section = {
+    dataset: { top3IdeaId: "idea-1" },
+    querySelector(selector) {
+      if (selector === "[data-top3-concept]") return { value: "concept-1" };
+      throw new Error(`Unexpected section selector ${selector}`);
+    },
+  };
+  const assignButton = {
+    dataset: { top3Action: "assign" },
+    closest(selector) { return selector === "[data-top3-idea-id]" ? section : null; },
+  };
+  await listeners.click.handler({
+    target: { closest: () => assignButton },
+    preventDefault() {},
+    stopPropagation() {},
+  });
+
+  const form = {
+    closest(selector) { return selector === "[data-top3-idea-id]" ? section : selector === "[data-top3-form]" ? form : null; },
+    querySelectorAll() {
+      return ["First", "Second", "Third"].map((value, index) => ({ value, dataset: { top3Pick: String(index) } }));
+    },
+    querySelector(selector) {
+      if (selector === "[data-top3-notes]") return { value: "Only my notes" };
+      throw new Error(`Unexpected form selector ${selector}`);
+    },
+  };
+  await listeners.submit.handler({
+    target: { closest: () => form },
+    preventDefault() {},
+    stopPropagation() {},
+  });
+
+  const mutations = requests.filter((request) => request.options.method === "PUT");
+  assert.deepEqual(mutations.map((request) => request.url), [
+    "/api/top3/episodes/idea-1/assignment",
+    "/api/top3/episodes/idea-1/submission",
+  ]);
+  for (const request of requests) {
+    assert.equal(request.options.headers.Authorization, "Bearer viewer-token");
+    assert.match(request.url, /^\/api\//);
+  }
+}
+
 async function main() {
   const showManagement = fs.readFileSync("show_management.html", "utf8");
   const jokesPage = fs.readFileSync("jokes.html", "utf8");
@@ -681,6 +900,8 @@ async function main() {
   await testEpisodeOverviewContract();
   testTop3BankPageContract();
   testTop3BankBrowserStartupWithLexicalDependencies();
+  testTop3EpisodePlanningContract();
+  await testTop3EpisodeBrowserActionsUseViewerScopedApi();
 }
 
 main().catch((error) => {
