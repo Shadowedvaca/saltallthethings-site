@@ -1174,6 +1174,12 @@
       } catch (error) {
         Toast.error('Top 3 planning could not be loaded for the show display.');
       }
+      var top3SpotifyResults = null;
+      try {
+        top3SpotifyResults = await Top3EpisodePlanning.loadSpotifyResults(idea.id);
+      } catch (error) {
+        Toast.error('Top 3 Spotify results could not be loaded; the overview will omit them.');
+      }
 
       // Update URL hash
       history.pushState(null, '', '#show/' + slotId);
@@ -1201,8 +1207,9 @@
 
       html += SongPreparation.renderPreparation(assignedSong);
 
-      currentSpotifyOverview = EpisodeOverview.compose(idea.summary, assignedSong);
+      currentSpotifyOverview = EpisodeOverview.compose(idea.summary, assignedSong, top3SpotifyResults);
       html += EpisodeOverview.render(currentSpotifyOverview);
+      html += Top3EpisodePlanning.summaryMarkup(idea.id);
 
       // Summary
       if (idea.summary) {
@@ -1276,7 +1283,6 @@
         Toast.error('Copy failed. Select the overview text and copy it manually.');
       }
 
-      html += Top3EpisodePlanning.summaryMarkup(idea.id);
     }
 
     function closeShowDisplay() {

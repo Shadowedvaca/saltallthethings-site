@@ -59,6 +59,11 @@ identity shape and pick integrity even if application validation is bypassed.
   on `/api/top3/episodes/{ideaId}/external-submissions/{submissionId}` manage
   shared guest/listener results. Bodies cannot select an account owner or alter
   the original entering account.
+- `POST /api/top3/episodes/{ideaId}/spotify-results` with the exact purpose
+  `spotify-overview` is the deliberate authenticated publication boundary. It
+  returns only the list name and each submitted contributor's display name and
+  three picks. It omits missing accounts and every note, definition field,
+  example, participant type, identifier, timestamp, and reveal field.
 
 Mutations use the existing `If-Match` data revision guard. Responses carry the
 new revision, while hidden Top 3 content remains outside the general export
@@ -72,8 +77,9 @@ active banked concept, replace or remove the current assignment, and save one
 owner-bound submission containing exactly three distinct ranked picks plus
 optional private discussion notes. The expanded episode summary displays the
 shared concept name, description, rules, and clearly separated fictional AI
-example. The full-screen show display repeats those shared fields as read-only
-planning material without rendering participant submissions.
+example. The full-screen show display repeats those shared fields and renders
+the current account's submission, viewer-revealed account submissions, shared
+external results, and metadata-only Ready/Waiting state for all other accounts.
 
 Contributor readiness lists account display names and Ready/Waiting state.
 Completed submissions remain hidden until the viewer confirms an irreversible,
@@ -84,6 +90,28 @@ authenticated host may edit or remove them. A revision conflict reloads the
 latest assignment and requires the host to review before retrying. Replacement
 and removal confirmations explicitly warn that all submissions tied to the old
 assignment will be deleted.
+
+## Show summary and Spotify publication boundary
+
+The full-screen show summary continues to use only the viewer-scoped preparation
+projection. Opening it does not create reveal rows: hidden account lists remain
+status-only, while the current account, lists already revealed to that viewer,
+and shared external results render as read-only preparation material.
+
+Opening the authenticated full-screen display separately requests the narrow
+Spotify result contract for composition. That response deliberately includes
+every completed account, guest, and listener list, regardless of preparation
+reveal state, but contains only `listName`, `displayName`, and exactly three
+ranked pick strings. Contributors are ordered case-insensitively by display name
+and then picks; accounts without a saved submission are omitted. Composition
+normalizes line-breaking whitespace so a name or pick cannot alter the compact
+format. The response is held only for the selectable Spotify overview and copy
+operation, never inserted into the preparation cache or projection.
+
+Requesting, composing, rendering, and copying results are read-only. They do not
+bump the data revision, create a reveal, modify any Top 3 record, or publish to
+Spotify. Clipboard API failure uses the existing browser-copy fallback and
+reports accessible success or failure status.
 
 ## Lifecycle and rollback
 

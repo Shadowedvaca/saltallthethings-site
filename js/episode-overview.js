@@ -22,12 +22,47 @@
       + '\nYouTube: ' + String(song.youtubeUrl || '');
   }
 
-  function compose(summary, song) {
+  function compactLine(value) {
+    return String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+  }
+
+  function publicTop3Block(top3) {
+    if (!top3 || !Array.isArray(top3.contributors)) return '';
+    var listName = compactLine(top3.listName);
+    if (!listName) return '';
+    var contributors = top3.contributors.map(function(item) {
+      var displayName = compactLine(item && item.displayName);
+      var picks = item && Array.isArray(item.picks)
+        ? item.picks.map(compactLine)
+        : [];
+      if (!displayName || picks.length !== 3 || picks.some(function(pick) { return !pick; })) return null;
+      return { displayName: displayName, picks: picks };
+    }).filter(Boolean);
+    if (!contributors.length) return '';
+    contributors.sort(function(left, right) {
+      var leftKey = left.displayName.toLowerCase() + '\n' + left.picks.join('\n').toLowerCase();
+      var rightKey = right.displayName.toLowerCase() + '\n' + right.picks.join('\n').toLowerCase();
+      if (leftKey < rightKey) return -1;
+      if (leftKey > rightKey) return 1;
+      return 0;
+    });
+    var lines = ['Top 3: ' + listName];
+    contributors.forEach(function(contributor) {
+      lines.push(
+        '',
+        contributor.displayName,
+        '1. ' + contributor.picks[0],
+        '2. ' + contributor.picks[1],
+        '3. ' + contributor.picks[2]
+      );
+    });
+    return lines.join('\n');
+  }
+
+  function compose(summary, song, top3) {
     var publicSummary = summary == null ? '' : String(summary);
-    var songBlock = publicSongBlock(song);
-    if (!songBlock) return publicSummary;
-    if (!publicSummary) return songBlock;
-    return publicSummary + '\n\n' + songBlock;
+    var blocks = [publicSummary, publicSongBlock(song), publicTop3Block(top3)].filter(function(block) { return block; });
+    return blocks.join('\n\n');
   }
 
   function render(text) {
@@ -73,6 +108,7 @@
   return {
     escapeHtml: escapeHtml,
     publicSongBlock: publicSongBlock,
+    publicTop3Block: publicTop3Block,
     compose: compose,
     render: render,
     copy: copy

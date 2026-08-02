@@ -1,6 +1,7 @@
 """Authenticated Top 3 routes with server-enforced viewer redaction."""
 
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -26,6 +27,7 @@ from satt.top3_crud import (
     delete_current_submission,
     delete_external_submission,
     get_viewer_assignment,
+    get_spotify_results,
     list_concepts,
     remove_assignment,
     reveal_submission,
@@ -71,6 +73,10 @@ class ExternalSubmissionBody(StrictBody):
     externalType: str
     picks: list[str]
     privateDiscussionNotes: str = ""
+
+
+class SpotifyResultsBody(StrictBody):
+    purpose: Literal["spotify-overview"]
 
 
 def _user_id(user: dict) -> int:
@@ -156,6 +162,16 @@ async def get_episode_top3(
     return await get_viewer_assignment(
         db, idea_id=idea_id, viewer_user_id=_user_id(user)
     )
+
+
+@router.post("/top3/episodes/{idea_id}/spotify-results")
+async def post_spotify_results(
+    idea_id: str,
+    _body: SpotifyResultsBody,
+    _user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    return {"top3": await get_spotify_results(db, idea_id=idea_id)}
 
 
 @router.put("/top3/episodes/{idea_id}/assignment")

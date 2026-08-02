@@ -116,6 +116,12 @@ async def test_top3_routes_require_authentication(client: AsyncClient):
     ).status_code == 401
     assert (
         await client.post(
+            "/api/top3/episodes/idea/spotify-results",
+            json={"purpose": "spotify-overview"},
+        )
+    ).status_code == 401
+    assert (
+        await client.post(
             "/api/top3/episodes/idea/external-submissions",
             json={
                 "id": "external",
@@ -492,6 +498,126 @@ async def test_external_results_are_shared_and_any_authenticated_host_can_crud(
     assert removed.status_code == 200
     assert "Listener One" not in removed.text
     assert await db_session.get(Top3Submission, "external-shared") is None
+
+
+@pytest.mark.asyncio
+async def test_spotify_results_are_narrow_complete_deterministic_and_read_only(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await _assigned(db_client, db_session)
+    for user_id, username, submission_id, picks, notes in (
+        (
+            101,
+            "rocket",
+            "spotify-rocket",
+            ["Rocket <one>", "Rocket two", "Rocket three"],
+            "ROCKET PRIVATE NOTES",
+        ),
+        (
+            102,
+            "trog",
+            "spotify-trog",
+            ["Trog one", "Trog two", "Trog three"],
+            "TROG PRIVATE NOTES",
+        ),
+    ):
+        saved = await db_client.put(
+            "/api/top3/episodes/top3-idea/submission",
+            json={
+                "id": submission_id,
+                "picks": picks,
+                "privateDiscussionNotes": notes,
+            },
+            headers=_headers(user_id, username),
+        )
+        assert saved.status_code == 200
+
+    for submission in (
+        {
+            "id": "spotify-listener",
+            "displayName": "Listener Zed",
+            "externalType": "listener",
+            "picks": ["Listener one", "Listener two", "Listener three"],
+            "privateDiscussionNotes": "LISTENER PLANNING NOTES",
+        },
+        {
+            "id": "spotify-guest",
+            "displayName": "Guest & One",
+            "externalType": "guest",
+            "picks": ["Guest one", "Guest two", "Guest three"],
+            "privateDiscussionNotes": "GUEST PLANNING NOTES",
+        },
+    ):
+        created = await db_client.post(
+            "/api/top3/episodes/top3-idea/external-submissions",
+            json=submission,
+            headers=_headers(101, "rocket"),
+        )
+        assert created.status_code == 201
+
+    before = await db_client.get(
+        "/api/top3/episodes/top3-idea", headers=_headers(103, "observer")
+    )
+    assert before.status_code == 200
+    before_revision = before.json()["revision"]
+    assert "Rocket <one>" not in before.text
+    assert "Trog one" not in before.text
+
+    invalid = await db_client.post(
+        "/api/top3/episodes/top3-idea/spotify-results",
+        json={"purpose": "preparation"},
+        headers=_headers(103, "observer"),
+    )
+    assert invalid.status_code == 422
+    published = await db_client.post(
+        "/api/top3/episodes/top3-idea/spotify-results",
+        json={"purpose": "spotify-overview"},
+        headers=_headers(103, "observer"),
+    )
+    assert published.status_code == 200
+    assert published.json() == {
+        "top3": {
+            "listName": "Best dungeon snacks",
+            "contributors": [
+                {
+                    "displayName": "Guest & One",
+                    "picks": ["Guest one", "Guest two", "Guest three"],
+                },
+                {
+                    "displayName": "Listener Zed",
+                    "picks": ["Listener one", "Listener two", "Listener three"],
+                },
+                {
+                    "displayName": "rocket",
+                    "picks": ["Rocket <one>", "Rocket two", "Rocket three"],
+                },
+                {
+                    "displayName": "trog",
+                    "picks": ["Trog one", "Trog two", "Trog three"],
+                },
+            ],
+        },
+    }
+    for forbidden in (
+        "PRIVATE NOTES",
+        "PLANNING NOTES",
+        "Rank snacks for a long dungeon",
+        "No conjured food",
+        "Cheese",
+        "spotify-rocket",
+        "spotify-guest",
+        "revealedAt",
+        "enteredByUserId",
+    ):
+        assert forbidden not in published.text
+
+    after = await db_client.get(
+        "/api/top3/episodes/top3-idea", headers=_headers(103, "observer")
+    )
+    assert after.json()["revision"] == before_revision
+    assert "Rocket <one>" not in after.text
+    assert "Trog one" not in after.text
+    assert await db_session.scalar(select(Top3Reveal.submission_id)) is None
 
 
 @pytest.mark.asyncio

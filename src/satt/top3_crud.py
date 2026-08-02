@@ -505,3 +505,45 @@ async def get_viewer_assignment(
             "contributors": contributors,
         },
     }
+
+
+async def get_spotify_results(db: AsyncSession, *, idea_id: str) -> dict | None:
+    """Return the deliberately narrow, read-only publication projection."""
+    assignment_row = (
+        await db.execute(
+            select(Top3Assignment, Top3Concept)
+            .join(Top3Concept, Top3Concept.id == Top3Assignment.concept_id)
+            .where(Top3Assignment.idea_id == idea_id)
+        )
+    ).one_or_none()
+    if assignment_row is None:
+        return None
+    _assignment, concept = assignment_row
+    rows = (
+        await db.execute(
+            select(Top3Submission, User.username)
+            .outerjoin(User, User.id == Top3Submission.account_user_id)
+            .where(Top3Submission.assignment_idea_id == idea_id)
+        )
+    ).all()
+    contributors = [
+        {
+            "displayName": (
+                username
+                if submission.participant_type == "account"
+                else submission.external_display_name
+            )
+            or "Inactive account",
+            "picks": [submission.pick_1, submission.pick_2, submission.pick_3],
+        }
+        for submission, username in rows
+    ]
+    contributors.sort(
+        key=lambda item: (
+            item["displayName"].casefold(),
+            item["displayName"],
+            tuple(pick.casefold() for pick in item["picks"]),
+            tuple(item["picks"]),
+        )
+    )
+    return {"listName": concept.name, "contributors": contributors}

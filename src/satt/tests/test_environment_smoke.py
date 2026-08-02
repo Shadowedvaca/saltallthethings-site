@@ -123,6 +123,7 @@ def test_deployment_smoke_exercises_song_lifecycle_without_external_services():
     assert '"validateSongInput" in response.text' in source
     assert '"renderPreparation" in response.text' in source
     assert '"publicSongBlock" in response.text' in source
+    assert '"publicTop3Block" in response.text' in source
     assert '"clipboard.writeText" in response.text' in source
     assert '"conceptCardMarkup" in response.text' in source
     assert '"Top3EpisodePlanning" in response.text' in source
@@ -134,6 +135,11 @@ def test_deployment_smoke_exercises_song_lifecycle_without_external_services():
     assert "/api/top3/episodes/{idea_id}/submission" in source
     assert "/api/top3/episodes/{idea_id}/reveals/{submission_id}" in source
     assert "/api/top3/episodes/{idea_id}/external-submissions" in source
+    assert "/api/top3/episodes/{idea_id}/spotify-results" in source
+    assert "Top 3 Spotify result was not the narrow exact-three contributor contract" in source
+    assert "Top 3 Spotify composition unexpectedly changed the data revision" in source
+    assert "Spotify composition revealed a hidden list in preparation state" in source
+    assert "Top 3 Spotify result ordering or content was not deterministic" in source
     assert "repeated reveal changed revision or audit timestamp" in source
     assert "viewer-specific reveal leaked in the opposite direction" in source
     assert "external Top 3 edit changed immutable entry attribution" in source

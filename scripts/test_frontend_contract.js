@@ -437,20 +437,50 @@ async function testEpisodeOverviewContract() {
     assignedIdeaId: "internal-idea-id",
   });
   const before = JSON.stringify(song);
+  const top3 = {
+    listName: " Dungeon\n snacks & drinks ",
+    contributors: [
+      {
+        displayName: "rocket",
+        picks: ["Rock one", "Rock two", "Rock three"],
+        privateDiscussionNotes: "PRIVATE TOP 3 NOTES",
+        submissionId: "internal-submission",
+      },
+      {
+        displayName: "Guest <One>",
+        picks: ["Guest\nfirst", "Guest second", "Guest third"],
+        externalType: "guest",
+        enteredByUserId: 999,
+      },
+      { displayName: "Missing", picks: [] },
+    ],
+    description: "PLANNING DESCRIPTION",
+    rules: "PLANNING RULES",
+    aiExample: ["AI ONE", "AI TWO", "AI THREE"],
+  };
+  const top3Before = JSON.stringify(top3);
   const expected = summary
     + "\n\nFeatured song: Artist & Friends — Title <Live>"
-    + "\nYouTube: https://youtu.be/abc123?si=safe&feature=share";
-  const composed = EpisodeOverview.compose(summary, song);
+    + "\nYouTube: https://youtu.be/abc123?si=safe&feature=share"
+    + "\n\nTop 3: Dungeon snacks & drinks"
+    + "\n\nGuest <One>"
+    + "\n1. Guest first\n2. Guest second\n3. Guest third"
+    + "\n\nrocket"
+    + "\n1. Rock one\n2. Rock two\n3. Rock three";
+  const composed = EpisodeOverview.compose(summary, song, top3);
   assert.equal(composed, expected);
   assert.equal(EpisodeOverview.compose(summary, null), summary);
   assert.equal(JSON.stringify(song), before);
-  assert.doesNotMatch(composed, /PRIVATE SENTINEL|internal-song-id|internal-idea-id|used/);
+  assert.equal(JSON.stringify(top3), top3Before);
+  assert.doesNotMatch(composed, /PRIVATE SENTINEL|internal-song-id|internal-idea-id|used|PRIVATE TOP 3 NOTES|internal-submission|PLANNING|AI ONE|enteredByUserId|Missing/);
 
   const markup = EpisodeOverview.render(composed);
   assert.match(markup, /Spotify Overview/);
   assert.match(markup, /aria-describedby="spotifyOverviewStatus"/);
   assert.match(markup, /role="status" aria-live="polite"/);
   assert.match(markup, /Title &lt;Live&gt;/);
+  assert.match(markup, /Guest &lt;One&gt;/);
+  assert.doesNotMatch(markup, /Guest <One>/);
   assert.match(markup, /si=safe&amp;feature=share/);
   assert.doesNotMatch(markup, /PRIVATE SENTINEL|<Live>/);
 
@@ -460,6 +490,7 @@ async function testEpisodeOverviewContract() {
   }, null), "clipboard");
   assert.equal(clipboardPayload, expected);
   assert.equal(JSON.stringify(song), before);
+  assert.equal(JSON.stringify(top3), top3Before);
 
   let fallbackPayload = null;
   let removed = false;
@@ -694,7 +725,12 @@ function testTop3EpisodePlanningContract() {
   assert.match(showSummary, /Rank &amp; explain/);
   assert.match(showSummary, /Rules:/);
   assert.match(showSummary, /not participant picks/);
-  assert.doesNotMatch(showSummary, /My first|my private notes|must-not-render/);
+  assert.match(showSummary, /Participant results/);
+  assert.match(showSummary, /My first|my private notes/);
+  assert.match(showSummary, /Revealed first|revealed notes/);
+  assert.match(showSummary, /Guest &lt;first&gt;|Shared &lt;notes&gt;/);
+  assert.match(showSummary, /Ready — hidden/);
+  assert.doesNotMatch(showSummary, /must-not-render/);
 
   const page = fs.readFileSync("show_management.html", "utf8");
   const script = fs.readFileSync("js/top3-episode.js", "utf8");
@@ -708,6 +744,7 @@ function testTop3EpisodePlanningContract() {
   assert.match(script, /\/top3\/episodes\/.*\/submission/);
   assert.match(script, /\/reveals\//);
   assert.match(script, /\/external-submissions/);
+  assert.match(script, /\/spotify-results/);
   assert.match(script, /This cannot be undone/);
   assert.match(script, /headers\['If-Match'\]/);
   assert.match(script, /await loadEpisode\(ideaId\)/);
@@ -820,6 +857,16 @@ async function testTop3EpisodeBrowserActionsUseViewerScopedApi() {
       });
       return response(201, { revision, assignment });
     }
+    if (url === "/api/top3/episodes/idea-1/spotify-results" && options.method === "POST") {
+      assert.deepEqual(JSON.parse(options.body), { purpose: "spotify-overview" });
+      assert.equal(Object.prototype.hasOwnProperty.call(options.headers, "If-Match"), false);
+      return response(200, {
+        top3: {
+          listName: concept.name,
+          contributors: [{ displayName: "Guest Browser", picks: ["Guest First", "Guest Second", "Guest Third"] }],
+        },
+      });
+    }
     throw new Error(`Unexpected Top 3 request ${url}`);
   };
   let uuidCounter = 0;
@@ -881,6 +928,11 @@ async function testTop3EpisodeBrowserActionsUseViewerScopedApi() {
     stopPropagation() {},
   });
 
+  assert.deepEqual(await api.loadSpotifyResults("idea-1"), {
+    listName: concept.name,
+    contributors: [{ displayName: "Guest Browser", picks: ["Guest First", "Guest Second", "Guest Third"] }],
+  });
+
   assignment.contributors.push({
     submissionId: "hidden-other",
     contributorType: "account",
@@ -937,6 +989,7 @@ async function testTop3EpisodeBrowserActionsUseViewerScopedApi() {
   ]);
   assert.equal(requests.some((request) => request.url.endsWith("/reveals/hidden-other") && request.options.method === "POST"), true);
   assert.equal(requests.some((request) => request.url.endsWith("/external-submissions") && request.options.method === "POST"), true);
+  assert.equal(requests.some((request) => request.url.endsWith("/spotify-results") && request.options.method === "POST"), true);
   for (const request of requests) {
     assert.equal(request.options.headers.Authorization, "Bearer viewer-token");
     assert.match(request.url, /^\/api\//);
@@ -970,7 +1023,8 @@ async function main() {
   assert.match(showManagement, /js\/episode-overview\.js/);
   assert.match(showManagement, /SongPreparation\.renderPicker\(idea\.id, Storage\.getSongs\(\)\)/);
   assert.match(showManagement, /SongPreparation\.renderPreparation\(assignedSong\)/);
-  assert.match(showManagement, /EpisodeOverview\.compose\(idea\.summary, assignedSong\)/);
+  assert.match(showManagement, /EpisodeOverview\.compose\(idea\.summary, assignedSong, top3SpotifyResults\)/);
+  assert.match(showManagement, /await Top3EpisodePlanning\.loadSpotifyResults\(idea\.id\)/);
   assert.match(showManagement, /await EpisodeOverview\.copy\(currentSpotifyOverview, navigator, document\)/);
   assert.match(showManagement, /Copy failed\. Select the overview text and copy it manually\./);
   assert.match(showManagement, /await Storage\.assignSongToIdea\(songId, ideaId\)/);

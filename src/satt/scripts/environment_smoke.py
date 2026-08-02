@@ -576,6 +576,75 @@ async def _exercise_top3(
             and edited_external.get("enteredByUserId") == entered_by_user_id,
             "external Top 3 edit changed immutable entry attribution",
         )
+        spotify_results = await client.post(
+            f"/api/top3/episodes/{idea_id}/spotify-results",
+            json={"purpose": "spotify-overview"},
+            headers=_headers(owner_token),
+        )
+        _expect_status(spotify_results, 200, "Top 3 Spotify result composition")
+        spotify_payload = spotify_results.json()
+        top3_result = spotify_payload.get("top3") or {}
+        _require(
+            top3_result.get("listName") == "Deployment privacy list",
+            "Top 3 Spotify result omitted the list name",
+        )
+        result_contributors = top3_result.get("contributors") or []
+        _require(
+            len(result_contributors) == 3
+            and all(set(item) == {"displayName", "picks"} for item in result_contributors)
+            and all(len(item["picks"]) == 3 for item in result_contributors),
+            "Top 3 Spotify result was not the narrow exact-three contributor contract",
+        )
+        spotify_text = spotify_results.text
+        for expected_pick in (private_pick, viewer_pick, external_pick):
+            _require(
+                expected_pick in spotify_text,
+                "Top 3 Spotify result omitted a submitted contributor",
+            )
+        _require(
+            private_notes not in spotify_text
+            and f"viewer-private-notes-{suffix}" not in spotify_text
+            and f"edited-shared-notes-{suffix}" not in spotify_text
+            and not _contains_forbidden_key(
+                spotify_payload,
+                {
+                    "privateDiscussionNotes",
+                    "submissionId",
+                    "externalType",
+                    "enteredByUserId",
+                    "revealedAt",
+                    "accountUserId",
+                },
+            ),
+            "Top 3 Spotify result exposed preparation or ownership metadata",
+        )
+        repeated_spotify = await client.post(
+            f"/api/top3/episodes/{idea_id}/spotify-results",
+            json={"purpose": "spotify-overview"},
+            headers=_headers(viewer_token),
+        )
+        _expect_status(repeated_spotify, 200, "repeated Top 3 Spotify composition")
+        _require(
+            repeated_spotify.json() == spotify_payload,
+            "Top 3 Spotify result ordering or content was not deterministic",
+        )
+        preparation_after_spotify = await client.get(
+            f"/api/top3/episodes/{idea_id}", headers=_headers(owner_token)
+        )
+        _expect_status(
+            preparation_after_spotify,
+            200,
+            "Top 3 preparation privacy after Spotify composition",
+        )
+        _require(
+            preparation_after_spotify.json()["revision"]
+            == external_edited.json()["revision"],
+            "Top 3 Spotify composition unexpectedly changed the data revision",
+        )
+        _require(
+            viewer_pick not in preparation_after_spotify.text,
+            "Spotify composition revealed a hidden list in preparation state",
+        )
         external_spoof = await client.post(
             f"/api/top3/episodes/{idea_id}/external-submissions",
             json={
@@ -861,7 +930,9 @@ async def run_smoke(
                     )
                 elif path == "/js/episode-overview.js":
                     _require(
-                        "publicSongBlock" in response.text and "clipboard.writeText" in response.text,
+                        "publicSongBlock" in response.text
+                        and "publicTop3Block" in response.text
+                        and "clipboard.writeText" in response.text,
                         "deployed Spotify overview script is incomplete",
                     )
 

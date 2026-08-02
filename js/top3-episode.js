@@ -79,6 +79,14 @@
     return body.assignment || null;
   }
 
+  async function loadSpotifyResults(ideaId) {
+    var body = await apiRequest('/top3/episodes/' + encodeURIComponent(ideaId) + '/spotify-results', {
+      method: 'POST',
+      body: { purpose: 'spotify-overview' }
+    });
+    return body.top3 || null;
+  }
+
   async function reload(ideaId) {
     loading.add(ideaId);
     onChange(ideaId);
@@ -212,10 +220,21 @@
       ? '<div class="top3-shared-example"><strong>Shared fictional example — not participant picks</strong><ol>'
         + concept.aiExample.map(function(example) { return '<li>' + escapeHtml(example) + '</li>'; }).join('') + '</ol></div>'
       : '';
+    var participantRows = (assignment.contributors || []).map(function(item) {
+      var visible = item.contributorType === 'external' || item.isCurrentUser || item.revealed;
+      var state = item.complete ? (visible ? 'Submitted' : 'Ready — hidden') : 'Waiting';
+      var result = visible && Array.isArray(item.picks)
+        ? '<ol>' + item.picks.map(function(pick) { return '<li>' + escapeHtml(pick) + '</li>'; }).join('') + '</ol>'
+          + (item.privateDiscussionNotes ? '<p>' + escapeHtml(item.privateDiscussionNotes) + '</p>' : '')
+        : '';
+      return '<li><div class="top3-contributor-heading"><strong>' + escapeHtml(item.displayName)
+        + (item.isCurrentUser ? ' (you)' : '') + '</strong><span class="badge ' + (item.complete ? 'badge-scheduled' : 'badge-draft') + '">'
+        + state + '</span></div>' + result + '</li>';
+    }).join('');
     return '<div class="show-display-section"><h2>Top 3 concept</h2><h3>' + escapeHtml(concept.name) + '</h3>'
       + '<p>' + escapeHtml(concept.description) + '</p>'
       + (concept.rules ? '<p><strong>Rules:</strong> ' + escapeHtml(concept.rules) + '</p>' : '')
-      + examples + '</div>';
+      + examples + '<h3>Participant results</h3><ul class="top3-contributors">' + participantRows + '</ul></div>';
   }
 
   function render(ideaId) {
@@ -421,6 +440,7 @@
     render: render,
     loadConcepts: loadConcepts,
     loadEpisode: loadEpisode,
+    loadSpotifyResults: loadSpotifyResults,
     reload: reload,
     start: start,
     _state: { concepts: function() { return concepts; }, episodes: episodes, errors: errors }
