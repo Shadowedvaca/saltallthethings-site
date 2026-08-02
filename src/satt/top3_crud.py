@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from satt.crud import bump_data_revision, get_data_revision
 from satt.models import (
+    Assignment as ScheduleAssignment,
     Idea,
+    ShowSlot,
     Top3Assignment,
     Top3Concept,
     Top3Reveal,
@@ -37,7 +39,36 @@ async def list_concepts(db: AsyncSession) -> list[dict]:
     result = await db.execute(
         select(Top3Concept).order_by(Top3Concept.created_at, Top3Concept.id)
     )
-    return [serialize_top3_concept(row) for row in result.scalars()]
+    concepts = [serialize_top3_concept(row) for row in result.scalars()]
+    assignment_result = await db.execute(
+        select(
+            Top3Assignment.concept_id,
+            Idea.id,
+            Idea.selected_title,
+            Idea.titles,
+            ShowSlot.episode_number,
+        )
+        .join(Idea, Idea.id == Top3Assignment.idea_id)
+        .outerjoin(ScheduleAssignment, ScheduleAssignment.idea_id == Idea.id)
+        .outerjoin(ShowSlot, ShowSlot.id == ScheduleAssignment.slot_id)
+        .order_by(ShowSlot.episode_num.nulls_last(), Idea.id)
+    )
+    assignments_by_concept: dict[str, list[dict]] = {}
+    for concept_id, idea_id, selected_title, titles, episode_number in assignment_result:
+        fallback_title = next(
+            (title for title in (titles or []) if isinstance(title, str) and title.strip()),
+            None,
+        )
+        assignments_by_concept.setdefault(concept_id, []).append(
+            {
+                "ideaId": idea_id,
+                "title": selected_title or fallback_title or "Untitled episode idea",
+                "episodeNumber": episode_number,
+            }
+        )
+    for concept in concepts:
+        concept["assignedEpisodes"] = assignments_by_concept.get(concept["id"], [])
+    return concepts
 
 
 async def create_concept(db: AsyncSession, concept: dict, user_id: int) -> dict:

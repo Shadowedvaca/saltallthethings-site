@@ -383,6 +383,29 @@ async def _exercise_top3(
         )
         _expect_status(assigned, 200, "Top 3 assignment")
         revision = assigned.json()["revision"]
+        bank = await client.get(
+            "/api/top3/concepts", headers=_headers(owner_token)
+        )
+        _expect_status(bank, 200, "Top 3 Bank assignment metadata")
+        first_concept = next(
+            item for item in bank.json()["concepts"] if item["id"] == concept_ids[0]
+        )
+        _require(
+            first_concept["assignedEpisodes"]
+            == [
+                {
+                    "ideaId": idea_id,
+                    "title": "Deployment Top 3 smoke",
+                    "episodeNumber": None,
+                }
+            ],
+            "Top 3 Bank did not report assignment metadata",
+        )
+        _require("picks" not in bank.text, "Top 3 Bank exposed participant picks")
+        _require(
+            "privateDiscussionNotes" not in bank.text,
+            "Top 3 Bank exposed participant discussion notes",
+        )
         saved = await client.put(
             f"/api/top3/episodes/{idea_id}/submission",
             json={
@@ -437,6 +460,69 @@ async def _exercise_top3(
         _require(
             private_pick not in replaced.text and private_notes not in replaced.text,
             "replacement retained picks from the prior concept",
+        )
+        revision = replaced.json()["revision"]
+
+        bank = await client.get(
+            "/api/top3/concepts", headers=_headers(owner_token)
+        )
+        _expect_status(bank, 200, "reloaded Top 3 Bank")
+        first_concept = next(
+            item for item in bank.json()["concepts"] if item["id"] == concept_ids[0]
+        )
+        first_payload = {
+            key: first_concept.get(key)
+            for key in (
+                "id",
+                "name",
+                "description",
+                "rules",
+                "hostNotes",
+                "aiExample",
+                "status",
+                "source",
+                "aiProvider",
+                "aiModelId",
+                "aiGeneratedAt",
+            )
+        }
+        first_payload["description"] = "Edited deployment Top 3 validation."
+        first_payload["status"] = "retired"
+        retired = await client.put(
+            f"/api/top3/concepts/{concept_ids[0]}",
+            json=first_payload,
+            headers=_headers(owner_token, revision),
+        )
+        _expect_status(retired, 200, "Top 3 Bank edit and retirement")
+        _require(
+            retired.json()["concept"]["status"] == "retired"
+            and retired.json()["concept"]["description"]
+            == "Edited deployment Top 3 validation.",
+            "Top 3 Bank edit or retirement did not persist",
+        )
+
+        first_payload["status"] = "active"
+        restored = await client.put(
+            f"/api/top3/concepts/{concept_ids[0]}",
+            json=first_payload,
+            headers=_headers(owner_token, retired.json()["revision"]),
+        )
+        _expect_status(restored, 200, "Top 3 Bank restoration")
+        deleted = await client.delete(
+            f"/api/top3/concepts/{concept_ids[0]}",
+            headers=_headers(owner_token, restored.json()["revision"]),
+        )
+        _expect_status(deleted, 200, "Top 3 Bank deletion")
+        reloaded = await client.get(
+            "/api/top3/concepts", headers=_headers(owner_token)
+        )
+        _expect_status(reloaded, 200, "Top 3 Bank post-delete reload")
+        _require(
+            all(
+                item["id"] != concept_ids[0]
+                for item in reloaded.json()["concepts"]
+            ),
+            "deleted Top 3 concept survived reload",
         )
     finally:
         await _cleanup_top3_records(idea_id, concept_ids)
@@ -533,9 +619,11 @@ async def run_smoke(
                 "/",
                 "/register.html",
                 "/songs.html",
+                "/top3.html",
                 "/js/show-song.js",
                 "/js/episode-overview.js",
                 "/js/songs.js",
+                "/js/top3-bank.js",
                 "/public/homepage",
             ):
                 response = await client.get(path)
@@ -544,6 +632,20 @@ async def run_smoke(
                     _require(
                         "Song Bank" in response.text and "js/songs.js" in response.text,
                         "deployed Song Bank page is incomplete",
+                    )
+                elif path == "/top3.html":
+                    _require(
+                        "Top 3 Bank" in response.text
+                        and "js/top3-bank.js" in response.text
+                        and "Fictional examples" in response.text,
+                        "deployed Top 3 Bank page is incomplete",
+                    )
+                elif path == "/js/top3-bank.js":
+                    _require(
+                        "conceptCardMarkup" in response.text
+                        and "/ai/top3-concept" in response.text
+                        and "If-Match" in response.text,
+                        "deployed Top 3 Bank script is incomplete",
                     )
                 elif path == "/js/songs.js":
                     _require(

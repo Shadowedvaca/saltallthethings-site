@@ -61,6 +61,7 @@ _frontend_pages = {
     "register.html",
     "show_management.html",
     "songs.html",
+    "top3.html",
 }
 
 

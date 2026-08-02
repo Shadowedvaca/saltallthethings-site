@@ -418,6 +418,29 @@ async def test_assigned_concept_cannot_be_deleted(
 
 
 @pytest.mark.asyncio
+async def test_concept_bank_lists_assignment_state_without_participant_picks(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await _assigned(db_client, db_session)
+    response = await db_client.get(
+        "/api/top3/concepts", headers=_headers(101, "rocket")
+    )
+    assert response.status_code == 200
+    concept = next(
+        item for item in response.json()["concepts"] if item["id"] == "top3-concept"
+    )
+    assert concept["assignedEpisodes"] == [
+        {
+            "ideaId": "top3-idea",
+            "title": "Top 3 test",
+            "episodeNumber": None,
+        }
+    ]
+    assert "picks" not in response.text
+    assert "privateDiscussionNotes" not in response.text
+
+
+@pytest.mark.asyncio
 async def test_reassignment_and_idea_deletion_cascade_private_rows(
     db_client: AsyncClient, db_session: AsyncSession
 ):

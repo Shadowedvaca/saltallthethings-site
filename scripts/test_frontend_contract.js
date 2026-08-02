@@ -6,6 +6,7 @@ const vm = require("node:vm");
 const SongBankPage = require("../js/songs.js");
 const SongPreparation = require("../js/show-song.js");
 const EpisodeOverview = require("../js/episode-overview.js");
+const Top3BankPage = require("../js/top3-bank.js");
 
 function domHarness() {
   const elements = new Map();
@@ -488,6 +489,122 @@ async function testEpisodeOverviewContract() {
   }), /did not copy/);
 }
 
+function testTop3BankPageContract() {
+  assert.deepEqual(Top3BankPage.normalizeExamples(["", "", ""], false), []);
+  assert.deepEqual(
+    Top3BankPage.normalizeExamples([" First ", "Second", "Third"], true),
+    ["First", "Second", "Third"],
+  );
+  assert.throws(
+    () => Top3BankPage.normalizeExamples(["One", "", "Three"], false),
+    /all three fictional examples/,
+  );
+  assert.throws(
+    () => Top3BankPage.normalizeExamples(["One", "one", "Three"], true),
+    /must be distinct/,
+  );
+  assert.throws(
+    () => Top3BankPage.validateConceptInput({ description: "Valid" }, false),
+    /Shared name is required/,
+  );
+  const manual = Top3BankPage.validateConceptInput({
+    name: " Manual concept ",
+    description: " Shared definition ",
+    rules: " Optional rules ",
+    hostNotes: " Planning context ",
+    aiExample: ["", "", ""],
+  }, false);
+  assert.deepEqual(manual.aiExample, []);
+  assert.equal(manual.name, "Manual concept");
+
+  const concept = {
+    id: "concept-1",
+    name: "Escaping <script>",
+    description: "Description & definition",
+    rules: "No <b>markup</b>",
+    hostNotes: "Crew <private> context",
+    aiExample: ["Example <one>", "Example two", "Example three"],
+    status: "active",
+    source: "ai",
+    aiProvider: "claude",
+    aiModelId: "model-id",
+    aiGeneratedAt: "2026-08-01T00:00:00Z",
+    assignedEpisodes: [{ ideaId: "idea-1", title: "Episode <title>", episodeNumber: "42" }],
+  };
+  const markup = Top3BankPage.conceptCardMarkup(concept);
+  assert.doesNotMatch(markup, /<script>|<b>markup|<private>|<title>/);
+  assert.match(markup, /Escaping &lt;script&gt;/);
+  assert.match(markup, /Fictional examples — not participant picks/);
+  assert.match(markup, /Assignment metadata only; participant picks are never shown here/);
+  assert.match(markup, /Episode 42: Episode &lt;title&gt;/);
+  assert.doesNotMatch(markup, /privateDiscussionNotes|participant submission/);
+  assert.equal(
+    Top3BankPage.conceptMatches(concept, "active", "episode 42", ""),
+    true,
+  );
+  const payload = Top3BankPage.conceptPayload(concept);
+  assert.equal(payload.aiProvider, "claude");
+  assert.equal(payload.aiModelId, "model-id");
+  assert.equal(Object.prototype.hasOwnProperty.call(payload, "assignedEpisodes"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(payload, "picks"), false);
+
+  const page = fs.readFileSync("top3.html", "utf8");
+  const script = fs.readFileSync("js/top3-bank.js", "utf8");
+  checkInlineScripts("top3.html", page);
+  assert.match(page, /aria-current="page"/);
+  assert.match(page, /role="status" aria-live="polite"/);
+  assert.match(page, /role="alert"/);
+  assert.match(page, /Fictional examples — not participant picks/);
+  assert.match(page, /Nothing is banked until you explicitly save/);
+  assert.match(page, /@media \(max-width: 1024px\)/);
+  assert.match(page, /js\/top3-bank\.js/);
+  assert.match(script, /\/ai\/top3-concept/);
+  assert.match(script, /Regenerate AI Proposal/);
+  assert.match(script, /Save AI Proposal/);
+  assert.match(script, /method: existing \? 'PUT' : 'POST'/);
+  assert.match(script, /method: 'DELETE', mutation: true/);
+  assert.match(script, /await loadConcepts\(\)/);
+  assert.match(script, /The Top 3 Bank changed on the server/);
+  assert.match(script, /Your workshop entries are unchanged/);
+  assert.match(script, /Your workshop remains available/);
+  assert.match(script, /editingConceptId = concept\.id/);
+  assert.match(script, /acceptedProvenance/);
+
+  for (const filename of ["config.html", "jokes.html", "postproduction.html", "show_management.html", "songs.html", "top3.html"]) {
+    assert.match(fs.readFileSync(filename, "utf8"), /href="top3\.html"/);
+  }
+}
+
+function testTop3BankBrowserStartupWithLexicalDependencies() {
+  let authInitCalls = 0;
+  const element = { addEventListener() {} };
+  const document = {
+    getElementById() { return element; },
+    querySelector() { return element; },
+    querySelectorAll() { return []; },
+  };
+  const window = {
+    document,
+    confirm: () => true,
+    crypto: { randomUUID: () => "test-id" },
+    fetch: async () => response(200, { revision: 0, concepts: [] }),
+  };
+  const context = {
+    window,
+    Auth: { init() { authInitCalls += 1; }, getToken: () => "test-token" },
+    Toast: { success() {}, error() {} },
+    Set,
+    Date,
+    Math,
+    encodeURIComponent,
+  };
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync("js/top3-bank.js", "utf8"), context);
+  assert.equal(authInitCalls, 1);
+  assert.equal(typeof window.Top3BankPage.start, "function");
+  assert.equal(typeof window.onStorageReady, "function");
+}
+
 async function main() {
   const showManagement = fs.readFileSync("show_management.html", "utf8");
   const jokesPage = fs.readFileSync("jokes.html", "utf8");
@@ -562,6 +679,8 @@ async function main() {
   testSongBankBrowserStartupWithLexicalDependencies();
   testEpisodeSongPreparationContract();
   await testEpisodeOverviewContract();
+  testTop3BankPageContract();
+  testTop3BankBrowserStartupWithLexicalDependencies();
 }
 
 main().catch((error) => {

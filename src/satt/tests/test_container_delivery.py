@@ -349,6 +349,7 @@ def test_production_deploy_is_tag_only_immutable_and_recoverable():
     nightly_backup = PROD_NIGHTLY_BACKUP_PATH.read_text(encoding="utf-8")
     combined = source + deploy_script + nightly_backup
     assert "songs.html" in deploy_script
+    assert "top3.html" in deploy_script
     workflow = yaml.safe_load(source)
 
     assert workflow["on"] == {"push": {"tags": ["prod-v*"]}}
