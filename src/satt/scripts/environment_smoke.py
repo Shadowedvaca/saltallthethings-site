@@ -1057,10 +1057,12 @@ async def run_smoke(
                 "/register.html",
                 "/show_management.html",
                 "/songs.html",
+                "/guests.html",
                 "/top3.html",
                 "/js/show-song.js",
                 "/js/episode-overview.js",
                 "/js/songs.js",
+                "/js/guests.js",
                 "/js/top3-bank.js",
                 "/js/top3-episode.js",
                 "/public/homepage",
@@ -1071,6 +1073,13 @@ async def run_smoke(
                     _require(
                         "Song Bank" in response.text and "js/songs.js" in response.text,
                         "deployed Song Bank page is incomplete",
+                    )
+                elif path == "/guests.html":
+                    _require(
+                        "Guest Bank" in response.text
+                        and "js/guests.js" in response.text
+                        and "Filter guests by status" in response.text,
+                        "deployed Guest Bank page is incomplete",
                     )
                 elif path == "/show_management.html":
                     _require(
@@ -1106,6 +1115,13 @@ async def run_smoke(
                     _require(
                         "validateSongInput" in response.text,
                         "deployed Song Bank script is incomplete",
+                    )
+                elif path == "/js/guests.js":
+                    _require(
+                        "guestCardMarkup" in response.text
+                        and "validateGuestInput" in response.text
+                        and "appearanceHistory" in response.text,
+                        "deployed Guest Bank script is incomplete",
                     )
                 elif path == "/js/show-song.js":
                     _require(

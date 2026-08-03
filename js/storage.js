@@ -467,6 +467,23 @@ const Storage = {
     return this.set('guests', guests);
   },
 
+  addGuest(guest) {
+    var guests = this._clone(this.getGuests());
+    guests.push(guest);
+    return this.saveGuests(guests);
+  },
+
+  updateGuest(guestId, updates) {
+    var found = false;
+    var guests = this._clone(this.getGuests()).map(function(guest) {
+      if (guest.id !== guestId) return guest;
+      found = true;
+      return Object.assign({}, guest, updates, { id: guest.id });
+    });
+    if (!found) return Promise.resolve(false);
+    return this.saveGuests(guests);
+  },
+
   async assignGuestToIdea(guestId, ideaId) {
     try {
       await this._enqueueMutation(

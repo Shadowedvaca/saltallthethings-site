@@ -32,6 +32,25 @@ cannot fabricate first or most-recent dates. The authenticated guest response
 also includes deterministic `appearanceHistory` entries with idea, title,
 schedule, episode, and release-date context.
 
+## Authenticated Guest Bank screen
+
+Hosts manage reusable records at `/guests.html`. The page supports creating and
+editing a required display name and optional private host notes, searching
+across guest and appearance context, filtering active or archived records, and
+archiving or restoring a record without changing its existing appearances.
+Guest and show content is escaped before rendering, notes remain inside the
+authenticated page, and loading, saving, empty, validation, conflict, and
+failure states are announced through keyboard- and screen-reader-compatible
+status controls.
+
+Each guest card shows server-derived Total Appearances, First Appearance, Most
+Recent Appearance, and an expandable linked-show history. An unscheduled entry
+is labeled explicitly and never supplies a false date. Archived cards remain
+searchable and retain their complete history while being visually distinct.
+Deletion requires confirmation and is blocked with actionable guidance until
+all show assignments have been removed. Assignment controls themselves remain
+in the separate show-management delivery child.
+
 ## Import, privacy, and rollback
 
 Legacy imports that omit both guest keys preserve current Guest Bank data.

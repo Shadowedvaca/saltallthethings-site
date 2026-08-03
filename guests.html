@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guest Bank — Salt All The Things</title>
+  <link rel="icon" type="image/jpeg" href="images/256x256.jpeg">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .guests-layout { display: grid; grid-template-columns: minmax(280px, 0.75fr) minmax(0, 1.5fr); gap: var(--space-lg); align-items: start; }
+    .guest-form-card { position: sticky; top: 84px; }
+    .guest-toolbar { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: end; margin-bottom: var(--space-md); }
+    .guest-search { flex: 1 1 240px; margin-bottom: 0; }
+    .guest-filters { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
+    .guest-filter { padding: var(--space-xs) var(--space-md); border-radius: 100px; background: var(--bg-surface); border: 1px solid var(--border-subtle); color: var(--text-secondary); font: inherit; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+    .guest-filter:hover, .guest-filter:focus-visible { border-color: var(--border-default); }
+    .guest-filter.active { background: var(--gold-glow); border-color: var(--gold-dim); color: var(--text-gold); }
+    .guest-list { display: flex; flex-direction: column; gap: var(--space-md); }
+    .guest-item { padding: var(--space-lg); background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
+    .guest-item.archived { opacity: 0.72; border-style: dashed; }
+    .guest-heading { display: flex; gap: var(--space-sm); justify-content: space-between; align-items: start; }
+    .guest-heading h3 { margin: 0; }
+    .guest-notes { margin-top: var(--space-md); white-space: pre-wrap; overflow-wrap: anywhere; }
+    .guest-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-sm); margin-top: var(--space-md); }
+    .guest-stat { background: var(--bg-surface); border-radius: var(--radius-sm); padding: var(--space-sm); }
+    .guest-stat dt { color: var(--text-muted); font-size: 0.72rem; font-weight: 700; text-transform: uppercase; }
+    .guest-stat dd { margin: 2px 0 0; color: var(--text-primary); font-weight: 600; }
+    .guest-history { margin-top: var(--space-md); }
+    .guest-history summary { color: var(--text-gold); cursor: pointer; font-weight: 600; }
+    .guest-history ul { margin: var(--space-sm) 0 0 var(--space-lg); }
+    .guest-history li { margin-bottom: var(--space-xs); }
+    .guest-unscheduled { color: var(--text-muted); font-style: italic; }
+    .guest-meta { margin-top: var(--space-md); color: var(--text-muted); font-size: 0.75rem; }
+    .guest-actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-top: var(--space-md); }
+    .guest-empty { text-align: center; padding: 3rem 1rem; }
+    .form-error { min-height: 1.4em; color: var(--danger); font-size: 0.85rem; }
+    .field-error { border-color: var(--danger) !important; }
+    @media (max-width: 1024px) { .guests-layout { grid-template-columns: 1fr; } .guest-form-card { position: static; } }
+    @media (max-width: 768px) { .guest-heading { flex-direction: column; } .guest-stats { grid-template-columns: 1fr; } .guest-actions .btn { flex: 1 1 auto; } }
+  </style>
+</head>
+<body>
+  <div id="loadingOverlay" style="display:none; position:fixed; inset:0; z-index:99998; background:#08080f; align-items:center; justify-content:center; flex-direction:column; gap:16px;">
+    <svg class="spinner-lg" viewBox="0 0 50 50" style="width:48px;height:48px;" aria-hidden="true"><circle cx="25" cy="25" r="20" fill="none" stroke="#c8a84e" stroke-width="3" stroke-dasharray="80 40" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" values="0 25 25;360 25 25" dur="0.8s" repeatCount="indefinite"></animateTransform></circle></svg>
+    <span style="color:#c8a84e; font-family:'Cinzel',serif; font-size:0.9rem;">Loading guests…</span>
+  </div>
+
+  <div id="protectedContent" style="display:none;">
+    <nav class="site-nav" aria-label="Crew navigation">
+      <img src="images/256x256.jpeg" alt="SATT" class="nav-logo">
+      <span class="nav-title">Salt All The Things</span>
+      <div class="nav-spacer"></div>
+      <a href="index.html">Home</a>
+      <a href="show_management.html">Show Management</a>
+      <a href="jokes.html">Joke Bank</a>
+      <a href="songs.html">Song Bank</a>
+      <a href="guests.html" class="active" aria-current="page">Guest Bank</a>
+      <a href="top3.html">Top 3 Bank</a>
+      <a href="postproduction.html">Post-Production</a>
+      <a href="config.html">Config</a>
+      <button type="button" class="btn btn-ghost btn-sm" data-action="logout" style="color:var(--text-muted);">🔒 Logout</button>
+    </nav>
+
+    <main class="page-container">
+      <div class="page-header">
+        <h1>Guest Bank</h1>
+        <p class="subtitle">Maintain reusable private guest records and review their episode appearances.</p>
+      </div>
+      <div id="pageNotice" class="text-sm text-secondary mb-md" role="status" aria-live="polite"></div>
+
+      <div class="guests-layout">
+        <section class="card card-elevated guest-form-card" aria-labelledby="guestFormHeading">
+          <h2 id="guestFormHeading" class="mb-md">Add a Guest</h2>
+          <form id="guestForm" novalidate>
+            <div class="form-group">
+              <label for="guestDisplayName">Display name</label>
+              <input id="guestDisplayName" name="displayName" type="text" autocomplete="off" required maxlength="200">
+            </div>
+            <div class="form-group">
+              <label for="guestPrivateNotes">Private host notes <span class="label-hint">— hosts only</span></label>
+              <textarea id="guestPrivateNotes" name="privateNotes" rows="7" maxlength="8000" placeholder="Preparation notes, follow-up context, or private talking points…"></textarea>
+            </div>
+            <p id="guestFormError" class="form-error" role="alert"></p>
+            <div class="flex gap-sm">
+              <button id="saveGuestButton" type="submit" class="btn btn-primary">Add Guest</button>
+              <button id="cancelGuestEditButton" type="button" class="btn btn-ghost hidden" data-action="cancel-edit">Cancel</button>
+            </div>
+          </form>
+        </section>
+
+        <section aria-labelledby="guestListHeading">
+          <div class="flex justify-between items-center mb-md">
+            <h2 id="guestListHeading">Saved Guests</h2>
+            <span id="guestCount" class="text-sm text-muted"></span>
+          </div>
+          <div class="guest-toolbar">
+            <div class="form-group guest-search">
+              <label for="guestSearch">Search guests</label>
+              <input id="guestSearch" type="search" placeholder="Name, private notes, episode, or schedule">
+            </div>
+            <div class="guest-filters" role="group" aria-label="Filter guests by status">
+              <button type="button" class="guest-filter active" data-filter="all" aria-pressed="true">All</button>
+              <button type="button" class="guest-filter" data-filter="active" aria-pressed="false">Active</button>
+              <button type="button" class="guest-filter" data-filter="archived" aria-pressed="false">Archived</button>
+            </div>
+          </div>
+          <div id="guestList" class="guest-list"></div>
+          <div id="noGuests" class="guest-empty hidden">
+            <p class="text-secondary">No guests match this view.</p>
+            <p class="text-muted text-sm mt-sm">Add a guest or adjust the search and lifecycle filter.</p>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <noscript>This authenticated page requires JavaScript.</noscript>
+  <script src="js/auth.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/toast.js"></script>
+  <script src="js/guests.js"></script>
+</body>
+</html>

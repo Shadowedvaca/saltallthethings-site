@@ -56,6 +56,7 @@ for _asset_directory in ("css", "images", "js"):
 
 _frontend_pages = {
     "config.html",
+    "guests.html",
     "index.html",
     "jokes.html",
     "login.html",

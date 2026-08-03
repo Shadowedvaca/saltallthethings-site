@@ -224,7 +224,7 @@ docker create \
 for directory in css images js; do
   docker cp "$asset_container:/app/$directory" "$candidate_static/$directory"
 done
-for page in config.html index.html jokes.html login.html postproduction.html register.html show_management.html songs.html top3.html; do
+for page in config.html guests.html index.html jokes.html login.html postproduction.html register.html show_management.html songs.html top3.html; do
   docker cp "$asset_container:/app/$page" "$candidate_static/$page"
 done
 docker rm "$asset_container" >/dev/null

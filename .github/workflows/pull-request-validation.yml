@@ -68,8 +68,10 @@ jobs:
             node --check "$file"
           done
 
-      - name: Test browser storage and credential-status contracts
-        run: node scripts/test_frontend_contract.js
+      - name: Test browser storage, Guest Bank, and credential-status contracts
+        run: |
+          node scripts/test_frontend_contract.js
+          node scripts/test_guest_bank_frontend.js
 
   container:
     name: Production image and fresh-database health
