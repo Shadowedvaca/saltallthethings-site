@@ -48,6 +48,8 @@ const Storage = {
     if (Object.prototype.hasOwnProperty.call(state, 'ideas')) this._cache.ideas = state.ideas || [];
     if (Object.prototype.hasOwnProperty.call(state, 'jokes')) this._cache.jokes = state.jokes || [];
     if (Object.prototype.hasOwnProperty.call(state, 'songs')) this._cache.songs = state.songs || [];
+    if (Object.prototype.hasOwnProperty.call(state, 'guests')) this._cache.guests = state.guests || [];
+    if (Object.prototype.hasOwnProperty.call(state, 'guestAssignments')) this._cache.guestAssignments = state.guestAssignments || [];
     if (Object.prototype.hasOwnProperty.call(state, 'showSlots')) this._cache.showSlots = state.showSlots || [];
     if (Object.prototype.hasOwnProperty.call(state, 'assignments')) this._cache.assignments = state.assignments || {};
     if (Number.isInteger(state.revision)) this._revision = state.revision;
@@ -57,6 +59,8 @@ const Storage = {
         ideas: this._clone(this._cache.ideas),
         jokes: this._clone(this._cache.jokes),
         songs: this._clone(this._cache.songs),
+        guests: this._clone(this._cache.guests),
+        guestAssignments: this._clone(this._cache.guestAssignments),
         showSlots: this._clone(this._cache.showSlots),
         assignments: this._clone(this._cache.assignments),
         revision: this._revision
@@ -71,6 +75,8 @@ const Storage = {
     this._cache.ideas = canonical.ideas;
     this._cache.jokes = canonical.jokes;
     this._cache.songs = canonical.songs;
+    this._cache.guests = canonical.guests;
+    this._cache.guestAssignments = canonical.guestAssignments;
     this._cache.showSlots = canonical.showSlots;
     this._cache.assignments = canonical.assignments;
     this._revision = canonical.revision;
@@ -448,6 +454,79 @@ const Storage = {
     return this.getSongs().find(function(song) { return song.assignedIdeaId === ideaId; }) || null;
   },
 
+  // ---- Guests ----
+  getGuests() {
+    return this.get('guests') || [];
+  },
+
+  getGuestAssignments() {
+    return this.get('guestAssignments') || [];
+  },
+
+  saveGuests(guests) {
+    return this.set('guests', guests);
+  },
+
+  async assignGuestToIdea(guestId, ideaId) {
+    try {
+      await this._enqueueMutation(
+        () => this._request('/guests/' + encodeURIComponent(guestId) + '/assignments/' + encodeURIComponent(ideaId), { method: 'PUT' }),
+        () => this.assignGuestToIdea(guestId, ideaId)
+      );
+      return true;
+    } catch (err) {
+      console.error('Guest assignment failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to assign guest: ' + err.message);
+      return false;
+    }
+  },
+
+  async unassignGuestFromIdea(guestId, ideaId) {
+    try {
+      await this._enqueueMutation(
+        () => this._request('/guests/' + encodeURIComponent(guestId) + '/assignments/' + encodeURIComponent(ideaId), { method: 'DELETE' }),
+        () => this.unassignGuestFromIdea(guestId, ideaId)
+      );
+      return true;
+    } catch (err) {
+      console.error('Guest unassignment failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to unassign guest: ' + err.message);
+      return false;
+    }
+  },
+
+  async setGuestStatus(guestId, status) {
+    try {
+      await this._enqueueMutation(
+        () => this._request('/guests/' + encodeURIComponent(guestId) + '/status', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: status })
+        }),
+        () => this.setGuestStatus(guestId, status)
+      );
+      return true;
+    } catch (err) {
+      console.error('Guest status update failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to update guest: ' + err.message);
+      return false;
+    }
+  },
+
+  async deleteGuest(guestId) {
+    try {
+      await this._enqueueMutation(
+        () => this._request('/guests/' + encodeURIComponent(guestId), { method: 'DELETE' }),
+        () => this.deleteGuest(guestId)
+      );
+      return true;
+    } catch (err) {
+      console.error('Delete guest failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to delete guest: ' + err.message);
+      return false;
+    }
+  },
+
   // ---- Show Ideas ----
   getIdeas() {
     return this.get('ideas') || [];
@@ -561,6 +640,8 @@ const Storage = {
       ideas: this.getIdeas(),
       jokes: this.getJokes(),
       songs: this.getSongs(),
+      guests: this.getGuests(),
+      guestAssignments: this.getGuestAssignments(),
       showSlots: this.getShowSlots(),
       assignments: this.getAssignments(),
       exportDate: new Date().toISOString()
@@ -569,7 +650,7 @@ const Storage = {
 
   async importAll(data) {
     var payload = {};
-    ['config', 'ideas', 'jokes', 'songs', 'showSlots', 'assignments'].forEach(function(key) {
+    ['config', 'ideas', 'jokes', 'songs', 'guests', 'guestAssignments', 'showSlots', 'assignments'].forEach(function(key) {
       if (Object.prototype.hasOwnProperty.call(data, key)) payload[key] = data[key];
     });
     try {

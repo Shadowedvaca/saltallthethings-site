@@ -54,6 +54,36 @@ def serialize_song(row: Any) -> dict:
     }
 
 
+def serialize_guest(
+    row: Any,
+    *,
+    total_appearances: int = 0,
+    first_appearance: date | None = None,
+    most_recent_appearance: date | None = None,
+    appearance_history: list[dict] | None = None,
+) -> dict:
+    return {
+        "id": row.id,
+        "displayName": row.display_name,
+        "privateNotes": row.private_notes,
+        "status": row.status,
+        "createdAt": _iso(row.created_at),
+        "updatedAt": _iso(row.updated_at),
+        "totalAppearances": total_appearances,
+        "firstAppearance": _iso(first_appearance),
+        "mostRecentAppearance": _iso(most_recent_appearance),
+        "appearanceHistory": appearance_history or [],
+    }
+
+
+def serialize_guest_assignment(row: Any) -> dict:
+    return {
+        "guestId": row.guest_id,
+        "ideaId": row.idea_id,
+        "assignedAt": _iso(row.assigned_at),
+    }
+
+
 def serialize_top3_concept(row: Any) -> dict:
     return {
         "id": row.id,

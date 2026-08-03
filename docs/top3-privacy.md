@@ -135,6 +135,7 @@ reports accessible success or failure status.
 - Downgrading from `0008` to `0007` drops all four Top 3 tables. Take and verify
   an environment-specific backup before downgrade once Top 3 records exist.
 
-The deployment workflows rehearse `0008` to `0007` to `0008` against an
-isolated database. Restoring a database backup is destructive and remains a
-separately approved recovery action.
+The deployment workflows retain revision `0008` as the Top 3 boundary while the
+current migration rollback rehearsal moves from `0009` to `0008` and back
+against an isolated database. Restoring a database backup is destructive and
+remains a separately approved recovery action.

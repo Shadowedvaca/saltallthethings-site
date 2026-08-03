@@ -91,6 +91,8 @@ function state(revision, overrides = {}) {
     ideas: [],
     jokes: [],
     songs: [],
+    guests: [],
+    guestAssignments: [],
     showSlots: [],
     assignments: {},
     revision,
@@ -229,16 +231,52 @@ async function testAtomicScheduleAndImportRoutes() {
   await harness.storage.init();
   assert.equal(await harness.storage.assignIdeaToSlot("idea-1", "slot-1"), true);
   assert.equal(await harness.storage.assignSongToIdea("song-1", "idea-1"), true);
-  assert.equal(await harness.storage.importAll({ ideas: [], songs: [], showSlots: [], assignments: {} }), true);
+  assert.equal(await harness.storage.assignGuestToIdea("guest-1", "idea-1"), true);
+  assert.equal(await harness.storage.unassignGuestFromIdea("guest-1", "idea-1"), true);
+  assert.equal(await harness.storage.setGuestStatus("guest-1", "archived"), true);
+  assert.equal(await harness.storage.deleteGuest("guest-1"), true);
+  assert.equal(await harness.storage.importAll({ ideas: [], songs: [], guests: [], guestAssignments: [], showSlots: [], assignments: {} }), true);
   assert.equal(mutations[0].url, "/api/schedule/slot-1/assignment");
   assert.equal(mutations[0].options.method, "PUT");
   assert.equal(mutations[1].url, "/api/songs/song-1/assignment");
   assert.equal(mutations[1].options.method, "PUT");
-  assert.equal(mutations[2].url, "/api/import");
-  assert.equal(mutations[2].options.method, "PUT");
-  assert.deepEqual(JSON.parse(mutations[2].options.body), {
-    ideas: [], songs: [], showSlots: [], assignments: {},
+  assert.deepEqual(mutations.slice(2, 6).map((entry) => [entry.url, entry.options.method]), [
+    ["/api/guests/guest-1/assignments/idea-1", "PUT"],
+    ["/api/guests/guest-1/assignments/idea-1", "DELETE"],
+    ["/api/guests/guest-1/status", "PUT"],
+    ["/api/guests/guest-1", "DELETE"],
+  ]);
+  assert.equal(mutations[6].url, "/api/import");
+  assert.equal(mutations[6].options.method, "PUT");
+  assert.deepEqual(JSON.parse(mutations[6].options.body), {
+    ideas: [], songs: [], guests: [], guestAssignments: [], showSlots: [], assignments: {},
   });
+}
+
+async function testGuestDataUsesSharedCanonicalStorage() {
+  const guest = {
+    id: "guest-1",
+    displayName: "Guest One",
+    privateNotes: "Private",
+    status: "active",
+    totalAppearances: 1,
+    firstAppearance: null,
+    mostRecentAppearance: null,
+    appearanceHistory: [{ ideaId: "idea-1", releaseDate: null, scheduled: false }],
+  };
+  const assignment = { guestId: "guest-1", ideaId: "idea-1", assignedAt: "2026-08-03T00:00:00Z" };
+  const harness = loadStorage(async (url) => {
+    if (url === "/api/export") {
+      return response(200, state(5, { guests: [guest], guestAssignments: [assignment] }));
+    }
+    throw new Error(`Unexpected request ${url}`);
+  });
+  await harness.storage.init();
+  assert.equal(harness.storage.getGuests()[0].displayName, "Guest One");
+  assert.equal(harness.storage.getGuestAssignments()[0].ideaId, "idea-1");
+  const exported = harness.storage.exportAll();
+  assert.deepEqual(JSON.parse(JSON.stringify(exported.guests)), [guest]);
+  assert.deepEqual(JSON.parse(JSON.stringify(exported.guestAssignments)), [assignment]);
 }
 
 function testSongBankBrowserStartupWithLexicalDependencies() {
@@ -1076,6 +1114,7 @@ async function main() {
   await testFailureRollbackRetryAndUnloadGuard();
   await testConflictReloadsAndCancelsStaleQueue();
   await testAtomicScheduleAndImportRoutes();
+  await testGuestDataUsesSharedCanonicalStorage();
   await testSongManagementStorageRoutes();
   await testTop3PrivateDataNeverEntersSharedStorage();
   testSongManagementPageContract();

@@ -31,6 +31,14 @@ from satt.crud import (
     unassign_idea_from_slot,
 )
 from satt.database import get_db
+from satt.guest_contract import GuestContractError
+from satt.guest_crud import (
+    GuestLifecycleError,
+    get_guest_assignments,
+    get_guests,
+    replace_guest_assignments,
+    replace_guests,
+)
 from satt.joke_contract import JokeContractError
 from satt.outline_contract import OutlineContractError, normalize_configured_segments
 from satt.song_contract import SongContractError
@@ -38,7 +46,16 @@ from satt.song_crud import get_songs, replace_songs
 
 router = APIRouter()
 
-_ALLOWED_KEYS = {"config", "ideas", "jokes", "songs", "showSlots", "assignments"}
+_ALLOWED_KEYS = {
+    "config",
+    "ideas",
+    "jokes",
+    "songs",
+    "guests",
+    "guestAssignments",
+    "showSlots",
+    "assignments",
+}
 _CONFIG_SECRET_KEYS = ("claudeApiKey", "openaiApiKey")
 
 
@@ -143,11 +160,23 @@ async def _guard_revision(db: AsyncSession, if_match: str | None) -> None:
 
 
 async def _export_state(db: AsyncSession) -> dict:
-    config, ideas, jokes, songs, show_slots, assignments, revision = (
+    (
+        config,
+        ideas,
+        jokes,
+        songs,
+        guests,
+        guest_assignments,
+        show_slots,
+        assignments,
+        revision,
+    ) = (
         await get_config(db),
         await get_ideas(db),
         await get_jokes(db),
         await get_songs(db),
+        await get_guests(db),
+        await get_guest_assignments(db),
         await get_show_slots(db),
         await get_assignments(db),
         await get_data_revision(db),
@@ -157,6 +186,8 @@ async def _export_state(db: AsyncSession) -> dict:
         "ideas": ideas,
         "jokes": jokes,
         "songs": songs,
+        "guests": guests,
+        "guestAssignments": guest_assignments,
         "showSlots": show_slots,
         "assignments": assignments,
         "revision": revision,
@@ -196,6 +227,10 @@ async def get_data(
         return await get_jokes(db)
     if key == "songs":
         return await get_songs(db)
+    if key == "guests":
+        return await get_guests(db)
+    if key == "guestAssignments":
+        return await get_guest_assignments(db)
     if key == "showSlots":
         return await get_show_slots(db)
     return await get_assignments(db)
@@ -245,6 +280,28 @@ async def put_data(
         except SongContractError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
         saved = await get_songs(db)
+    elif key == "guests":
+        if not isinstance(body, list):
+            raise HTTPException(status_code=422, detail="guests must be an array")
+        try:
+            await replace_guests(db, body)
+        except GuestContractError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except GuestLifecycleError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        saved = await get_guests(db)
+    elif key == "guestAssignments":
+        if not isinstance(body, list):
+            raise HTTPException(
+                status_code=422, detail="guestAssignments must be an array"
+            )
+        try:
+            await replace_guest_assignments(db, body)
+        except GuestContractError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except GuestLifecycleError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        saved = await get_guest_assignments(db)
     elif key == "showSlots":
         if not isinstance(body, list):
             raise HTTPException(status_code=422, detail="showSlots must be an array")
@@ -281,6 +338,8 @@ async def bulk_import(
         "ideas": list,
         "jokes": list,
         "songs": list,
+        "guests": list,
+        "guestAssignments": list,
         "showSlots": list,
         "assignments": dict,
     }
@@ -290,6 +349,9 @@ async def bulk_import(
             raise HTTPException(status_code=422, detail=f"{key} must be an {type_name}")
 
     await _guard_revision(db, if_match)
+    preserved_guest_pairs = {
+        (item["guestId"], item["ideaId"]) for item in (await get_guest_assignments(db))
+    }
     if "config" in body:
         existing = await get_config(db)
         merged = _merge_config_update(
@@ -310,6 +372,13 @@ async def bulk_import(
             await replace_songs(db, body["songs"])
         except SongContractError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
+    if "guests" in body:
+        try:
+            await replace_guests(db, body["guests"])
+        except GuestContractError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except GuestLifecycleError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
     if "showSlots" in body:
         await replace_show_slots(db, body["showSlots"])
     if "assignments" in body:
@@ -317,6 +386,17 @@ async def bulk_import(
             await replace_assignments(db, body["assignments"])
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
+    if "guestAssignments" in body:
+        try:
+            await replace_guest_assignments(
+                db,
+                body["guestAssignments"],
+                preserved_archived_pairs=preserved_guest_pairs,
+            )
+        except GuestContractError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except GuestLifecycleError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
     state = await _export_state(db)
     return _mutation_response(state)
 
@@ -375,6 +455,8 @@ async def delete_one_idea(
             "ideas": state["ideas"],
             "jokes": state["jokes"],
             "songs": state["songs"],
+            "guests": state["guests"],
+            "guestAssignments": state["guestAssignments"],
             "assignments": state["assignments"],
         },
     )

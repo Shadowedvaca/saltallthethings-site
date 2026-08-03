@@ -145,6 +145,8 @@ manually propagated here.
 | `satt.config` | Single-row JSONB blob — AI settings, prompts, YouTube IDs |
 | `satt.ideas` | Processed episode ideas with titles, summary, outline |
 | `satt.jokes` | Joke bank entries |
+| `satt.guests` | Reusable private Guest Bank records |
+| `satt.guest_assignments` | Many-to-many guest-to-idea appearance links |
 | `satt.show_slots` | Weekly recording/release schedule slots |
 | `satt.assignments` | Maps slot_id → idea_id |
 
@@ -173,6 +175,10 @@ manually propagated here.
 | `GET` | `/api/data/:key` | Read one key |
 | `PUT` | `/api/data/:key` | Overwrite one key (full replace) |
 | `PUT` | `/api/import` | Bulk write all keys |
+| `PUT` | `/api/guests/:guestId/assignments/:ideaId` | Idempotently link an active guest to a show idea |
+| `DELETE` | `/api/guests/:guestId/assignments/:ideaId` | Idempotently remove a guest/show link |
+| `PUT` | `/api/guests/:guestId/status` | Archive or restore a guest without deleting history |
+| `DELETE` | `/api/guests/:guestId` | Delete only an unassigned guest |
 | `POST` | `/api/ai/process-idea` | Proxy idea processing to Anthropic/OpenAI |
 | `POST` | `/api/ai/generate-jokes` | Proxy joke generation to Anthropic/OpenAI |
 | `POST` | `/api/auth/invite` | Generate invite code (admin only) |

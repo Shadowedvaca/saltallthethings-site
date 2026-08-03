@@ -12,6 +12,7 @@ from satt.routes.ai import router as ai_router
 from satt.routes.auth import router as auth_router
 from satt.routes.data import router as data_router
 from satt.routes.health import router as health_router
+from satt.routes.guests import router as guests_router
 from satt.routes.postproduction import router as postproduction_router
 from satt.routes.public import router as public_router
 from satt.routes.songs import router as songs_router
@@ -34,6 +35,7 @@ app.add_middleware(
 app.include_router(health_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(data_router, prefix="/api")
+app.include_router(guests_router, prefix="/api")
 app.include_router(songs_router, prefix="/api")
 app.include_router(top3_router, prefix="/api")
 app.include_router(ai_router, prefix="/api")
