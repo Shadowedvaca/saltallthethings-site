@@ -118,6 +118,27 @@ async def test_top3_generation_without_name_accepts_generated_name(client: Async
 
 
 @pytest.mark.asyncio
+async def test_top3_generation_is_read_only_for_the_shared_revision(
+    db_client: AsyncClient,
+):
+    before = await db_client.get("/api/top3/concepts", headers=_headers())
+    assert before.status_code == 200
+    with patch("satt.routes.ai.get_config", new=AsyncMock(return_value=_config())):
+        with patch("satt.routes.ai.call_ai", new=AsyncMock(return_value=_proposal())):
+            generated = await db_client.post(
+                "/api/ai/top3-concept",
+                json={"description": "Rank dungeon snacks."},
+                headers=_headers(),
+            )
+    after = await db_client.get("/api/top3/concepts", headers=_headers())
+
+    assert generated.status_code == 200
+    assert after.status_code == 200
+    assert after.json()["revision"] == before.json()["revision"]
+    assert after.json()["concepts"] == before.json()["concepts"]
+
+
+@pytest.mark.asyncio
 async def test_top3_generation_repairs_once_then_accepts(client: AsyncClient):
     app.dependency_overrides[get_db] = _override_get_db
     mock_call = AsyncMock(

@@ -32,7 +32,7 @@ directory. It may not prune shared Docker state or operate on test or
 production.
 
 The public and local health checks must both report environment `development`,
-version `0.0.6`, and the exact resolved commit. One-time server, DNS, TLS,
+version `0.0.7`, and the exact resolved commit. One-time server, DNS, TLS,
 GitHub environment, and secret provisioning requires explicit authorization.
 The detailed bootstrap, validation, cleanup, and rollback procedure is in
 `docs/development-environment.md`.
