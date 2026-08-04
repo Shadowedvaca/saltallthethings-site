@@ -1,6 +1,7 @@
 """SQLAlchemy ORM models for the SATT platform.
 
-satt schema: users, invite_codes, config, ideas, jokes, songs, show_slots, assignments
+satt schema: users, invite_codes, config, ideas, jokes, songs, guests,
+guest_assignments, show_slots, assignments
 """
 
 from datetime import date, datetime
@@ -40,8 +41,12 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     username: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    is_admin: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="true"
+    )
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )
@@ -143,6 +148,9 @@ class Idea(Base):
     top3_assignment: Mapped[Optional["Top3Assignment"]] = relationship(
         back_populates="idea", uselist=False
     )
+    guest_assignments: Mapped[list["GuestAssignment"]] = relationship(
+        back_populates="idea"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -205,7 +213,9 @@ class Song(Base):
     artist: Mapped[str] = mapped_column(Text, nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     youtube_url: Mapped[str] = mapped_column(Text, nullable=False)
-    private_notes: Mapped[str] = mapped_column(Text, nullable=False, server_default="''")
+    private_notes: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default="''"
+    )
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="'unused'")
     assigned_idea_id: Mapped[Optional[str]] = mapped_column(
         Text, ForeignKey("satt.ideas.id", ondelete="SET NULL")
@@ -221,6 +231,56 @@ class Song(Base):
 
 
 # ---------------------------------------------------------------------------
+# Private reusable Guest Bank
+# ---------------------------------------------------------------------------
+
+
+class Guest(Base):
+    __tablename__ = "guests"
+    __table_args__ = (
+        CheckConstraint("status IN ('active', 'archived')", name="guests_valid_status"),
+        {"schema": "satt"},
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    display_name: Mapped[str] = mapped_column(Text, nullable=False)
+    private_notes: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default="''"
+    )
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="'active'")
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+
+    assignments: Mapped[list["GuestAssignment"]] = relationship(back_populates="guest")
+
+
+class GuestAssignment(Base):
+    __tablename__ = "guest_assignments"
+    __table_args__ = ({"schema": "satt"},)
+
+    guest_id: Mapped[str] = mapped_column(
+        Text,
+        ForeignKey("satt.guests.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    idea_id: Mapped[str] = mapped_column(
+        Text,
+        ForeignKey("satt.ideas.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    assigned_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+
+    guest: Mapped[Guest] = relationship(back_populates="assignments")
+    idea: Mapped[Idea] = relationship(back_populates="guest_assignments")
+
+
+# ---------------------------------------------------------------------------
 # Private Top 3 planning
 # ---------------------------------------------------------------------------
 
@@ -228,8 +288,12 @@ class Song(Base):
 class Top3Concept(Base):
     __tablename__ = "top3_concepts"
     __table_args__ = (
-        CheckConstraint("status IN ('active', 'retired')", name="top3_concepts_valid_status"),
-        CheckConstraint("source IN ('manual', 'ai')", name="top3_concepts_valid_source"),
+        CheckConstraint(
+            "status IN ('active', 'retired')", name="top3_concepts_valid_status"
+        ),
+        CheckConstraint(
+            "source IN ('manual', 'ai')", name="top3_concepts_valid_source"
+        ),
         CheckConstraint(
             "jsonb_typeof(ai_example) = 'array' AND "
             "jsonb_array_length(ai_example) IN (0, 3)",
@@ -248,7 +312,9 @@ class Top3Concept(Base):
     source: Mapped[str] = mapped_column(Text, nullable=False, server_default="'manual'")
     ai_provider: Mapped[Optional[str]] = mapped_column(Text)
     ai_model_id: Mapped[Optional[str]] = mapped_column(Text)
-    ai_generated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
+    ai_generated_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True)
+    )
     created_by_user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("satt.users.id", ondelete="RESTRICT"), nullable=False
     )
@@ -284,7 +350,9 @@ class Top3Assignment(Base):
 
     idea: Mapped[Idea] = relationship(back_populates="top3_assignment")
     concept: Mapped[Top3Concept] = relationship(back_populates="assignments")
-    submissions: Mapped[list["Top3Submission"]] = relationship(back_populates="assignment")
+    submissions: Mapped[list["Top3Submission"]] = relationship(
+        back_populates="assignment"
+    )
 
 
 class Top3Submission(Base):
@@ -391,7 +459,9 @@ class ShowSlot(Base):
     episode_num: Mapped[int] = mapped_column(Integer, nullable=False)
     record_date: Mapped[date] = mapped_column(Date, nullable=False)
     release_date: Mapped[date] = mapped_column(Date, nullable=False)
-    is_rollout: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    is_rollout: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
     release_date_override: Mapped[Optional[date]] = mapped_column(Date)
     production_file_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     asset_inventory: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)

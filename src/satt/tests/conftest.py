@@ -142,6 +142,7 @@ class VersionedAsyncClient(AsyncClient):
         "/api/import",
         "/api/jokes/",
         "/api/songs/",
+        "/api/guests/",
         "/api/top3/",
         "/api/ideas/",
         "/api/schedule/",

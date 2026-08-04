@@ -45,9 +45,7 @@ def test_top3_smoke_checks_response_keys_not_legitimate_concept_prose():
         concept_bank, {"picks", "privateDiscussionNotes"}
     )
     concept_bank["concepts"][0]["submission"] = {"picks": ["A", "B", "C"]}
-    assert _contains_forbidden_key(
-        concept_bank, {"picks", "privateDiscussionNotes"}
-    )
+    assert _contains_forbidden_key(concept_bank, {"picks", "privateDiscussionNotes"})
 
 
 @pytest.mark.parametrize(
@@ -113,15 +111,21 @@ def test_deployment_smoke_exercises_song_lifecycle_without_external_services():
     assert "private_sentinel not in public_episodes.text" in source
     assert "https://example.invalid/not-youtube" in source
     assert '"/songs.html"' in source
+    assert '"/guests.html"' in source
     assert '"/show_management.html"' in source
     assert '"/top3.html"' in source
     assert '"/js/show-song.js"' in source
+    assert '"/js/show-guests.js"' in source
     assert '"/js/episode-overview.js"' in source
     assert '"/js/songs.js"' in source
+    assert '"/js/guests.js"' in source
     assert '"/js/top3-bank.js"' in source
     assert '"/js/top3-episode.js"' in source
     assert '"validateSongInput" in response.text' in source
+    assert '"validateGuestInput" in response.text' in source
     assert '"renderPreparation" in response.text' in source
+    assert '"GuestPreparation" in response.text' in source
+    assert '"js/show-guests.js" in response.text' in source
     assert '"publicSongBlock" in response.text' in source
     assert '"publicTop3Block" in response.text' in source
     assert '"clipboard.writeText" in response.text' in source
@@ -166,3 +170,11 @@ def test_deployment_smoke_exercises_song_lifecycle_without_external_services():
     assert "Top 3 AI missing credential" in source
     assert '"claudeApiKey" not in config' in source
     assert '"openaiApiKey" not in config' in source
+    assert "/api/data/guests" in source
+    assert "/api/guests/{guest_id}/assignments/{idea_id}" in source
+    assert "repeated Guest Bank assignment changed the data revision" in source
+    assert "reusable guest appearance count is incorrect" in source
+    assert "unscheduled guest smoke appearances fabricated a date" in source
+    assert "archived Guest Bank assignment rejection" in source
+    assert "private Guest Bank notes appeared in a public response" in source
+    assert "idea deletion retained Guest Bank assignment links" in source

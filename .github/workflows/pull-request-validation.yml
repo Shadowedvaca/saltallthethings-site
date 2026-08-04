@@ -68,8 +68,10 @@ jobs:
             node --check "$file"
           done
 
-      - name: Test browser storage and credential-status contracts
-        run: node scripts/test_frontend_contract.js
+      - name: Test browser storage, Guest Bank, and credential-status contracts
+        run: |
+          node scripts/test_frontend_contract.js
+          node scripts/test_guest_bank_frontend.js
 
   container:
     name: Production image and fresh-database health
@@ -117,7 +119,7 @@ jobs:
             docker compose -f compose.ci.yaml exec -T database \
               sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from satt.alembic_version"'
           )"
-          test "$revision" = "0008"
+          test "$revision" = "0009"
 
       - name: Exercise isolated migration rollback and recovery
         shell: bash
@@ -127,12 +129,12 @@ jobs:
           set -euo pipefail
           docker compose -f compose.ci.yaml stop app
           docker compose -f compose.ci.yaml run --rm --no-deps \
-            app alembic downgrade 0007
+            app alembic downgrade 0008
           revision="$(
             docker compose -f compose.ci.yaml exec -T database \
               sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from satt.alembic_version"'
           )"
-          test "$revision" = "0007"
+          test "$revision" = "0008"
 
           docker compose -f compose.ci.yaml run --rm --no-deps \
             app alembic upgrade head
@@ -140,7 +142,7 @@ jobs:
             docker compose -f compose.ci.yaml exec -T database \
               sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from satt.alembic_version"'
           )"
-          test "$revision" = "0008"
+          test "$revision" = "0009"
           docker compose -f compose.ci.yaml up -d --wait app
           docker compose -f compose.ci.yaml exec -T app python -c \
             "import json, os, sys, urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8200/api/health', timeout=2)); assert data['status']=='ok'; assert data['environment']=='test'; assert data['version']==sys.argv[1]; assert data['commit']==os.environ['COMMIT_SHA']" \

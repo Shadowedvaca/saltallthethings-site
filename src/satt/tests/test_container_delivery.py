@@ -13,9 +13,7 @@ TEST_WORKFLOW_PATH = REPOSITORY_ROOT / ".github/workflows/deploy-test.yml"
 RELEASE_WORKFLOW_PATH = REPOSITORY_ROOT / ".github/workflows/publish-release.yml"
 PROD_WORKFLOW_PATH = REPOSITORY_ROOT / ".github/workflows/deploy-prod.yml"
 PROD_SCRIPT_PATH = REPOSITORY_ROOT / "scripts/production_deploy.sh"
-PROD_NIGHTLY_BACKUP_PATH = (
-    REPOSITORY_ROOT / "scripts/production_nightly_backup.sh"
-)
+PROD_NIGHTLY_BACKUP_PATH = REPOSITORY_ROOT / "scripts/production_nightly_backup.sh"
 
 
 def test_container_context_excludes_sensitive_and_unrelated_files():
@@ -217,10 +215,10 @@ def test_pull_request_workflow_has_minimal_permissions_and_pinned_actions():
     assert "python scripts/validate_release.py" in source
     assert "Validate current release contract without publishing" in source
     assert "Exercise isolated migration rollback and recovery" in source
-    assert "app alembic downgrade 0007" in source
-    assert 'test "$revision" = "0007"' in source
-    assert "app alembic upgrade head" in source
+    assert "app alembic downgrade 0008" in source
     assert 'test "$revision" = "0008"' in source
+    assert "app alembic upgrade head" in source
+    assert 'test "$revision" = "0009"' in source
     assert "docker compose -f compose.ci.yaml up -d --wait app" in source
     assert "Exercise isolated production backup restore" in source
     assert "pg_dump --format=custom --schema=satt" in source
@@ -349,6 +347,7 @@ def test_production_deploy_is_tag_only_immutable_and_recoverable():
     nightly_backup = PROD_NIGHTLY_BACKUP_PATH.read_text(encoding="utf-8")
     combined = source + deploy_script + nightly_backup
     assert "songs.html" in deploy_script
+    assert "guests.html" in deploy_script
     assert "top3.html" in deploy_script
     workflow = yaml.safe_load(source)
 
@@ -443,6 +442,7 @@ def test_production_deploy_is_tag_only_immutable_and_recoverable():
     static = deploy_script.index('mv "$candidate_static" "$repository/static"')
     public = deploy_script.index("https://saltallthethings.com/api/health")
     assert preflight < build < stop < final < restore < start < static < public
+
 
 def test_test_deploy_uses_only_the_approved_main_commit_and_isolated_test():
     source = TEST_WORKFLOW_PATH.read_text(encoding="utf-8")

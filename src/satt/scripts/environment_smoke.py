@@ -13,7 +13,15 @@ from sqlalchemy import delete
 
 from satt.config import get_settings
 from satt.database import get_session_factory
-from satt.models import Idea, InviteCode, Top3Assignment, Top3Concept, User
+from satt.models import (
+    Guest,
+    GuestAssignment,
+    Idea,
+    InviteCode,
+    Top3Assignment,
+    Top3Concept,
+    User,
+)
 
 _ALLOWED_ENVIRONMENTS = {"development", "test"}
 _PRODUCTION_HOSTS = {"saltallthethings.com", "www.saltallthethings.com"}
@@ -87,9 +95,7 @@ async def _cleanup_identity(username: str, invite_code: str) -> None:
     factory = get_session_factory()
     async with factory() as session:
         await session.execute(delete(User).where(User.username == username))
-        await session.execute(
-            delete(InviteCode).where(InviteCode.code == invite_code)
-        )
+        await session.execute(delete(InviteCode).where(InviteCode.code == invite_code))
         await session.commit()
 
 
@@ -104,6 +110,20 @@ async def _cleanup_top3_records(idea_id: str, concept_ids: tuple[str, str]) -> N
             delete(Top3Concept).where(Top3Concept.id.in_(concept_ids))
         )
         await session.execute(delete(Idea).where(Idea.id == idea_id))
+        await session.commit()
+
+
+async def _cleanup_guest_records(
+    guest_ids: tuple[str, ...], idea_ids: tuple[str, ...]
+) -> None:
+    """Remove only uniquely named Guest Bank smoke records."""
+    factory = get_session_factory()
+    async with factory() as session:
+        await session.execute(
+            delete(GuestAssignment).where(GuestAssignment.guest_id.in_(guest_ids))
+        )
+        await session.execute(delete(Guest).where(Guest.id.in_(guest_ids)))
+        await session.execute(delete(Idea).where(Idea.id.in_(idea_ids)))
         await session.commit()
 
 
@@ -127,7 +147,143 @@ async def _latest_state(client: httpx.AsyncClient, token: str) -> dict:
     state = response.json()
     _require(isinstance(state.get("revision"), int), "export returned no data revision")
     _require(isinstance(state.get("songs"), list), "export returned no song array")
+    _require(isinstance(state.get("guests"), list), "export returned no guest array")
+    _require(
+        isinstance(state.get("guestAssignments"), list),
+        "export returned no guest assignment array",
+    )
     return state
+
+
+async def _exercise_guest_bank(client: httpx.AsyncClient, token: str) -> None:
+    """Exercise reusable guest links, lifecycle, privacy, and cleanup."""
+    suffix = secrets.token_hex(8)
+    guest_ids = (
+        f"deploy-smoke-guest-a-{suffix}",
+        f"deploy-smoke-guest-b-{suffix}",
+    )
+    idea_ids = (
+        f"deploy-smoke-guest-idea-a-{suffix}",
+        f"deploy-smoke-guest-idea-b-{suffix}",
+        f"deploy-smoke-guest-idea-c-{suffix}",
+    )
+    private_sentinel = f"private-guest-smoke-{suffix}"
+    try:
+        state = await _latest_state(client, token)
+        ideas = [
+            {
+                "id": idea_id,
+                "titles": [f"Guest smoke {index}"],
+                "selectedTitle": f"Guest smoke {index}",
+                "summary": "Temporary isolated Guest Bank smoke record",
+                "outline": [],
+                "status": "processed",
+            }
+            for index, idea_id in enumerate(idea_ids, start=1)
+        ]
+        response = await client.put(
+            "/api/data/ideas",
+            json=[*state["ideas"], *ideas],
+            headers=_headers(token, state["revision"]),
+        )
+        _expect_status(response, 200, "Guest Bank smoke ideas")
+        state = response.json()["state"]
+        guests = [
+            {
+                "id": guest_ids[0],
+                "displayName": "Deployment Guest A",
+                "privateNotes": private_sentinel,
+                "status": "active",
+            },
+            {
+                "id": guest_ids[1],
+                "displayName": "Deployment Guest B",
+                "privateNotes": "secondary private guest smoke record",
+                "status": "active",
+            },
+        ]
+        response = await client.put(
+            "/api/data/guests",
+            json=[*state["guests"], *guests],
+            headers=_headers(token, state["revision"]),
+        )
+        _expect_status(response, 200, "Guest Bank smoke guests")
+        state = response.json()["state"]
+
+        for guest_id, idea_id in (
+            (guest_ids[0], idea_ids[0]),
+            (guest_ids[0], idea_ids[1]),
+            (guest_ids[1], idea_ids[0]),
+        ):
+            response = await client.put(
+                f"/api/guests/{guest_id}/assignments/{idea_id}",
+                headers=_headers(token, state["revision"]),
+            )
+            _expect_status(response, 200, "Guest Bank smoke assignment")
+            state = response.json()["state"]
+
+        repeated_revision = state["revision"]
+        repeated = await client.put(
+            f"/api/guests/{guest_ids[0]}/assignments/{idea_ids[0]}",
+            headers=_headers(token, repeated_revision),
+        )
+        _expect_status(repeated, 200, "idempotent Guest Bank assignment")
+        _require(
+            repeated.json()["revision"] == repeated_revision,
+            "repeated Guest Bank assignment changed the data revision",
+        )
+        state = repeated.json()["state"]
+        by_id = {guest["id"]: guest for guest in state["guests"]}
+        _require(
+            by_id[guest_ids[0]]["totalAppearances"] == 2,
+            "reusable guest appearance count is incorrect",
+        )
+        _require(
+            by_id[guest_ids[1]]["totalAppearances"] == 1,
+            "multi-guest show appearance count is incorrect",
+        )
+        _require(
+            by_id[guest_ids[0]]["firstAppearance"] is None
+            and by_id[guest_ids[0]]["mostRecentAppearance"] is None,
+            "unscheduled guest smoke appearances fabricated a date",
+        )
+
+        archived = await client.put(
+            f"/api/guests/{guest_ids[0]}/status",
+            json={"status": "archived"},
+            headers=_headers(token, state["revision"]),
+        )
+        _expect_status(archived, 200, "archive Guest Bank smoke guest")
+        archived_state = archived.json()["state"]
+        rejected = await client.put(
+            f"/api/guests/{guest_ids[0]}/assignments/{idea_ids[2]}",
+            headers=_headers(token, archived_state["revision"]),
+        )
+        _expect_status(rejected, 409, "archived Guest Bank assignment rejection")
+
+        for path in ("/public/episodes", "/public/homepage"):
+            public_response = await client.get(path)
+            _expect_status(public_response, 200, f"Guest Bank privacy route {path}")
+            _require(
+                private_sentinel not in public_response.text,
+                "private Guest Bank notes appeared in a public response",
+            )
+
+        latest = await _latest_state(client, token)
+        deleted = await client.delete(
+            f"/api/ideas/{idea_ids[0]}",
+            headers=_headers(token, latest["revision"]),
+        )
+        _expect_status(deleted, 200, "Guest Bank idea cascade")
+        _require(
+            all(
+                assignment["ideaId"] != idea_ids[0]
+                for assignment in deleted.json()["state"]["guestAssignments"]
+            ),
+            "idea deletion retained Guest Bank assignment links",
+        )
+    finally:
+        await _cleanup_guest_records(guest_ids, idea_ids)
 
 
 async def _cleanup_song_records(
@@ -293,7 +449,9 @@ async def _exercise_song_bank(client: httpx.AsyncClient, token: str) -> None:
         )
         _expect_status(retired, 200, "Song Bank retirement")
         state = retired.json()["state"]
-        retired_song = next(song for song in state["songs"] if song["id"] == song_ids[1])
+        retired_song = next(
+            song for song in state["songs"] if song["id"] == song_ids[1]
+        )
         _require(retired_song["status"] == "retired", "song did not retire")
         _require(retired_song["assignedIdeaId"] is None, "retired song stayed assigned")
 
@@ -400,9 +558,7 @@ async def _exercise_top3(
         )
         _expect_status(assigned, 200, "Top 3 assignment")
         revision = assigned.json()["revision"]
-        bank = await client.get(
-            "/api/top3/concepts", headers=_headers(owner_token)
-        )
+        bank = await client.get("/api/top3/concepts", headers=_headers(owner_token))
         _expect_status(bank, 200, "Top 3 Bank assignment metadata")
         first_concept = next(
             item for item in bank.json()["concepts"] if item["id"] == concept_ids[0]
@@ -456,8 +612,12 @@ async def _exercise_top3(
             f"/api/top3/episodes/{idea_id}", headers=_headers(viewer_token)
         )
         _expect_status(redacted, 200, "Top 3 redacted viewer read")
-        _require(private_pick not in redacted.text, "another user received a private pick")
-        _require(private_notes not in redacted.text, "another user received private notes")
+        _require(
+            private_pick not in redacted.text, "another user received a private pick"
+        )
+        _require(
+            private_notes not in redacted.text, "another user received private notes"
+        )
         contributors = redacted.json()["assignment"]["contributors"]
         _require(
             any(item["complete"] and "picks" not in item for item in contributors),
@@ -591,7 +751,9 @@ async def _exercise_top3(
         result_contributors = top3_result.get("contributors") or []
         _require(
             len(result_contributors) == 2
-            and all(set(item) == {"displayName", "picks"} for item in result_contributors)
+            and all(
+                set(item) == {"displayName", "picks"} for item in result_contributors
+            )
             and all(len(item["picks"]) == 3 for item in result_contributors),
             "Top 3 Spotify result was not the narrow exact-three contributor contract",
         )
@@ -707,8 +869,12 @@ async def _exercise_top3(
 
         exported = await client.get("/api/export", headers=_headers(viewer_token))
         _expect_status(exported, 200, "Top 3 leakage export")
-        _require(private_pick not in exported.text, "private Top 3 pick leaked to export")
-        _require(private_notes not in exported.text, "private Top 3 notes leaked to export")
+        _require(
+            private_pick not in exported.text, "private Top 3 pick leaked to export"
+        )
+        _require(
+            private_notes not in exported.text, "private Top 3 notes leaked to export"
+        )
         _require(
             not any(key.lower().startswith("top3") for key in exported.json()),
             "general export unexpectedly contains Top 3 data",
@@ -726,9 +892,7 @@ async def _exercise_top3(
         )
         revision = replaced.json()["revision"]
 
-        bank = await client.get(
-            "/api/top3/concepts", headers=_headers(owner_token)
-        )
+        bank = await client.get("/api/top3/concepts", headers=_headers(owner_token))
         _expect_status(bank, 200, "reloaded Top 3 Bank")
         first_concept = next(
             item for item in bank.json()["concepts"] if item["id"] == concept_ids[0]
@@ -776,15 +940,10 @@ async def _exercise_top3(
             headers=_headers(owner_token, restored.json()["revision"]),
         )
         _expect_status(deleted, 200, "Top 3 Bank deletion")
-        reloaded = await client.get(
-            "/api/top3/concepts", headers=_headers(owner_token)
-        )
+        reloaded = await client.get("/api/top3/concepts", headers=_headers(owner_token))
         _expect_status(reloaded, 200, "Top 3 Bank post-delete reload")
         _require(
-            all(
-                item["id"] != concept_ids[0]
-                for item in reloaded.json()["concepts"]
-            ),
+            all(item["id"] != concept_ids[0] for item in reloaded.json()["concepts"]),
             "deleted Top 3 concept survived reload",
         )
         removed = await client.delete(
@@ -870,9 +1029,7 @@ async def run_smoke(
     password = secrets.token_urlsafe(24)
     viewer_password = secrets.token_urlsafe(24)
     invite_code = "".join(secrets.choice(_INVITE_CHARSET) for _ in range(8))
-    viewer_invite_code = "".join(
-        secrets.choice(_INVITE_CHARSET) for _ in range(8)
-    )
+    viewer_invite_code = "".join(secrets.choice(_INVITE_CHARSET) for _ in range(8))
 
     await _seed_invite(invite_code)
     await _seed_invite(viewer_invite_code)
@@ -900,10 +1057,13 @@ async def run_smoke(
                 "/register.html",
                 "/show_management.html",
                 "/songs.html",
+                "/guests.html",
                 "/top3.html",
                 "/js/show-song.js",
+                "/js/show-guests.js",
                 "/js/episode-overview.js",
                 "/js/songs.js",
+                "/js/guests.js",
                 "/js/top3-bank.js",
                 "/js/top3-episode.js",
                 "/public/homepage",
@@ -915,12 +1075,20 @@ async def run_smoke(
                         "Song Bank" in response.text and "js/songs.js" in response.text,
                         "deployed Song Bank page is incomplete",
                     )
+                elif path == "/guests.html":
+                    _require(
+                        "Guest Bank" in response.text
+                        and "js/guests.js" in response.text
+                        and "Filter guests by status" in response.text,
+                        "deployed Guest Bank page is incomplete",
+                    )
                 elif path == "/show_management.html":
                     _require(
                         "js/top3-episode.js" in response.text
+                        and "js/show-guests.js" in response.text
                         and "Top3EpisodePlanning.render" in response.text
                         and "Top3EpisodePlanning.summaryMarkup" in response.text,
-                        "deployed Show Management Top 3 controls are incomplete",
+                        "deployed Show Management planning controls are incomplete",
                     )
                 elif path == "/top3.html":
                     _require(
@@ -950,10 +1118,24 @@ async def run_smoke(
                         "validateSongInput" in response.text,
                         "deployed Song Bank script is incomplete",
                     )
+                elif path == "/js/guests.js":
+                    _require(
+                        "guestCardMarkup" in response.text
+                        and "validateGuestInput" in response.text
+                        and "appearanceHistory" in response.text,
+                        "deployed Guest Bank script is incomplete",
+                    )
                 elif path == "/js/show-song.js":
                     _require(
                         "renderPreparation" in response.text,
                         "deployed episode Song preparation script is incomplete",
+                    )
+                elif path == "/js/show-guests.js":
+                    _require(
+                        "GuestPreparation" in response.text
+                        and "renderPicker" in response.text
+                        and "renderPreparation" in response.text,
+                        "deployed episode Guest preparation script is incomplete",
                     )
                 elif path == "/js/episode-overview.js":
                     _require(
@@ -998,10 +1180,9 @@ async def run_smoke(
                 headers={"Authorization": f"Bearer {token}"},
             )
             _expect_status(authenticated_export, 200, "authenticated export")
-            await _exercise_top3_ai_boundary(
-                client, token, authenticated_export.json()
-            )
+            await _exercise_top3_ai_boundary(client, token, authenticated_export.json())
             await _exercise_song_bank(client, token)
+            await _exercise_guest_bank(client, token)
             await _exercise_top3(client, token, viewer_token)
 
             for attempt in (1, 2):
