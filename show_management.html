@@ -669,7 +669,7 @@
           + '</div>';
       }
 
-      return '<div class="idea-list-card' + (autoExpand ? ' expanded' : '') + '" id="idea-' + idea.id + '" onclick="toggleIdeaExpand(\'' + idea.id + '\')">'
+      return '<div class="idea-list-card' + (autoExpand ? ' expanded' : '') + '" id="idea-' + idea.id + '" onclick="if (!event.target.closest(\'[data-guest-action]\')) toggleIdeaExpand(\'' + idea.id + '\')">'
         + '<div class="idea-header">'
         + '<div style="flex:1;">'
         + '<div class="flex items-center gap-sm mb-sm">'

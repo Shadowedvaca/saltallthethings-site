@@ -67,7 +67,7 @@
       }).join('') + '</div>'
       : '<p class="text-sm text-muted">No guests assigned to this show.</p>';
     if (available.length) {
-      html += '<details class="guest-add" onclick="event.stopPropagation()"><summary>Add guest</summary><div class="guest-choice-list">'
+      html += '<details class="guest-add"><summary onclick="event.stopPropagation()">Add guest</summary><div class="guest-choice-list">'
         + available.map(function(guest) { return choiceMarkup(guest, ideaId); }).join('')
         + '</div></details>';
     } else {

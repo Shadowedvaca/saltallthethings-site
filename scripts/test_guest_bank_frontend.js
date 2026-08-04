@@ -217,6 +217,8 @@ function testReusableShowAssignmentRendering() {
   assert.match(picker, /data-guest-action="assign"[^>]*data-guest-id="active-a"/);
   assert.doesNotMatch(picker, /data-guest-action="assign"[^>]*data-guest-id="archived"/);
   assert.doesNotMatch(picker, /Beta <notes>/);
+  assert.match(picker, /<details class="guest-add"><summary onclick="event\.stopPropagation\(\)">Add guest<\/summary>/);
+  assert.doesNotMatch(picker, /<details class="guest-add" onclick="event\.stopPropagation\(\)">/);
 
   const summary = GuestPreparation.renderSummary("idea-one", guests, assignments);
   assert.match(summary, /Archived <em>\(archived\)<\/em>/);
@@ -242,6 +244,7 @@ function testShowManagementGuestContract() {
   assert.match(page, /missing or archived and cannot be newly assigned/);
   assert.match(page, /failed or conflicted/);
   assert.match(page, /data-guest-action/);
+  assert.match(page, /if \(!event\.target\.closest\(\\'\[data-guest-action\]\\'\)\) toggleIdeaExpand/);
   assert.doesNotMatch(overview, /guest|Guest Bank|private host notes/i);
 }
 
