@@ -22,6 +22,7 @@ ENVIRONMENT_SENSITIVE_BROWSER_FILES = (
     "js/postproduction.js",
     "js/site-config.js",
     "js/show-song.js",
+    "js/show-guests.js",
     "js/songs.js",
     "js/top3-bank.js",
     "js/top3-episode.js",
@@ -55,6 +56,9 @@ def test_browser_api_calls_use_same_origin_paths():
     )
     assert "root.fetch('/api' + path" in (
         REPOSITORY_ROOT / "js/top3-bank.js"
+    ).read_text(encoding="utf-8")
+    assert "GuestPreparation.renderPicker" in (
+        REPOSITORY_ROOT / "show_management.html"
     ).read_text(encoding="utf-8")
     assert "root.fetch('/api' + path" in (
         REPOSITORY_ROOT / "js/top3-episode.js"

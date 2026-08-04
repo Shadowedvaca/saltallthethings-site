@@ -49,7 +49,28 @@ is labeled explicitly and never supplies a false date. Archived cards remain
 searchable and retain their complete history while being visually distinct.
 Deletion requires confirmation and is blocked with actionable guidance until
 all show assignments have been removed. Assignment controls themselves remain
-in the separate show-management delivery child.
+in Show Management rather than the Guest Bank.
+
+## Show assignment and authenticated preparation
+
+Expanded Show Management cards allow zero, one, or multiple active guests to
+be added independently. A guest remains available for other shows after
+assignment; only an existing link on the current show is excluded from its
+picker. Add and remove operations use the shared revision guard and dedicated
+idempotent routes, then apply the canonical server state so Guest Bank totals
+and history refresh after assignment, scheduling, rescheduling, or deletion.
+
+Assigned guests are ordered by display name and stable ID. Their names appear
+on collapsed planning cards, and expanded planning plus the full-screen
+authenticated show display include escaped private host notes. An archived
+guest remains visible on every existing show with a clear archived label, but
+is not offered for a new assignment until restored. Removing a link never
+deletes or retires the reusable guest record. Deleting an idea removes only its
+guest links through the database cascade.
+
+Guest data is intentionally excluded from public episode/homepage responses
+and from the Spotify/public overview composer. Adding public guest credits or
+metadata requires a separately approved delivery child.
 
 ## Import, privacy, and rollback
 

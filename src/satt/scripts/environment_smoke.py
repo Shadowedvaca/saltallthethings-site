@@ -1060,6 +1060,7 @@ async def run_smoke(
                 "/guests.html",
                 "/top3.html",
                 "/js/show-song.js",
+                "/js/show-guests.js",
                 "/js/episode-overview.js",
                 "/js/songs.js",
                 "/js/guests.js",
@@ -1084,9 +1085,10 @@ async def run_smoke(
                 elif path == "/show_management.html":
                     _require(
                         "js/top3-episode.js" in response.text
+                        and "js/show-guests.js" in response.text
                         and "Top3EpisodePlanning.render" in response.text
                         and "Top3EpisodePlanning.summaryMarkup" in response.text,
-                        "deployed Show Management Top 3 controls are incomplete",
+                        "deployed Show Management planning controls are incomplete",
                     )
                 elif path == "/top3.html":
                     _require(
@@ -1127,6 +1129,13 @@ async def run_smoke(
                     _require(
                         "renderPreparation" in response.text,
                         "deployed episode Song preparation script is incomplete",
+                    )
+                elif path == "/js/show-guests.js":
+                    _require(
+                        "GuestPreparation" in response.text
+                        and "renderPicker" in response.text
+                        and "renderPreparation" in response.text,
+                        "deployed episode Guest preparation script is incomplete",
                     )
                 elif path == "/js/episode-overview.js":
                     _require(

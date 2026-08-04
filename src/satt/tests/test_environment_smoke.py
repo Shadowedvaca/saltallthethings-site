@@ -115,6 +115,7 @@ def test_deployment_smoke_exercises_song_lifecycle_without_external_services():
     assert '"/show_management.html"' in source
     assert '"/top3.html"' in source
     assert '"/js/show-song.js"' in source
+    assert '"/js/show-guests.js"' in source
     assert '"/js/episode-overview.js"' in source
     assert '"/js/songs.js"' in source
     assert '"/js/guests.js"' in source
@@ -123,6 +124,8 @@ def test_deployment_smoke_exercises_song_lifecycle_without_external_services():
     assert '"validateSongInput" in response.text' in source
     assert '"validateGuestInput" in response.text' in source
     assert '"renderPreparation" in response.text' in source
+    assert '"GuestPreparation" in response.text' in source
+    assert '"js/show-guests.js" in response.text' in source
     assert '"publicSongBlock" in response.text' in source
     assert '"publicTop3Block" in response.text' in source
     assert '"clipboard.writeText" in response.text' in source

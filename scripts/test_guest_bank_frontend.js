@@ -3,6 +3,7 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const GuestBank = require("../js/guests.js");
+const GuestPreparation = require("../js/show-guests.js");
 
 function guest(overrides = {}) {
   return Object.assign({
@@ -188,11 +189,69 @@ async function testLifecycleFeedbackAndStorageCalls() {
   }
 }
 
+function testReusableShowAssignmentRendering() {
+  const guests = [
+    guest({ id: "active-b", displayName: "Beta", privateNotes: "Beta <notes>" }),
+    guest({ id: "archived", displayName: "Archived", privateNotes: "Historic & private", status: "archived" }),
+    guest({ id: "active-a", displayName: "Alpha", privateNotes: "Alpha notes" }),
+  ];
+  const assignments = [
+    { guestId: "active-b", ideaId: "idea-one" },
+    { guestId: "archived", ideaId: "idea-one" },
+    { guestId: "active-a", ideaId: "idea-two" },
+  ];
+  assert.deepEqual(
+    GuestPreparation.guestsForIdea(guests, assignments, "idea-one").map((item) => item.id),
+    ["archived", "active-b"],
+  );
+  assert.deepEqual(
+    GuestPreparation.availableGuests(guests, assignments, "idea-one").map((item) => item.id),
+    ["active-a"],
+  );
+
+  const picker = GuestPreparation.renderPicker("idea-one", guests, assignments);
+  assert.match(picker, /Archived/);
+  assert.match(picker, /Historic &amp; private/);
+  assert.match(picker, /Beta &lt;notes&gt;/);
+  assert.match(picker, /data-guest-action="remove"/);
+  assert.match(picker, /data-guest-action="assign"[^>]*data-guest-id="active-a"/);
+  assert.doesNotMatch(picker, /data-guest-action="assign"[^>]*data-guest-id="archived"/);
+  assert.doesNotMatch(picker, /Beta <notes>/);
+
+  const summary = GuestPreparation.renderSummary("idea-one", guests, assignments);
+  assert.match(summary, /Archived <em>\(archived\)<\/em>/);
+  assert.match(summary, /Beta/);
+  const fullShow = GuestPreparation.renderPreparation(
+    GuestPreparation.guestsForIdea(guests, assignments, "idea-one"),
+  );
+  assert.match(fullShow, /show-display-guests/);
+  assert.match(fullShow, /Private host notes/);
+  assert.match(fullShow, /Historic &amp; private/);
+  assert.doesNotMatch(fullShow, /Historic & private/);
+}
+
+function testShowManagementGuestContract() {
+  const page = fs.readFileSync("show_management.html", "utf8");
+  const overview = fs.readFileSync("js/episode-overview.js", "utf8");
+  assert.match(page, /js\/show-guests\.js/);
+  assert.match(page, /GuestPreparation\.renderSummary/);
+  assert.match(page, /GuestPreparation\.renderPicker/);
+  assert.match(page, /GuestPreparation\.renderPreparation/);
+  assert.match(page, /Storage\.assignGuestToIdea/);
+  assert.match(page, /Storage\.unassignGuestFromIdea/);
+  assert.match(page, /missing or archived and cannot be newly assigned/);
+  assert.match(page, /failed or conflicted/);
+  assert.match(page, /data-guest-action/);
+  assert.doesNotMatch(overview, /guest|Guest Bank|private host notes/i);
+}
+
 async function main() {
   testValidationAndSearch();
   testEscapedStatisticsAndHistoryMarkup();
   testAuthenticatedResponsivePageContract();
   await testLifecycleFeedbackAndStorageCalls();
+  testReusableShowAssignmentRendering();
+  testShowManagementGuestContract();
 }
 
 main().catch((error) => {

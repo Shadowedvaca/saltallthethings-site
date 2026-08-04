@@ -447,6 +447,41 @@ async def test_stale_guest_write_cannot_replace_newer_data(db_client: AsyncClien
 
 
 @pytest.mark.asyncio
+async def test_stale_assignment_write_cannot_overwrite_newer_show_guests(
+    db_client: AsyncClient,
+):
+    await db_client.put(
+        "/api/data/ideas", json=[_idea("stale-assignment-idea")], headers=_headers()
+    )
+    await db_client.put(
+        "/api/data/guests",
+        json=[
+            _guest("stale-assignment-one", "Guest One"),
+            _guest("stale-assignment-two", "Guest Two"),
+        ],
+        headers=_headers(),
+    )
+    revision = (await db_client.get("/api/export", headers=_headers())).json()[
+        "revision"
+    ]
+    fresh = await db_client.put(
+        "/api/guests/stale-assignment-one/assignments/stale-assignment-idea",
+        headers=_headers(**{"If-Match": str(revision)}),
+    )
+    stale = await db_client.put(
+        "/api/guests/stale-assignment-two/assignments/stale-assignment-idea",
+        headers=_headers(**{"If-Match": str(revision)}),
+    )
+    assert fresh.status_code == 200
+    assert stale.status_code == 409
+    latest = (await db_client.get("/api/export", headers=_headers())).json()
+    assert [
+        (assignment["guestId"], assignment["ideaId"])
+        for assignment in latest["guestAssignments"]
+    ] == [("stale-assignment-one", "stale-assignment-idea")]
+
+
+@pytest.mark.asyncio
 async def test_database_primary_key_rejects_duplicate_guest_idea_pair(
     db_session: AsyncSession,
 ):
