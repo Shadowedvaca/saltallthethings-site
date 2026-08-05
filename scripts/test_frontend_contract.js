@@ -205,6 +205,25 @@ function checkInlineScripts(filename, html) {
   }
 }
 
+function testHomepageHeroSpacingContract(homepage) {
+  const heroRule = homepage.match(/\.hero\s*\{([^}]+)\}/);
+  const scrollHintRule = homepage.match(/\.scroll-hint\s*\{([^}]+)\}/);
+
+  assert.ok(heroRule, "homepage defines the hero layout");
+  assert.ok(scrollHintRule, "homepage defines the Explore scroll hint");
+  assert.match(heroRule[1], /display:\s*flex/);
+  assert.match(heroRule[1], /flex-direction:\s*column/);
+  assert.match(heroRule[1], /gap:\s*clamp\(/);
+  assert.match(scrollHintRule[1], /position:\s*relative/);
+  assert.match(scrollHintRule[1], /bottom:\s*auto/);
+  assert.match(scrollHintRule[1], /flex:\s*0\s+0\s+auto/);
+  assert.doesNotMatch(scrollHintRule[1], /position:\s*absolute/);
+  assert.match(
+    homepage,
+    /<p class="hero-subtitle">A little salt for your day<\/p>[\s\S]*<div class="scroll-hint">[\s\S]*<span>Explore<\/span>/,
+  );
+}
+
 async function testSuccessfulCanonicalSave() {
   const requests = [];
   const harness = loadStorage(async (url, options = {}) => {
@@ -1233,6 +1252,7 @@ async function testTop3EpisodeBrowserActionsUseViewerScopedApi() {
 }
 
 async function main() {
+  const homepage = fs.readFileSync("index.html", "utf8");
   const showManagement = fs.readFileSync("show_management.html", "utf8");
   const jokesPage = fs.readFileSync("jokes.html", "utf8");
   const songsPage = fs.readFileSync("songs.html", "utf8");
@@ -1241,6 +1261,7 @@ async function main() {
   checkInlineScripts("jokes.html", jokesPage);
   checkInlineScripts("songs.html", songsPage);
   checkInlineScripts("config.html", configPage);
+  testHomepageHeroSpacingContract(homepage);
   for (const page of [showManagement, jokesPage, songsPage, configPage, fs.readFileSync("postproduction.html", "utf8")]) {
     assert.match(page, /href="songs\.html"/);
   }
