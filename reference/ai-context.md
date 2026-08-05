@@ -9,6 +9,29 @@ process wording below conflicts with those files, those two standards win.
 This file is the primary context document for Claude Code sessions on this project.
 Read it fully before doing any work.
 
+## Workspace location and isolation
+
+- Perform repository work in the primary project checkout supplied by the
+  workspace context. For this repository, that is the checkout rooted at
+  `H:\Development\saltallthethings-site`.
+- Do not create a clone, linked Git worktree, implementation checkout, or
+  deliverable under `C:\tmp`, another system temporary directory, or any path
+  outside the supplied project checkout without the user's explicit approval
+  for that exact location.
+- An existing dirty working tree is not authorization to relocate the work.
+  Preserve unrelated changes, verify whether the required branch operation can
+  carry them safely, and continue in the primary checkout when it can. If a
+  conflicting local change prevents safe use of that checkout, stop and ask the
+  user how they want the workspace isolated before creating another worktree.
+- Temporary test output may use the operating system's temporary directory when
+  a tool requires it, but source code, release notes, commits, and other durable
+  delivery artifacts must remain in the primary project checkout. Remove scoped
+  temporary output after use when it is safe to do so.
+- Before handing off work, run `git worktree list` and inspect task-named
+  temporary artifacts. Confirm that the active branch and every durable change
+  are in the primary project checkout, and report any older unrelated worktree
+  or recovery artifact rather than moving or deleting it without approval.
+
 ---
 
 ## Project Overview
