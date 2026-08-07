@@ -358,7 +358,7 @@ def test_production_deploy_is_tag_only_immutable_and_recoverable():
 
     deploy = workflow["jobs"]["deploy"]
     assert deploy["environment"] == "production"
-    assert deploy["permissions"] == {"contents": "read"}
+    assert deploy["permissions"] == {"actions": "read", "contents": "read"}
     assert deploy["outputs"] == {
         "release_sha": "${{ steps.release.outputs.sha }}",
         "release_tag": "${{ steps.release.outputs.tag }}",
@@ -390,6 +390,13 @@ def test_production_deploy_is_tag_only_immutable_and_recoverable():
         'test "$sha" = "$tag_sha"',
         'git merge-base --is-ancestor "$sha" origin/main',
         "main:refs/remotes/origin/main",
+        "Verify exact commit passed test promotion",
+        "actions/workflows/deploy-test.yml/runs",
+        '-f head_sha="$TESTED_SHA"',
+        'run.get("head_branch") == "main"',
+        'run.get("head_sha") == tested_sha',
+        'run.get("conclusion") == "success"',
+        "Production blocked: no successful exact-SHA test promotion",
         'git checkout --detach "$deploy_tag"',
         'test "$(git rev-parse HEAD)" = "$deploy_sha"',
         "bash scripts/production_deploy.sh",
@@ -417,6 +424,10 @@ def test_production_deploy_is_tag_only_immutable_and_recoverable():
         "set -euo pipefail",
     ):
         assert required in combined
+
+    assert source.index("Verify exact commit passed test promotion") < source.index(
+        "Configure strict SSH trust"
+    )
 
     for forbidden in (
         "DEV_HOST",
