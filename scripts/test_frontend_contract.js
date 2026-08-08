@@ -85,6 +85,104 @@ function response(status, data) {
   };
 }
 
+function top3PageHarness(fetchImpl) {
+  const elements = new Map();
+  const formFieldIds = [
+    "top3Description", "top3Name", "top3Rules", "top3HostNotes",
+    "top3Example1", "top3Example2", "top3Example3",
+  ];
+  const ids = [
+    "pageNotice", "top3Form", "top3FormHeading", "generateTop3Button",
+    "saveTop3Button", "cancelTop3EditButton", "proposalNotice", "top3FormError",
+    "top3Count", "top3List", "noTop3Concepts", ...formFieldIds,
+  ];
+  function element(id) {
+    const attributes = new Map();
+    const item = {
+      id,
+      value: "",
+      textContent: "",
+      innerHTML: "",
+      className: id === "cancelTop3EditButton" || id === "noTop3Concepts" ? "hidden" : "",
+      disabled: false,
+      classList: {
+        add(name) {
+          if (!item.className.split(/\s+/).includes(name)) item.className = (item.className + " " + name).trim();
+        },
+        remove(name) {
+          item.className = item.className.split(/\s+/).filter((candidate) => candidate && candidate !== name).join(" ");
+        },
+        toggle(name, force) {
+          const present = item.className.split(/\s+/).includes(name);
+          const enabled = force === undefined ? !present : Boolean(force);
+          if (enabled) this.add(name); else this.remove(name);
+          return enabled;
+        },
+      },
+      setAttribute(name, value) { attributes.set(name, String(value)); },
+      removeAttribute(name) { attributes.delete(name); },
+      focus() { item.focused = true; },
+      scrollIntoView() {},
+      addEventListener() {},
+    };
+    return item;
+  }
+  ids.forEach((id) => elements.set(id, element(id)));
+  elements.get("top3Form").reset = () => {
+    formFieldIds.forEach((id) => { elements.get(id).value = ""; });
+  };
+  const toasts = [];
+  const root = {
+    document: {
+      getElementById(id) { return elements.get(id) || null; },
+      querySelectorAll(selector) {
+        if (selector === "#top3Form input, #top3Form textarea") {
+          return formFieldIds.map((id) => elements.get(id));
+        }
+        return [];
+      },
+    },
+    Auth: { getToken: () => "test-token" },
+    Toast: {
+      success(message) { toasts.push({ type: "success", message }); },
+      error(message) { toasts.push({ type: "error", message }); },
+    },
+    fetch: fetchImpl,
+    crypto: { randomUUID: () => "stable-draft-id" },
+    confirm: () => true,
+  };
+  return {
+    page: Top3BankPage.createForTesting(root),
+    elements,
+    toasts,
+  };
+}
+
+function top3Proposal() {
+  return {
+    name: "Top Dungeon Snacks",
+    description: "Rank three snacks for a dungeon run.",
+    rules: "Explain each rank.",
+    hostNotes: "Keep the discussion surprising.",
+    aiExample: ["Cheese wheel", "Spiced jerky", "Moonberry juice"],
+    status: "active",
+    source: "ai",
+    aiProvider: "claude",
+    aiModelId: "claude-test-model",
+    aiGeneratedAt: "2026-08-03T12:00:00Z",
+  };
+}
+
+function canonicalTop3Concept(payload) {
+  return {
+    ...payload,
+    assignedEpisodes: [],
+    createdByUserId: 101,
+    createdAt: "2026-08-03T12:00:01Z",
+    updatedAt: "2026-08-03T12:00:01Z",
+  };
+}
+
 function state(revision, overrides = {}) {
   return {
     config: {},
@@ -105,6 +203,25 @@ function checkInlineScripts(filename, html) {
   for (const match of html.matchAll(pattern)) {
     if (match[1].trim()) new vm.Script(match[1], { filename });
   }
+}
+
+function testHomepageHeroSpacingContract(homepage) {
+  const heroRule = homepage.match(/\.hero\s*\{([^}]+)\}/);
+  const scrollHintRule = homepage.match(/\.scroll-hint\s*\{([^}]+)\}/);
+
+  assert.ok(heroRule, "homepage defines the hero layout");
+  assert.ok(scrollHintRule, "homepage defines the Explore scroll hint");
+  assert.match(heroRule[1], /display:\s*flex/);
+  assert.match(heroRule[1], /flex-direction:\s*column/);
+  assert.match(heroRule[1], /gap:\s*clamp\(/);
+  assert.match(scrollHintRule[1], /position:\s*relative/);
+  assert.match(scrollHintRule[1], /bottom:\s*auto/);
+  assert.match(scrollHintRule[1], /flex:\s*0\s+0\s+auto/);
+  assert.doesNotMatch(scrollHintRule[1], /position:\s*absolute/);
+  assert.match(
+    homepage,
+    /<p class="hero-subtitle">A little salt for your day<\/p>[\s\S]*<div class="scroll-hint">[\s\S]*<span>Explore<\/span>/,
+  );
 }
 
 async function testSuccessfulCanonicalSave() {
@@ -651,6 +768,95 @@ function testTop3BankPageContract() {
   }
 }
 
+async function testInitialTop3AIProposalReconcilesUnrelatedRevisionAndSaves() {
+  let revision = 5;
+  const concepts = [];
+  const mutationRequests = [];
+  const harness = top3PageHarness(async (url, options = {}) => {
+    if (url === "/api/top3/concepts" && (!options.method || options.method === "GET")) {
+      return response(200, { revision, concepts: JSON.parse(JSON.stringify(concepts)) });
+    }
+    if (url === "/api/ai/top3-concept") return response(200, top3Proposal());
+    if (url === "/api/top3/concepts" && options.method === "POST") {
+      mutationRequests.push({
+        ifMatch: options.headers["If-Match"],
+        body: JSON.parse(options.body),
+      });
+      if (options.headers["If-Match"] !== String(revision)) {
+        return response(409, { detail: { message: "Server data changed", currentRevision: revision } });
+      }
+      concepts.push(canonicalTop3Concept(JSON.parse(options.body)));
+      revision += 1;
+      return response(201, { revision, concept: concepts[0] });
+    }
+    throw new Error(`Unexpected Top 3 request: ${options.method || "GET"} ${url}`);
+  });
+
+  await harness.page.onStorageReady();
+  harness.elements.get("top3Description").value = "Rank dungeon snacks.";
+  await harness.page.generateProposal();
+  revision = 6; // Unrelated server data changed after generation; the bank did not.
+  await harness.page.saveConcept({ preventDefault() {} });
+
+  assert.equal(mutationRequests.length, 2);
+  assert.deepEqual(mutationRequests.map((request) => request.ifMatch), ["5", "6"]);
+  assert.equal(mutationRequests[0].body.id, "top3-stable-draft-id");
+  assert.equal(mutationRequests[1].body.id, mutationRequests[0].body.id);
+  assert.equal(concepts.length, 1);
+  assert.equal(concepts[0].name, "Top Dungeon Snacks");
+  assert.equal(harness.elements.get("top3Name").value, "");
+  assert.deepEqual(harness.toasts, [{ type: "success", message: "Top 3 concept banked." }]);
+}
+
+async function testTop3AIProposalPreservesRealConflictForDeliberateRetry() {
+  let revision = 10;
+  const concepts = [];
+  const mutationRequests = [];
+  const harness = top3PageHarness(async (url, options = {}) => {
+    if (url === "/api/top3/concepts" && (!options.method || options.method === "GET")) {
+      return response(200, { revision, concepts: JSON.parse(JSON.stringify(concepts)) });
+    }
+    if (url === "/api/ai/top3-concept") return response(200, top3Proposal());
+    if (url === "/api/top3/concepts" && options.method === "POST") {
+      mutationRequests.push({
+        ifMatch: options.headers["If-Match"],
+        body: JSON.parse(options.body),
+      });
+      if (options.headers["If-Match"] !== String(revision)) {
+        return response(409, { detail: { message: "Server data changed", currentRevision: revision } });
+      }
+      concepts.push(canonicalTop3Concept(JSON.parse(options.body)));
+      revision += 1;
+      return response(201, { revision, concept: concepts[concepts.length - 1] });
+    }
+    throw new Error(`Unexpected Top 3 request: ${options.method || "GET"} ${url}`);
+  });
+
+  await harness.page.onStorageReady();
+  harness.elements.get("top3Description").value = "Rank dungeon snacks.";
+  await harness.page.generateProposal();
+  concepts.push(canonicalTop3Concept({
+    ...top3Proposal(),
+    id: "other-client-concept",
+    name: "Other client concept",
+  }));
+  revision = 11;
+
+  await harness.page.saveConcept({ preventDefault() {} });
+  assert.equal(mutationRequests.length, 1);
+  assert.match(harness.elements.get("top3FormError").textContent, /Top 3 Bank changed on the server/);
+  assert.equal(harness.elements.get("top3Name").value, "Top Dungeon Snacks");
+  assert.deepEqual(harness.toasts, []);
+
+  await harness.page.saveConcept({ preventDefault() {} });
+  assert.equal(mutationRequests.length, 2);
+  assert.deepEqual(mutationRequests.map((request) => request.ifMatch), ["10", "11"]);
+  assert.equal(mutationRequests[1].body.id, mutationRequests[0].body.id);
+  assert.equal(concepts.length, 2);
+  assert.equal(concepts.filter((concept) => concept.id === mutationRequests[0].body.id).length, 1);
+  assert.deepEqual(harness.toasts, [{ type: "success", message: "Top 3 concept banked." }]);
+}
+
 function testTop3BankBrowserStartupWithLexicalDependencies() {
   let authInitCalls = 0;
   const element = { addEventListener() {} };
@@ -1046,6 +1252,7 @@ async function testTop3EpisodeBrowserActionsUseViewerScopedApi() {
 }
 
 async function main() {
+  const homepage = fs.readFileSync("index.html", "utf8");
   const showManagement = fs.readFileSync("show_management.html", "utf8");
   const jokesPage = fs.readFileSync("jokes.html", "utf8");
   const songsPage = fs.readFileSync("songs.html", "utf8");
@@ -1054,6 +1261,7 @@ async function main() {
   checkInlineScripts("jokes.html", jokesPage);
   checkInlineScripts("songs.html", songsPage);
   checkInlineScripts("config.html", configPage);
+  testHomepageHeroSpacingContract(homepage);
   for (const page of [showManagement, jokesPage, songsPage, configPage, fs.readFileSync("postproduction.html", "utf8")]) {
     assert.match(page, /href="songs\.html"/);
   }
@@ -1122,6 +1330,8 @@ async function main() {
   testEpisodeSongPreparationContract();
   await testEpisodeOverviewContract();
   testTop3BankPageContract();
+  await testInitialTop3AIProposalReconcilesUnrelatedRevisionAndSaves();
+  await testTop3AIProposalPreservesRealConflictForDeliberateRetry();
   testTop3BankBrowserStartupWithLexicalDependencies();
   testTop3EpisodePlanningContract();
   await testTop3EpisodeBrowserActionsUseViewerScopedApi();

@@ -18,6 +18,7 @@ jobs:
     timeout-minutes: 30
     environment: production
     permissions:
+      actions: read
       contents: read
     outputs:
       release_sha: ${{ steps.release.outputs.sha }}
@@ -48,6 +49,60 @@ jobs:
           git fetch --no-tags origin main:refs/remotes/origin/main
           git merge-base --is-ancestor "$sha" origin/main
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Verify exact commit passed test promotion
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TESTED_SHA: ${{ steps.release.outputs.sha }}
+        run: |
+          set -euo pipefail
+          runs_file="$RUNNER_TEMP/satt-test-promotion-$TESTED_SHA.json"
+          trap 'rm -f "$runs_file"' EXIT
+
+          gh api --method GET \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/deploy-test.yml/runs" \
+            -f branch=main \
+            -f event=push \
+            -f status=completed \
+            -f head_sha="$TESTED_SHA" \
+            -f per_page=100 \
+            > "$runs_file"
+
+          python - "$runs_file" "$TESTED_SHA" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          runs_path = Path(sys.argv[1])
+          tested_sha = sys.argv[2]
+          runs = json.loads(runs_path.read_text(encoding="utf-8")).get(
+              "workflow_runs", []
+          )
+          matches = [
+              run
+              for run in runs
+              if run.get("path") == ".github/workflows/deploy-test.yml"
+              and run.get("event") == "push"
+              and run.get("head_branch") == "main"
+              and run.get("head_sha") == tested_sha
+              and run.get("status") == "completed"
+              and run.get("conclusion") == "success"
+          ]
+          if not matches:
+              raise SystemExit(
+                  "Production blocked: no successful exact-SHA test promotion "
+                  f"for {tested_sha}"
+              )
+          verified = max(matches, key=lambda run: run.get("run_attempt", 0))
+          print(
+              "Verified exact-SHA test promotion: "
+              f"run_id={verified['id']} url={verified['html_url']}"
+          )
+          PY
+
+          rm -f "$runs_file"
+          trap - EXIT
 
       - name: Configure strict SSH trust
         shell: bash

@@ -2,16 +2,18 @@
 
 This is the human-facing delivery contract for Salt All The Things.
 `reference/work-management.md` and `reference/development-and-release.md` are
-the canonical AI process instructions. This document, repository workflows, and
-release documentation must remain consistent with them.
+the canonical AI process instructions. They define Integration Cadence, User
+Validation Timing, approval gates, version authority, and release evidence;
+this document describes SATT's implemented delivery system and must remain
+consistent with them.
 
 ## Release environments and gates
 
 | Environment | Source | Trigger | Authorization |
 |---|---|---|---|
-| Development | Shared `codex/<parent-issue-title-slug>` branch commit | Manual `deploy-dev.yml` dispatch with an explicit branch | Child implementation may deploy only after local validation |
-| Test | Approved commit on `main` | `deploy-test.yml` after the cumulative pull request is explicitly approved and merged | Child approval does not authorize merge or test deployment |
-| Production | Exact tested `main` commit tagged `prod-vX.Y.Z` | Tag-gated production workflow | Requires separate, explicit production-release approval |
+| Development | Selected `codex/<slice-slug>` branch commit | Manual `deploy-dev.yml` dispatch with an explicit branch | Routine technical work within the selected scope |
+| Test | Approved exact commit on `main` | `deploy-test.yml` after the applicable PR is merged | Single Promotion to test gate |
+| Production | Exact tested `main` commit tagged `prod-vX.Y.Z` | Tag-gated production workflow | Single Promotion to production gate for Mike's exact selected tag |
 
 Production never deploys from an ordinary branch push or merge. Tags are
 immutable and must not be reused or force-pushed. Static frontend and FastAPI
@@ -32,10 +34,10 @@ directory. It may not prune shared Docker state or operate on test or
 production.
 
 The public and local health checks must both report environment `development`,
-version `0.0.6`, and the exact resolved commit. One-time server, DNS, TLS,
-GitHub environment, and secret provisioning requires explicit authorization.
-The detailed bootstrap, validation, cleanup, and rollback procedure is in
-`docs/development-environment.md`.
+the exact `VERSION` value, and the exact resolved commit. One-time server, DNS,
+TLS, GitHub environment, and secret provisioning requires explicit
+authorization. The detailed bootstrap, validation, cleanup, and rollback
+procedure is in `docs/development-environment.md`.
 
 ## Isolated test implementation
 
@@ -43,7 +45,7 @@ SATT test uses `/opt/satt-platform` on `my-web-apps-test`, loopback port `8300`,
 Compose project `satt-test`, and database volume `satt-test-postgres`.
 `deploy-test.yml` runs only for a pushed commit on `main`, verifies
 `github.sha`, and deploys that exact commit after the cumulative pull request
-receives separate merge approval.
+or Child-cadence pull request passes the single Promotion to test gate.
 
 The deployment performs a bounded pre-deploy backup, runs migrations, verifies
 local and public environment/version/commit metadata, verifies the final
@@ -53,19 +55,19 @@ non-production external-service opt-in is false. The detailed bootstrap,
 validation, reset, cleanup, and rollback procedure is in
 `docs/test-environment.md`.
 
-The repository is implementing this contract under milestone
-`Cleanup & DevOps Foundation`. The registered `deploy.yml` entry point is now
-manual development-only; it has no branch-push trigger and no production job.
-Production deployment is isolated in tag-only `deploy-prod.yml` and remains
-unauthorized until the release-integration, test, and production approval gates
-are complete.
+The registered `deploy.yml` entry point is manual development-only; it has no
+branch-push trigger and no production job. Production deployment is isolated in
+tag-only `deploy-prod.yml` and remains unauthorized until the canonical
+production-promotion gate is approved.
 
 ## Production cutover implementation
 
 `deploy-prod.yml` runs only for `prod-v*`, validates the authoritative version,
-curated notes, exact tag target, and `main` ancestry, and uses the protected
-GitHub `production` environment. It checks out the immutable tag and deploys the
-frontend and backend together from the same standalone production image.
+curated notes, exact tag target, and `main` ancestry, then fails closed unless
+GitHub Actions reports a completed successful `deploy-test.yml` push run on
+`main` whose `head_sha` exactly matches the tag commit. Only then may the
+protected `production` job configure SSH or deploy the frontend and backend
+together from the same standalone production image.
 
 The production Compose definition contains a stable `satt-production-app` and
 private `satt-production-database` pair. PostgreSQL uses the explicitly named
@@ -83,40 +85,24 @@ release. The complete preflight, cutover, verification, and recovery procedure
 is in `docs/production-cutover.md`. No production tag or operation is authorized
 by committing that procedure.
 
-## Foundation branch and approval contract
+## Work and approval authority
 
-- Parent issue #3 owns the unshipped 0.0.1 and failed, unpublished 0.0.2
-  Foundation attempts plus corrective patch 0.0.3.
-- The ordered original children are #4 through #15; discovery added approved
-  children #31 for the isolated production database cutover and #33 for the
-  production-only verification corrections.
-- The completed original slice used
-  `codex/establish-cleanup-environment-isolation-and-release-engineering`.
-- Corrective child #31 used `codex/isolate-production-database-cutover` from
-  current `main` and its own cumulative pull request.
-- Corrective child #33 uses
-  `codex/correct-production-cutover-verification-release-0-0-3` from current `main`.
-- Each child is implemented, validated, committed, pushed, deployed to isolated
-  development when that environment exists, and reviewed independently.
-- Approval of one child authorizes work on only the next ordered child.
-- Child approval does not authorize merging, test deployment, tagging,
-  production deployment, server changes, DNS changes, GitHub environment
-  changes, or secret changes.
-- Failed manual validation remains in the current child until corrected and
-  revalidated.
+GitHub issues and the Solo Development project are the work-status source of
+truth. Parent/child hierarchy, controlled child expansion, Integration Cadence,
+User Validation Timing, shared delivery slices, routine-work authorization, and
+the four happy-path approval gates are defined only in
+`reference/work-management.md`. Historical Foundation issue and branch details
+remain in their GitHub records and release notes rather than in the active
+process contract.
 
-## Milestones and issue traceability
-
-The repository has two roadmap milestones:
-
-1. `Cleanup & DevOps Foundation` contains parent #3 and children #4–#15.
-2. `New Podcast Features` is deferred until the Foundation milestone is
-   complete.
-
-Implementation starts from a milestone issue. A release parent provides shared
-context and ordered child issues provide separate implementation scopes.
-Pull-request descriptions, commits, release notes, and validation evidence link
-back to the active child and cumulative parent.
+The chronological gate sequence is: complete AI-executable child work, receive
+Child development complete approval, then perform Child- or Parent-timed manual
+UI validation on the prepared cumulative development artifact when due. After
+all pre-test validation passes, Promotion to test creates the immutable test
+candidate. Release-timed manual UI validation occurs on that candidate before
+the final Promotion to production. Integration Cadence independently controls
+whether Parent uses one cumulative PR/test promotion or each Child uses its own
+releasable PR, promotion, and Mike-selected version.
 
 ## Standard GitHub names
 
@@ -141,11 +127,12 @@ credentials, databases, API origins, or Drive resources.
 - `development`: manual branch deployments; no production resources; branch
   policy restricted to approved Foundation or later feature branches.
 - `test`: deployments only from the approved `main` integration commit.
-- `production`: deployments only from validated `prod-v*` tags after explicit
-  production-release approval.
+- `production`: deployments only from validated `prod-v*` tags after the final
+  Promotion to production approval and exact-SHA test-promotion proof.
 
 Changing GitHub environments, protection rules, repository secrets, servers,
-DNS, or production requires explicit authorization at the time of change.
+or DNS requires authority for the exact action under the exception rules in
+`reference/work-management.md`.
 
 ## Canonical application origins
 
@@ -202,10 +189,16 @@ external AI, OAuth, or Drive credentials.
 tools, production tag, and GitHub Release must report the same version and
 commit.
 
+Mike alone selects the exact version. AI may apply that supplied value and
+verify consistency but must never invent, infer, calculate, increment, or
+replace it. Cumulative note timing and reconciliation are defined in
+`reference/development-and-release.md`.
+
 `scripts/validate_release.py` enforces the version, tag, filename, heading,
 required-section, placeholder, and credential-safety contract in pull-request
-validation without publishing. A separately approved `prod-vX.Y.Z` tag invokes
-`deploy-prod.yml`. Only after its production deployment and public verification
-job succeeds does a separate least-privilege job call `publish-release.yml` to
-publish the matching curated note. Version increments, hotfixes, and rollback
+validation without publishing. An approved `prod-vX.Y.Z` tag invokes
+`deploy-prod.yml`, which also proves exact-SHA test promotion before any
+production connection. Only after production deployment and public verification
+succeed does a separate least-privilege job call `publish-release.yml` to
+publish the matching curated note. Version selection, hotfixes, and rollback
 behavior are documented in `docs/versioning-and-releases.md`.

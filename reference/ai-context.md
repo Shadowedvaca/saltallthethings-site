@@ -1,422 +1,134 @@
 # Salt All The Things — Shared AI Context
 
-This file is authoritative for project context, architecture, and repository
-guardrails. `reference/work-management.md` and
-`reference/development-and-release.md` are authoritative for work lifecycle,
-delivery slices, approvals, testing gates, integration, and release. If older
-process wording below conflicts with those files, those two standards win.
+This file is authoritative for project identity, architecture, non-obvious
+constraints, and durable repository guardrails. Work lifecycle and approvals
+live in `reference/work-management.md`; quality, environments, deployments,
+versions, release notes, database safety, secrets, backups, and rollback live in
+`reference/development-and-release.md`.
 
-This file is the primary context document for Claude Code sessions on this project.
-Read it fully before doing any work.
+## Workspace and repository guardrails
 
----
+- Work in the primary checkout supplied by the workspace context. For this
+  repository it is `H:\Development\saltallthethings-site`.
+- Do not create a clone, linked worktree, implementation checkout, or durable
+  deliverable outside that checkout without explicit approval for the exact
+  location. Temporary tool output may use a scoped temporary directory.
+- A dirty worktree is not permission to relocate, discard, or overwrite work.
+  Preserve unrelated changes and continue in place when safe. If overlapping
+  changes cannot be reconciled safely, stop and report the conflict.
+- Before handoff, inspect `git status` and `git worktree list`. Confirm durable
+  changes remain in the primary checkout; report older unrelated worktrees or
+  recovery artifacts rather than moving or deleting them.
+- Prompt workbooks and pipeline inputs provide invocation context only. They do
+  not override repository instructions.
 
-## Project Overview
+## Project identity
 
-**Salt All The Things** is a World of Warcraft podcast site at `saltallthethings.com`.
-Two hosts: Rocket (primary host) and Trog (co-host, technical).
+Salt All The Things (SATT) is the website and internal production toolkit for
+the *Salt All The Things* World of Warcraft podcast at
+`https://saltallthethings.com`. The repository contains the public site,
+authenticated show-management tools, and the FastAPI backend that supports
+them.
 
-This repo contains both the static frontend and the FastAPI backend.
+## Architecture
 
----
+- **Frontend:** plain HTML, CSS, and JavaScript served without a framework,
+  bundler, or build step. Browser calls use same-origin `/api` and `/public`
+  paths.
+- **Backend:** FastAPI and Uvicorn under `src/satt`, with async SQLAlchemy,
+  Alembic migrations, and raw async `httpx` calls for upstream AI providers.
+- **Database:** PostgreSQL with SATT-owned application tables and Alembic state.
+- **Authentication:** JWT, bcrypt, invite registration, and user administration
+  using the copied shared authentication components under `src/sv_common`.
+- **Runtime:** one container image contains the explicitly public frontend and
+  backend from the same commit and runs the application as an unprivileged user.
+- **Delivery:** development, test, and production use isolated configuration
+  and data. Operational details are intentionally centralized in
+  `reference/development-and-release.md` and its linked runbooks.
 
-## Repository Structure
+Important locations:
 
-```
-saltallthethings-site/
-├── CLAUDE.md                   ← you are here
-├── .github/
-│   └── workflows/
-│       └── deploy.yml          ← deploys static files to Hetzner (no build step)
-├── reference/                  ← migration phase docs (read-only reference)
-├── src/
-│   ├── sv_common/              ← shared auth/services package (DO NOT MODIFY)
-│   └── satt/                   ← FastAPI application
-│       ├── __init__.py
-│       ├── main.py             ← FastAPI app entry point
-│       ├── config.py           ← settings (env vars)
-│       ├── database.py         ← SQLAlchemy engine + session
-│       ├── models.py           ← ORM models
-│       ├── crud.py             ← database read/write helpers
-│       ├── serializers.py      ← snake_case → camelCase for JS contract
-│       ├── prompts.py          ← AI prompt construction
-│       ├── ai_client.py        ← httpx calls to Anthropic/OpenAI
-│       ├── routes/
-│       │   ├── health.py
-│       │   ├── data.py         ← private CRUD routes
-│       │   ├── ai.py           ← AI proxy endpoints
-│       │   └── public.py       ← unauthenticated public routes
-│       ├── migrations/
-│       │   ├── env.py
-│       │   ├── script.py.mako
-│       │   └── versions/
-│       └── tests/
-├── css/
-│   └── style.css
-├── js/
-│   ├── auth.js                 ← JWT login flow
-│   ├── storage.js              ← API-backed cache (talks to FastAPI)
-│   ├── ai-service.js           ← calls FastAPI AI proxy
-│   ├── show-engine.js          ← pure date math, no API calls
-│   ├── site-config.js          ← platform links, show metadata
-│   └── toast.js                ← toast notifications
-├── images/
-├── index.html                  ← public landing page (no auth)
-├── show_management.html        ← auth-gated: ideas + schedule board
-├── jokes.html                  ← auth-gated: joke bank
-├── config.html                 ← auth-gated: settings + invite codes
-└── register.html               ← public: invite code registration
-```
-
----
-
-## Server Infrastructure
-
-- **Host:** Hetzner VPS, IP `5.78.114.224`
-- **Deploy path:** `/opt/satt-platform/`
-- **Static files:** `/opt/satt-platform/static/`
-- **PYTHONPATH:** `/opt/satt-platform/src`
-- **Systemd unit:** `satt` (port `8200`, internal only)
-- **Nginx:** Reverse proxies `/api/` and `/public/` to port `8200`, serves static
-  files directly from `/opt/satt-platform/static/`
-- **SSL:** Certbot / Let's Encrypt
-- **Production URL:** `https://saltallthethings.com`
-- **Development URL (provisioned by Foundation #11):** `https://dev.saltallthethings.com`
-- **Test URL (provisioned by Foundation #12):** `https://test.saltallthethings.com`
-
-### Other sites on this server
-
-| Domain | Project | Port | Systemd unit |
-|---|---|---|---|
-| `shadowedvaca.com` | Meandering Muck | `8000` | `shadowedvaca` |
-| `pullallthethings.com` | Pull All The Things | `8100` | `patt` |
-| `saltallthethings.com` | Salt All The Things | `8200` | `satt` |
-
-Do not touch configs, units, or files belonging to other sites.
-
----
-
-## Python Stack
-
-- **Framework:** FastAPI + Uvicorn
-- **ORM:** SQLAlchemy (async)
-- **Migrations:** Alembic
-- **HTTP client:** httpx (async) — used for AI proxy calls
-- **Auth:** `sv_common.auth` — JWT, bcrypt, invite codes
-- **Testing:** pytest + httpx.AsyncClient
-- **Python version:** match whatever PATT uses on this server
-
-### Container runtime
-
-- `Dockerfile` is the shared production-suitable runtime artifact.
-- `scripts/container-entrypoint.sh` validates environment/data ownership, runs
-  `alembic upgrade head`, and then starts FastAPI.
-- `compose.yaml` plus the local/development/test override selects isolated
-  non-production storage; `compose.production.yaml` defines a private application
-  and PostgreSQL pair with its own named production volume and no database port.
-- The image contains the explicitly public frontend and backend from one commit
-  and runs as an unprivileged user.
-- Never print expanded Compose configuration because it may contain secrets.
-- Pull-request CI is validation-only, uses read-only repository permission, and
-  cannot deploy.
-
-### sv_common
-
-`sv_common` is a shared services package copied from `PullAllTheThings-site/src/sv_common/`.
-It is found via `PYTHONPATH` — not installed via pip.
-
-**Do not modify any file in `src/sv_common/`.** If you need a change to sv_common,
-flag it for the developer. Changes must be made in the PATT repo first, then
-manually propagated here.
-
----
-
-## Database
-
-- **Engine:** Postgres (existing instance on the server)
-- **Schema:** `satt` — all tables are prefixed `satt.*`
-- **Other schemas on this server:** `patt`, `common`, `guild_identity` — do not touch
-
-### Tables
-
-| Table | Purpose |
+| Path | Responsibility |
 |---|---|
-| `satt.users` | Managed by sv_common.auth |
-| `satt.config` | Single-row JSONB blob — AI settings, prompts, YouTube IDs |
-| `satt.ideas` | Processed episode ideas with titles, summary, outline |
-| `satt.jokes` | Joke bank entries |
-| `satt.guests` | Reusable private Guest Bank records |
-| `satt.guest_assignments` | Many-to-many guest-to-idea appearance links |
-| `satt.show_slots` | Weekly recording/release schedule slots |
-| `satt.assignments` | Maps slot_id → idea_id |
+| `src/satt/main.py` | FastAPI application assembly and public static exposure. |
+| `src/satt/routes/` | Health, authentication, data, AI, public, postproduction, Song Bank, Top 3, Guest Bank, and user routes. |
+| `src/satt/models.py` / `src/satt/crud.py` | Core persistence model and data access. |
+| `src/satt/*_contract.py` / `*_crud.py` | Feature-specific validation and persistence boundaries. |
+| `src/satt/migrations/` | Alembic environment and ordered schema revisions. |
+| `src/satt/tests/` | Backend, contract, delivery, security, and release tests. |
+| `js/` | Browser storage, authentication, AI, show, postproduction, Song Bank, Top 3, Guest Bank, and UI modules. |
+| Top-level `*.html` | Public and authenticated application pages. |
+| `Dockerfile`, `compose*.yaml` | Shared image and environment-specific runtime definitions. |
+| `.github/workflows/` | Pull-request validation and dev/test/prod/release automation. |
 
-### Key data design decisions
+## Durable application contracts
 
-1. **No UUIDs** — IDs are `Date.now().toString(36) + random()` generated by JS.
-   Accept and store them as TEXT. Do not regenerate or reformat them server-side.
-2. **Full replace on write** — `PUT /api/data/:key` always receives the full array
-   and replaces all rows. No partial updates.
-3. **assignments is a flat map** — `{slotId: ideaId}` in JSON, two-column table
-   in Postgres.
-4. **config is a single row** — JSONB `data` column, always upserted as a whole.
-5. **camelCase contract** — all JSON returned to the frontend must use camelCase
-   keys matching the original JS data model. `serializers.py` handles conversion.
+### Frontend and API
 
----
+- The frontend remains raw HTML/CSS/JS. Do not add a bundler or framework as an
+  incidental implementation choice.
+- Browser data contracts use camelCase. Backend serializers must not leak ORM
+  snake_case into existing JavaScript contracts.
+- Browser-generated opaque identifiers are stored as text. Do not regenerate,
+  normalize, or reinterpret them server-side.
+- The legacy generic data API uses full-array replacement where implemented;
+  feature-specific endpoints add their own concurrency and integrity rules.
+  Inspect current route and contract code before changing either behavior.
+- Public routes are intentionally unauthenticated; private routes require JWT.
+  Do not broaden static or API exposure accidentally.
+- `js/show-engine.js` is pure schedule/date logic and has no storage or API
+  dependency. Preserve that separation.
 
-## API Routes
+### AI and configuration
 
-### Private (JWT required)
-
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/api/health` | Health check |
-| `GET` | `/api/export` | All 5 data types as JSON (called on page load) |
-| `GET` | `/api/data/:key` | Read one key |
-| `PUT` | `/api/data/:key` | Overwrite one key (full replace) |
-| `PUT` | `/api/import` | Bulk write all keys |
-| `PUT` | `/api/guests/:guestId/assignments/:ideaId` | Idempotently link an active guest to a show idea |
-| `DELETE` | `/api/guests/:guestId/assignments/:ideaId` | Idempotently remove a guest/show link |
-| `PUT` | `/api/guests/:guestId/status` | Archive or restore a guest without deleting history |
-| `DELETE` | `/api/guests/:guestId` | Delete only an unassigned guest |
-| `POST` | `/api/ai/process-idea` | Proxy idea processing to Anthropic/OpenAI |
-| `POST` | `/api/ai/generate-jokes` | Proxy joke generation to Anthropic/OpenAI |
-| `POST` | `/api/auth/invite` | Generate invite code (admin only) |
-
-### Public (no auth)
-
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/public/episodes` | Released episodes, paginated |
-| `GET` | `/public/homepage` | YouTube video IDs for hero |
-| `POST` | `/api/auth/login` | Exchange credentials for JWT |
-| `POST` | `/api/auth/register` | Register with invite code |
-
-### Auth notes
-- JWT in `Authorization: Bearer <token>` header
-- Token TTL: 8 hours
-- Invite codes: one-time use, 48-hour expiry
-
----
-
-## Frontend JS Modules
-
-| File | Purpose | Talks to backend? |
-|---|---|---|
-| `auth.js` | JWT login gate, session management | Yes — `/api/auth/login` |
-| `storage.js` | In-memory cache + async write-back | Yes — `/api/export`, `/api/data/:key` |
-| `ai-service.js` | AI generation calls | Yes — `/api/ai/*` |
-| `show-engine.js` | Weekly slot date math | No — pure computation |
-| `site-config.js` | Platform links, show metadata | No — static config |
-| `toast.js` | Toast notifications | No — UI only |
-
-### Frontend conventions
-- No build step — raw HTML/CSS/JS, no bundler, no framework
-- Browser API calls use same-origin `/api` and `/public` paths.
-- AI keys are stored in `satt.config` in Postgres — never in the frontend
-- `show-engine.js` is never modified — it is pure date logic and has no
-  dependencies on auth or storage
-
----
-
-## AI Proxy Design
-
-AI calls (Anthropic / OpenAI) are proxied through FastAPI. The browser never
-calls Anthropic or OpenAI directly.
-
-- API keys live in `satt.config` in Postgres
-- `ai_client.py` makes raw `httpx` calls — no Anthropic or OpenAI Python SDKs
-- `prompts.py` builds system and user prompts — exact equivalents of the
-  original JS prompt logic
-- Model selection is runtime config (`config.aiModel`: `"claude"` or `"openai"`)
+- The browser never calls Anthropic or OpenAI directly. Authenticated FastAPI
+  routes proxy AI calls through `src/satt/ai_client.py` using raw `httpx`, not
+  vendor Python SDKs.
+- AI provider keys live server-side in SATT configuration. Browser responses
+  expose only configured-status booleans, never key values.
+- Blank key fields preserve existing server-side values; only an authenticated
+  administrator may replace a stored key.
+- AI tests mock upstream providers and must not consume real credentials.
+- Prompt construction belongs in `src/satt/prompts.py`; preserve its explicit
+  contracts and bounded repair behavior.
 
 ### Show outline contract
 
-- Configured show sections have stable, unique `id` values plus editable names,
-  descriptions, and order.
-- Renaming a configured section preserves its ID. Adding a section creates a new
-  opaque ID; duplicate IDs and empty configurations are rejected.
-- New AI outlines must contain every configured section exactly once. Complete
-  reordered output is normalized to configured order and canonical names.
-  Missing, duplicate, unknown, or malformed sections receive one bounded repair
-  attempt and are rejected if still invalid.
-- Each generated section contains 2-5 non-empty talking-point strings.
-- The episode outline editor intentionally constrains section identity, count,
-  and order while allowing names and talking points to be edited.
-- Configuration changes apply only to future generation. Existing episode
+- Configured outline sections have stable unique IDs plus editable names,
+  descriptions, and order. Renaming preserves identity; new sections receive
+  new opaque IDs.
+- A generated outline must include every configured section exactly once.
+  Complete reordered output is normalized; missing, duplicate, unknown, or
+  malformed output receives only the implemented bounded repair attempt and is
+  rejected if still invalid.
+- Each section contains two to five non-empty talking points.
+- Configuration changes affect future generation only. Existing episode
   outlines are historical snapshots and are never silently rewritten.
-- Custom non-empty configurations follow the same contract. An empty
-  configuration cannot process an idea and returns an actionable validation
-  error.
 
----
+### Shared code boundary
 
-## Pages
+`src/sv_common` is copied from the Pull All The Things repository and resolved
+through `PYTHONPATH`. Do not modify it here. A required shared change must be
+made in the owning repository first and then propagated through the established
+process.
 
-| File | Auth | Purpose |
-|---|---|---|
-| `index.html` | No | Public landing — hero, YouTube videos, platform links |
-| `show_management.html` | Yes | Ideas Workshop + drag-and-drop Schedule Board |
-| `jokes.html` | Yes | Joke bank — AI generator + manual CRUD |
-| `config.html` | Yes | AI settings, prompts, segments, YouTube IDs, invite codes |
-| `register.html` | No | Invite code registration for new users |
+## Durable safety boundaries
 
----
+- SATT shares infrastructure with other sites. Never change or operate on
+  another site's files, database, container, service, reverse-proxy
+  configuration, DNS, or certificate.
+- Do not expose the internal application port directly; public traffic passes
+  through the configured reverse proxy.
+- Do not expose repository metadata, backend source, environment files,
+  workbooks, backups, or tests as public static assets.
+- Do not store credentials in frontend code, repository files, release notes,
+  issues, terminal output, or agent transcripts.
+- Do not run database-backed tests without an explicit isolated test database.
+  The test configuration must never resolve to production.
+- Treat implemented behavior, tests, migrations, workflows, and validated
+  runbooks as evidence. Do not document a capability merely because it is
+  planned or desirable.
 
-## Deploy
-
-`docs/delivery.md` is the canonical delivery contract. The post-Foundation
-target is:
-
-- a shared feature branch deploys manually to isolated development;
-- an explicitly approved merge commit on `main` deploys to isolated test; and
-- only an explicitly approved immutable `prod-vX.Y.Z` tag deploys production.
-
-Frontend and backend must promote from the same commit. A child approval does
-not authorize merge, test deployment, production tagging, production
-deployment, server or DNS changes, GitHub environment changes, or repository
-secret changes.
-
-The registered deployment entry point is manual development-only. Production
-runs only from an explicitly approved validated `prod-vX.Y.Z` tag through
-`deploy-prod.yml`; ordinary branch pushes and merges cannot deploy production.
-
----
-
-## Environment Variables
-
-Stored separately for each environment in its server-side `.env`:
-
-```
-DATABASE_URL=<environment-specific non-production database URL>
-LEGACY_DATABASE_URL=<first-cutover host source; production operator only>
-SATT_DB_HOST=<private Compose database service in production>
-SATT_DB_PORT=5432
-SATT_DB_NAME=<environment-specific database name>
-SATT_DB_USER=<environment-specific database role>
-SATT_DB_PASSWORD=<environment-specific database credential>
-SECRET_KEY=<hex string — generate with: openssl rand -hex 32>
-ENVIRONMENT=<local|development|test|production>
-DATABASE_ENVIRONMENT=<must match ENVIRONMENT>
-SITE_URL=<matching canonical origin>
-CORS_ORIGINS=<matching canonical origin>
-COMMIT_SHA=<deployed commit>
-AI_REQUEST_TIMEOUT=60
-ALLOW_NONPRODUCTION_EXTERNAL_SERVICES=false
-```
-
-AI API keys are NOT in `.env` — they are stored in `satt.config` in Postgres
-and managed through the Config page UI.
-
-Canonical origins are documented in `docs/delivery.md`. Non-production startup
-rejects production web origins, mismatched database ownership, and Google OAuth
-credentials unless an authorized external-service smoke test explicitly opts
-in. Opt-in never authorizes reuse of production credentials or Drive resources.
-
-### Secret handling (STRICT)
-
-- Never print API keys, tokens, passwords, private keys, OAuth secrets, database URLs, or complete secret-bearing configuration records into a terminal or agent transcript.
-- Never return `claudeApiKey` or `openaiApiKey` from an API response. Browser clients receive only `claudeApiKeyConfigured` and `openaiApiKeyConfigured` booleans.
-- Validate credentials only by presence or one-way SHA-256 fingerprint. Consume actual values entirely inside the server process.
-- Blank API-key fields preserve the existing server-side value. Only an authenticated administrator may replace a stored AI key.
-- If a secret is accidentally emitted, stop, notify the user, revoke it, and rotate every location where it was reused.
-
----
-
-## Testing
-
-**`TEST_DATABASE_URL` must be set explicitly** — the test suite will refuse to
-run DB-backed tests if it is not set, and will hard-fail if it matches
-`DATABASE_URL` (production). Never point `TEST_DATABASE_URL` at the production
-database.
-
-```bash
-# Run all tests (requires TEST_DATABASE_URL)
-TEST_DATABASE_URL=postgresql+asyncpg://satt_user:...@localhost/satt_test_db \
-  PYTHONPATH=src pytest src/satt/tests/ -v
-
-# Run with coverage
-TEST_DATABASE_URL=... PYTHONPATH=src pytest src/satt/tests/ --cov=satt --cov-report=term-missing
-```
-
-On the server, run tests like this:
-```bash
-cd /opt/satt-platform
-TEST_DATABASE_URL=postgresql+asyncpg://satt_user:<password>@localhost:5432/satt_test_db \
-  PYTHONPATH=src venv/bin/pytest src/satt/tests/ -v
-```
-(Create `satt_test_db` first if it doesn't exist: `sudo -u postgres createdb satt_test_db && sudo -u postgres psql -c "GRANT ALL ON DATABASE satt_test_db TO satt_user;"`)
-
-AI proxy tests mock upstream calls with `respx` or `pytest-httpx` — no real
-API calls in tests.
-
----
-
-## Common Tasks
-
-### Add a new API route
-1. Create or update the appropriate file in `src/satt/routes/`
-2. Register the router in `src/satt/main.py`
-3. Add CRUD helpers to `src/satt/crud.py` if DB access needed
-4. Write tests in `src/satt/tests/`
-
-### Add a new database table
-1. Add ORM model to `src/satt/models.py`
-2. Generate migration: `PYTHONPATH=src alembic revision --autogenerate -m "description"`
-3. Review generated migration in `src/satt/migrations/versions/`
-4. Apply: `PYTHONPATH=src alembic upgrade head`
-
-### Database backups
-
-After the 0.0.2 container cutover, the 03:00 UTC entry in
-`/etc/cron.d/satt-backup` invokes
-`/opt/satt-platform/scripts/production_nightly_backup.sh`:
-
-- output is a mode-`0600`, SATT-schema-only custom dump under
-  `/opt/backups/satt-db/nightly/`;
-- every dump must pass `pg_restore --list` and reports filename and SHA-256 only;
-- retention is 14 days; and
-- the prior host-database cron and script remain available throughout the
-  rollback window.
-
-Before the first cutover, the legacy host backup remains active. The release
-workflow creates separate verified `preflight` and stopped-runtime `final`
-dumps under `/opt/backups/satt-db/releases/`.
-
-Restoring a dump, deleting a production volume, or removing the unchanged host
-database is destructive and always requires separate approval against the exact
-failed state. Follow `docs/production-cutover.md`; never place a connection value
-or credential in a command transcript.
-### Restart the service
-```bash
-sudo systemctl restart satt
-sudo systemctl status satt
-journalctl -u satt -f   # tail logs
-```
-
-### Check Nginx
-```bash
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-### Check all three sites are up
-```bash
-curl -s -o /dev/null -w "%{http_code}" https://shadowedvaca.com
-curl -s -o /dev/null -w "%{http_code}" https://pullallthethings.com
-curl -s -o /dev/null -w "%{http_code}" https://saltallthethings.com
-```
-
----
-
-## What Not To Do
-
-- **Do not modify `src/sv_common/`** — changes must come from the PATT repo
-- **Do not touch other sites** — `shadowedvaca.com` and `pullallthethings.com`
-  have their own configs and units; leave them alone
-- **Do not expose port `8200` directly** — all traffic goes through Nginx
-- **Do not store AI keys in `.env`** — they live in `satt.config` in Postgres
-- **Do not use the Anthropic or OpenAI Python SDKs** — use raw httpx calls
-- **Do not add a build step** — the frontend is plain HTML/CSS/JS, no bundler
-- **Do not run tests against the production schema** — always set `TEST_DATABASE_URL` to a dedicated test DB; the conftest hard-fails if `TEST_DATABASE_URL` matches production `DATABASE_URL`
-- **Do not run `pytest` on the server without `TEST_DATABASE_URL` set** — the test teardown drops the `satt` schema; running against production destroys all data
+For database isolation, migrations, environment variables, secret handling,
+backups, rollback, deployment, and release operations, follow
+`reference/development-and-release.md` and the exact runbook it identifies.

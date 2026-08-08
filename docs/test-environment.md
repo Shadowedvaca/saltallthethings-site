@@ -87,14 +87,15 @@ names:
    already exists;
 6. builds the shared image and starts only the `satt-test` services;
 7. waits for Compose health and verifies local/public metadata report `test`,
-   version `0.0.6`, and the exact commit;
+   the exact `VERSION` value, and the exact commit;
 8. verifies Alembic revision `0009`;
 9. runs ephemeral registration, login/reload, protected export, public-route,
    and unauthenticated-rejection checks and removes the temporary identity; and
 10. prints at most 100 lines of SATT app/database logs on failure.
 
-Child approval does not authorize a merge or test deployment. The workflow
-runs only after the cumulative pull request receives separate merge approval.
+Approval and Integration Cadence are defined in
+`reference/work-management.md`. The workflow runs only for the exact commit
+pushed to `main` at the single approved test-promotion gate.
 
 ## Data reset and operator access
 
@@ -110,10 +111,16 @@ runs only after the cumulative pull request receives separate merge approval.
 
 ## Validation
 
-After each approved `main` deployment:
+The test workflow performs health, migration, public-route, authentication, and
+integration smoke checks as AI-executable technical validation of the exact
+`main` commit.
 
-1. Verify `/api/health` reports status `ok`, environment `test`, version
-   `0.0.6`, and the exact merge commit.
+When User Validation Timing is `Release`, perform the manual human UI checklist
+only after Promotion to test has created this immutable candidate and before
+Promotion to production:
+
+1. Verify `/api/health` reports status `ok`, environment `test`, the exact
+   `VERSION` value, and the exact merge commit.
 2. Verify migration revision `0009` and both Compose services are healthy.
 3. Verify public pages and public API routes.
 4. Sign in with a test-only account and verify protected pages, persistence,

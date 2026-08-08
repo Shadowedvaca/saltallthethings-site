@@ -7,23 +7,20 @@ the GitHub Release must all use that value.
 
 ## Version changes
 
-- **Patch (`X.Y.Z`)**: backwards-compatible fixes, security corrections,
-  operational changes, documentation changes, and hotfixes.
-- **Minor (`X.Y.0`)**: backwards-compatible user-facing capability. Increment
-  the minor segment and reset patch to zero.
-- **Major (`X.0.0`)**: intentionally incompatible application, API, data, or
-  operator contract. Increment the major segment and reset minor and patch.
-- **Hotfix**: branch from the approved production base, make only the emergency
-  correction, and use the next patch version. Any shortened validation path
-  requires explicit approval and recorded reconciliation.
-- **Rollback**: redeploy an already validated immutable tag when its data
-  contract remains compatible. Never move or reuse a tag. If code or migrations
-  must change to recover, create and validate a new patch version.
+- Mike is the sole authority for the exact version. AI must never invent,
+  infer, calculate, increment, or replace it from GitHub state, issue wording,
+  existing tags, metadata, or semantic-version convention.
+- After Mike supplies the exact value, AI may write it to `VERSION`, update the
+  matching release note, verify all repository-defined consumers, and report
+  mismatches.
+- Hotfix and rollback version decisions remain Mike's. Tags are immutable; a
+  rollback may redeploy a compatible validated artifact, while changed code or
+  migrations require another exact Mike-selected version.
 
-The first child in a release slice updates `VERSION`, copies
-`docs/releases/TEMPLATE.md` to `docs/releases/X.Y.Z.md`, and replaces every
-instructional line. Later children update that same note cumulatively from the
-actual diff and validation evidence.
+Once Mike has selected the exact version, the first approved child in a release
+slice creates the matching `docs/releases/X.Y.Z.md` from the template when it
+does not exist, or updates the existing cumulative note. Later children
+reconcile that same note against the actual cumulative diff and evidence.
 
 ## Validation
 
@@ -50,8 +47,9 @@ internal connection details.
 
 ## Production tag and GitHub Release
 
-After the exact `main` commit has passed isolated test and separate production
-release approval is recorded, create the immutable tag:
+After the exact `main` commit has passed isolated test, any Release-timed manual
+UI validation has passed on that immutable candidate, and Promotion to
+production approval is recorded, create the immutable tag:
 
 ```bash
 git tag prod-vX.Y.Z <tested-main-commit>
@@ -59,12 +57,15 @@ git push origin prod-vX.Y.Z
 ```
 
 The production workflow checks out the exact tag commit, confirms that it is
-contained in `main`, validates the version/tag/notes contract, deploys and
-verifies that exact commit, and only then invokes the separate GitHub Release
-publisher. The reusable publisher receives only the verified tag and commit,
-uses a job-scoped contents token, publishes only `docs/releases/X.Y.Z.md`, and
-cannot read deployment secrets or run application deployment commands. A failed
-or unapproved production deployment cannot create or update the Release.
+contained in `main`, validates the version/tag/notes contract, and queries the
+GitHub Actions API for a completed successful `deploy-test.yml` push run on
+`main` with the same exact SHA. It fails before SSH when that proof is absent.
+It deploys and verifies that exact commit and only then invokes the separate
+GitHub Release publisher. The reusable publisher receives only the verified
+tag and commit, uses a job-scoped contents token, publishes only
+`docs/releases/X.Y.Z.md`, and cannot read deployment secrets or run application
+deployment commands. A failed or unapproved production deployment cannot
+create or update the Release.
 
 Tags are permanent: never force-push, delete and recreate, or point an existing
 release tag at a different commit. A workflow rerun may update the GitHub
