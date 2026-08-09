@@ -14,6 +14,21 @@ const ShowEngine = {
   GENERATE_MONTHS_AHEAD: 3,
 
   /**
+   * Get the local calendar month and year used when Schedule Board opens.
+   */
+  getInitialCalendarView(date = new Date()) {
+    return { month: date.getMonth(), year: date.getFullYear() };
+  },
+
+  /**
+   * Move a calendar view by the requested number of months.
+   */
+  moveCalendarView(year, month, delta) {
+    const target = new Date(year, month + delta, 1);
+    return { month: target.getMonth(), year: target.getFullYear() };
+  },
+
+  /**
    * Initialize or refresh show slots.
    * Ensures slots exist from start date through 3 months from today.
    */

@@ -224,6 +224,39 @@ function testHomepageHeroSpacingContract(homepage) {
   );
 }
 
+function testScheduleBoardCalendarView() {
+  const context = { Date };
+  vm.createContext(context);
+  const source = fs.readFileSync("js/show-engine.js", "utf8");
+  vm.runInContext(source + "\n;globalThis.ShowEngine = ShowEngine;", context);
+  const engine = context.ShowEngine;
+
+  assert.deepEqual(
+    { ...engine.getInitialCalendarView(new Date(2026, 2, 15, 12)) },
+    { month: 2, year: 2026 },
+  );
+  assert.deepEqual(
+    { ...engine.getInitialCalendarView(new Date(2026, 7, 9, 12)) },
+    { month: 7, year: 2026 },
+  );
+  assert.deepEqual(
+    { ...engine.getInitialCalendarView(new Date(2026, 0, 1, 12)) },
+    { month: 0, year: 2026 },
+  );
+  assert.deepEqual(
+    { ...engine.getInitialCalendarView(new Date(2026, 11, 31, 12)) },
+    { month: 11, year: 2026 },
+  );
+  assert.deepEqual(
+    { ...engine.moveCalendarView(2026, 11, 1) },
+    { month: 0, year: 2027 },
+  );
+  assert.deepEqual(
+    { ...engine.moveCalendarView(2026, 0, -1) },
+    { month: 11, year: 2025 },
+  );
+}
+
 async function testSuccessfulCanonicalSave() {
   const requests = [];
   const harness = loadStorage(async (url, options = {}) => {
@@ -1262,6 +1295,11 @@ async function main() {
   checkInlineScripts("songs.html", songsPage);
   checkInlineScripts("config.html", configPage);
   testHomepageHeroSpacingContract(homepage);
+  testScheduleBoardCalendarView();
+  assert.match(showManagement, /const initialCalendarView = ShowEngine\.getInitialCalendarView\(\)/);
+  assert.match(showManagement, /let currentMonth = initialCalendarView\.month/);
+  assert.match(showManagement, /let currentYear = initialCalendarView\.year/);
+  assert.match(showManagement, /ShowEngine\.moveCalendarView\(currentYear, currentMonth, delta\)/);
   for (const page of [showManagement, jokesPage, songsPage, configPage, fs.readFileSync("postproduction.html", "utf8")]) {
     assert.match(page, /href="songs\.html"/);
   }

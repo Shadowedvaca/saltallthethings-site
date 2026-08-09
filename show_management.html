@@ -476,8 +476,9 @@
     // ============================================
     // State
     // ============================================
-    let currentMonth = 2; // March
-    let currentYear = 2026;
+    const initialCalendarView = ShowEngine.getInitialCalendarView();
+    let currentMonth = initialCalendarView.month;
+    let currentYear = initialCalendarView.year;
     let draggedIdeaId = null;
     const editingIdeas = new Set();
     const expandedIdeas = new Set();
@@ -1511,9 +1512,9 @@
     }
 
     function changeMonth(delta) {
-      currentMonth += delta;
-      if (currentMonth > 11) { currentMonth = 0; currentYear++; }
-      if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+      var nextView = ShowEngine.moveCalendarView(currentYear, currentMonth, delta);
+      currentMonth = nextView.month;
+      currentYear = nextView.year;
       renderCalendar();
     }
 

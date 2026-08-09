@@ -36,3 +36,45 @@ test("Show Management rejects an unauthenticated browser locally", async ({ page
   await expect(page.getByRole("heading", { name: "Salt All The Things" })).toBeVisible();
   await expect(page.getByText("Crew Access", { exact: true })).toBeVisible();
 });
+
+test("Schedule Board opens to the current local month and resets on reload", async ({ page }) => {
+  await isolateNetwork(page);
+  await page.clock.install({ time: new Date("2026-12-31T12:00:00") });
+  await page.addInitScript(() => {
+    const payload = btoa(JSON.stringify({ exp: 4102444800 }));
+    localStorage.setItem("satt_jwt", JSON.stringify({ token: `test.${payload}.signature` }));
+  });
+  const apiRequests = [];
+  await page.route("**/api/export", async (route) => {
+    apiRequests.push(new URL(route.request().url()).pathname);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        config: {},
+        ideas: [],
+        jokes: [],
+        songs: [],
+        guests: [],
+        guestAssignments: [],
+        showSlots: [],
+        assignments: {},
+        revision: 0,
+      }),
+    });
+  });
+
+  await page.goto("/show_management.html");
+  await page.getByRole("button", { name: "Schedule Board" }).click();
+  await expect(page.locator("#calendarTitle")).toHaveText("December 2026");
+
+  await page.getByRole("button", { name: /Next/ }).click();
+  await expect(page.locator("#calendarTitle")).toHaveText("January 2027");
+  await page.getByRole("button", { name: /Prev/ }).click();
+  await expect(page.locator("#calendarTitle")).toHaveText("December 2026");
+
+  await page.reload();
+  await page.getByRole("button", { name: "Schedule Board" }).click();
+  await expect(page.locator("#calendarTitle")).toHaveText("December 2026");
+  expect(apiRequests).toEqual(["/api/export", "/api/export"]);
+});
