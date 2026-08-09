@@ -1561,9 +1561,8 @@
     async function onStorageReady() {
       ShowEngine.ensureSlots();
       renderIdeasList();
-      await Top3EpisodePlanning.start(function(ideaId) {
-        if (ideaId) rerenderIdeasPreservingExpansion(ideaId);
-        else renderIdeasList();
+      await Top3EpisodePlanning.start(function() {
+        renderIdeasList();
       }, async function(ideaId) {
         if (!location.hash.startsWith('#show/')) return;
         var slotId = location.hash.replace('#show/', '');

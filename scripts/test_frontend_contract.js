@@ -1331,6 +1331,7 @@ async function main() {
   assert.ok(showManagement.includes("function enterEditMode(ideaId) {"));
   assert.ok(showManagement.includes("if (expanded) expandedIdeas.add(ideaId);"));
   assert.ok(showManagement.includes("else expandedIdeas.delete(ideaId);"));
+  assert.ok(showManagement.includes("await Top3EpisodePlanning.start(function() {"));
   assert.match(showManagement, /function rerenderIdeasPreservingExpansion\(ideaId\)/);
   assert.match(showManagement, /selectTitle[\s\S]*rerenderIdeasPreservingExpansion\(ideaId\)/);
   assert.match(showManagement, /selectJokeForIdea[\s\S]*rerenderIdeasPreservingExpansion\(ideaId\)/);
