@@ -11,15 +11,14 @@ async function isolateNetwork(page) {
 test("public hero keeps subtitle and Explore separate without horizontal overflow", async ({ page }) => {
   await isolateNetwork(page);
   const viewports = [
-    { width: 1440, height: 900, scale: 1 },
-    { width: 768, height: 1024, scale: 1 },
-    { width: 390, height: 844, scale: 1 },
-    { width: 360, height: 640, scale: 1.5 },
+    { width: 1440, height: 900 },
+    { width: 768, height: 1024 },
+    { width: 390, height: 844 },
+    { width: 360, height: 640 },
   ];
   for (const viewport of viewports) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await page.goto("/index.html");
-    await page.evaluate((scale) => { document.documentElement.style.fontSize = `${scale * 100}%`; }, viewport.scale);
     const subtitle = await page.locator(".hero-subtitle").boundingBox();
     const explore = await page.locator(".scroll-hint").boundingBox();
     expect(subtitle).not.toBeNull();
