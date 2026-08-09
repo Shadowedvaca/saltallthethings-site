@@ -162,9 +162,13 @@ exact-SHA test-promotion success, backups, migrations, continuity, and health
 before the least-privilege publisher creates or updates the matching GitHub
 Release.
 
-Hotfixes retain the same evidence and authority model. Any shortened test path
-requires an explicit material-risk decision, recorded rationale, and later
-reconciliation. Mike still selects the exact version.
+Hotfixes retain the same evidence and authority model. They do not silently
+authorize a test bypass. Any proposed emergency exception is governed by
+`reference/testing-and-validation.md`: it requires approval for the exact
+commit, bounded minimum evidence, rollback, expiry, and a reconciliation issue.
+The exact-SHA isolated-test requirement for production remains fail closed
+unless a separately approved workflow change explicitly changes that invariant.
+Mike still selects the exact version.
 
 Rollback follows the environment-specific runbook. Prefer a compatible,
 previously validated application artifact. Database restore, migration

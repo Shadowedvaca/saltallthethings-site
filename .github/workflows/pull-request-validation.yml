@@ -54,6 +54,9 @@ jobs:
       - name: Compile Python
         run: python -m compileall -q src/satt
 
+      - name: Validate repository documentation contracts
+        run: python scripts/validate_repository_docs.py
+
       - name: Validate current release contract without publishing
         run: python scripts/validate_release.py
 
@@ -72,6 +75,32 @@ jobs:
         run: |
           node scripts/test_frontend_contract.js
           node scripts/test_guest_bank_frontend.js
+
+      - name: Set up Node for browser automation
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install deterministic browser validation dependencies
+        run: npm ci
+
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Run critical browser journeys
+        run: npm run test:e2e
+
+      - name: Retain browser failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-failure-${{ github.event.pull_request.head.sha }}
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
 
   container:
     name: Production image and fresh-database health

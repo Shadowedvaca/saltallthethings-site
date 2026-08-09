@@ -71,8 +71,11 @@ succeeds.
 
 A hotfix branches from current `main`, contains only the emergency correction,
 and uses the same evidence, approval, exact-version, tag, and reconciliation
-rules as normal delivery. A shortened test path is a material-risk decision,
-not an implied hotfix privilege.
+rules as normal delivery. It has no implied test-bypass privilege. Any proposed
+exception must follow `reference/testing-and-validation.md`, identify the exact
+commit and omitted/minimum evidence, and receive explicit approval. The current
+production workflow still requires successful isolated test deployment for the
+exact SHA and cannot be bypassed by branch naming or prose.
 
 ```powershell
 git switch main
