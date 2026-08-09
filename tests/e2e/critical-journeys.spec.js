@@ -132,6 +132,7 @@ test("Show Management starts every show collapsed and expands cards independentl
   await expect(unscheduled).toHaveClass(/expanded/);
 
   await page.reload();
+  await expect.poll(() => apiRequests.length).toBe(2);
   await expect(cards).toHaveCount(3);
   for (let index = 0; index < 3; index += 1) await expect(cards.nth(index)).not.toHaveClass(/expanded/);
   expect(apiRequests).toEqual(["/api/export", "/api/export"]);
