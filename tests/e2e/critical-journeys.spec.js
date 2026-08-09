@@ -118,8 +118,8 @@ test("Show Management starts every show collapsed and expands cards independentl
   await expect(cards).toHaveCount(3);
   for (let index = 0; index < 3; index += 1) await expect(cards.nth(index)).not.toHaveClass(/expanded/);
 
-  const scheduled = page.locator(".idea-list-card", { hasText: "Scheduled Show" });
-  const unscheduled = page.locator(".idea-list-card", { hasText: "Unscheduled Show" });
+  const scheduled = page.locator("#idea-scheduled");
+  const unscheduled = page.locator("#idea-unscheduled");
   await scheduled.locator(".idea-header").click();
   await expect(scheduled).toHaveClass(/expanded/);
   await expect(scheduled.getByRole("button", { name: /Edit/ })).toBeVisible();
