@@ -138,6 +138,22 @@ test("Show Management starts every show collapsed and expands cards independentl
   await expect(scheduled).not.toHaveClass(/expanded/);
   await expect(unscheduled).toHaveClass(/expanded/);
 
+  const assignmentsBeforeView = await page.evaluate(() => Storage.getAssignments());
+  await unscheduled.getByRole("link", { name: /View/ }).click();
+  await expect(page.locator("#showDisplayOverlay")).toHaveClass(/active/);
+  await expect(page.locator("#showDisplayContent")).toContainText("Unscheduled Show");
+  await expect(page.locator("#showDisplayContent")).toContainText("No schedule slot assigned");
+  await expect(page).toHaveURL(/#idea\/unscheduled$/);
+  await page.getByRole("button", { name: /Close/ }).click();
+
+  await scheduled.getByRole("link", { name: /View/ }).click();
+  await expect(page.locator("#showDisplayOverlay")).toHaveClass(/active/);
+  await expect(page.locator("#showDisplayContent")).toContainText("Scheduled Show");
+  await expect(page.locator("#showDisplayContent")).toContainText("EP030");
+  await expect(page).toHaveURL(/#show\/slot-scheduled$/);
+  await page.getByRole("button", { name: /Close/ }).click();
+  expect(await page.evaluate(() => Storage.getAssignments())).toEqual(assignmentsBeforeView);
+
   await page.reload();
   await expect.poll(() => apiRequests.length).toBe(2);
   await expect(cards).toHaveCount(3);

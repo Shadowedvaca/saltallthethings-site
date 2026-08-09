@@ -665,6 +665,11 @@
           + '<span class="date-badge release' + (slot.releaseDateOverride ? ' override' : '') + '">Release: ' + ShowEngine.formatDateShort(ShowEngine.getEffectiveReleaseDate(slot)) + (slot.releaseDateOverride ? ' ✎' : '') + '</span>'
           + '<a href="#show/' + slot.id + '" class="show-display-link" onclick="event.stopPropagation(); openShowDisplay(\'' + slot.id + '\'); return false;" title="Full show display">⛶ View</a>'
           + '</div>';
+      } else {
+        scheduleHtml = '<div class="schedule-info">'
+          + '<span class="date-badge">Unscheduled</span>'
+          + '<a href="#idea/' + idea.id + '" class="show-display-link" onclick="event.stopPropagation(); openIdeaDisplay(\'' + idea.id + '\'); return false;" title="Full show display">⛶ View</a>'
+          + '</div>';
       }
 
       return '<div class="idea-list-card' + (isExpanded ? ' expanded' : '') + '" id="idea-' + idea.id + '" onclick="if (!event.target.closest(\'[data-guest-action]\')) toggleIdeaExpand(\'' + idea.id + '\')">'
@@ -1249,18 +1254,23 @@
     // ============================================
     var currentSpotifyOverview = '';
 
-    async function openShowDisplay(slotId) {
+    function openIdeaDisplay(ideaId) {
+      var slot = getSlotForIdea(ideaId);
+      return slot ? openShowDisplay(slot.id) : openShowDisplay(null, ideaId);
+    }
+
+    async function openShowDisplay(slotId, unscheduledIdeaId) {
       var slots = Storage.getShowSlots();
       var assignments = Storage.getAssignments();
       var ideas = Storage.getIdeas();
 
-      var slot = slots.find(function(s) { return s.id === slotId; });
-      if (!slot) { Toast.error('Show slot not found.'); return; }
+      var slot = slotId ? slots.find(function(s) { return s.id === slotId; }) : null;
+      if (slotId && !slot) { Toast.error('Show slot not found.'); return; }
 
-      var ideaId = assignments[slotId];
+      var ideaId = slot ? assignments[slotId] : unscheduledIdeaId;
       var idea = ideaId ? ideas.find(function(i) { return i.id === ideaId; }) : null;
 
-      if (!idea) { Toast.error('No idea assigned to this slot.'); return; }
+      if (!idea) { Toast.error(slot ? 'No idea assigned to this slot.' : 'Show not found.'); return; }
 
       try {
         await Top3EpisodePlanning.loadEpisode(idea.id);
@@ -1275,7 +1285,8 @@
       }
 
       // Update URL hash
-      if (location.hash !== '#show/' + slotId) history.pushState(null, '', '#show/' + slotId);
+      var displayHash = slot ? '#show/' + slotId : '#idea/' + idea.id;
+      if (location.hash !== displayHash) history.pushState(null, '', displayHash);
 
       var title = idea.selectedTitle || (idea.titles && idea.titles[0]) || 'Untitled';
       var assignedJoke = Storage.getJokeForIdea(idea.id);
@@ -1284,9 +1295,9 @@
 
       var html = '<div class="show-display-header">'
         + '<div>'
-        + '<span class="ep-badge">' + slot.episodeNumber + '</span>'
+        + '<span class="ep-badge">' + (slot ? slot.episodeNumber : 'Unscheduled') + '</span>'
         + '<h1>' + esc(title) + '</h1>'
-        + '<div class="dates">Record: ' + ShowEngine.formatDateShort(slot.recordDate) + ' &nbsp;|&nbsp; Release: ' + ShowEngine.formatDateShort(ShowEngine.getEffectiveReleaseDate(slot)) + '</div>'
+        + '<div class="dates">' + (slot ? 'Record: ' + ShowEngine.formatDateShort(slot.recordDate) + ' &nbsp;|&nbsp; Release: ' + ShowEngine.formatDateShort(ShowEngine.getEffectiveReleaseDate(slot)) : 'No schedule slot assigned') + '</div>'
         + '</div>'
         + '<button class="show-display-close" onclick="closeShowDisplay()">✕ Close</button>'
         + '</div>';
@@ -1339,7 +1350,7 @@
       }
 
       // Next show preview
-      var next = getNextShowInfo(slot.recordDate);
+      var next = slot ? getNextShowInfo(slot.recordDate) : null;
       if (next) {
         html += '<div class="show-display-next">'
           + '<h3>Next Recording (' + ShowEngine.formatDateShort(next.slot.recordDate) + ')</h3>';
@@ -1385,7 +1396,7 @@
       currentSpotifyOverview = '';
       document.body.style.overflow = '';
       // Clean URL hash
-      if (location.hash.startsWith('#show/')) {
+      if (location.hash.startsWith('#show/') || location.hash.startsWith('#idea/')) {
         history.pushState(null, '', location.pathname + location.search);
       }
     }
@@ -1395,6 +1406,9 @@
       if (location.hash.startsWith('#show/')) {
         var slotId = location.hash.replace('#show/', '');
         openShowDisplay(slotId);
+      } else if (location.hash.startsWith('#idea/')) {
+        var ideaId = location.hash.replace('#idea/', '');
+        openIdeaDisplay(ideaId);
       } else {
         closeShowDisplay();
       }
@@ -1564,9 +1578,12 @@
       await Top3EpisodePlanning.start(function() {
         renderIdeasList();
       }, async function(ideaId) {
-        if (!location.hash.startsWith('#show/')) return;
-        var slotId = location.hash.replace('#show/', '');
-        if (Storage.getAssignments()[slotId] === ideaId) await openShowDisplay(slotId);
+        if (location.hash.startsWith('#show/')) {
+          var slotId = location.hash.replace('#show/', '');
+          if (Storage.getAssignments()[slotId] === ideaId) await openShowDisplay(slotId);
+        } else if (location.hash === '#idea/' + ideaId) {
+          await openIdeaDisplay(ideaId);
+        }
       });
 
       // Check for hash-based show display on load
@@ -1574,6 +1591,9 @@
         var slotId = location.hash.replace('#show/', '');
         // Small delay to ensure data is ready
         setTimeout(function() { openShowDisplay(slotId); }, 100);
+      } else if (location.hash.startsWith('#idea/')) {
+        var ideaId = location.hash.replace('#idea/', '');
+        setTimeout(function() { openIdeaDisplay(ideaId); }, 100);
       }
     }
 

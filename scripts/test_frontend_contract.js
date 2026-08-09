@@ -1332,6 +1332,13 @@ async function main() {
   assert.ok(showManagement.includes("if (expanded) expandedIdeas.add(ideaId);"));
   assert.ok(showManagement.includes("else expandedIdeas.delete(ideaId);"));
   assert.ok(showManagement.includes("await Top3EpisodePlanning.start(function() {"));
+  assert.match(showManagement, /href="#idea\/.*openIdeaDisplay/);
+  assert.match(showManagement, /function openIdeaDisplay\(ideaId\)/);
+  assert.match(showManagement, /return slot \? openShowDisplay\(slot\.id\) : openShowDisplay\(null, ideaId\)/);
+  assert.match(showManagement, /var slot = slotId \? slots\.find/);
+  assert.match(showManagement, /slot \? slot\.episodeNumber : 'Unscheduled'/);
+  assert.match(showManagement, /slot \? getNextShowInfo\(slot\.recordDate\) : null/);
+  assert.match(showManagement, /location\.hash\.startsWith\('#idea\/'\)/);
   assert.match(showManagement, /function rerenderIdeasPreservingExpansion\(ideaId\)/);
   assert.match(showManagement, /selectTitle[\s\S]*rerenderIdeasPreservingExpansion\(ideaId\)/);
   assert.match(showManagement, /selectJokeForIdea[\s\S]*rerenderIdeasPreservingExpansion\(ideaId\)/);
