@@ -86,6 +86,13 @@ test("Show Management starts every show collapsed and expands cards independentl
     localStorage.setItem("satt_jwt", JSON.stringify({ token: "test." + payload + ".signature" }));
   });
   const apiRequests = [];
+  await page.route("**/api/top3/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    const body = pathname === "/api/top3/concepts"
+      ? { revision: 0, concepts: [] }
+      : { revision: 0, assignment: null };
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
   await page.route("**/api/export", async (route) => {
     apiRequests.push(new URL(route.request().url()).pathname);
     const idea = (id, title, status) => ({
