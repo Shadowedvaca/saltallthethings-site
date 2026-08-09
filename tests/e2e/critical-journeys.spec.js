@@ -78,3 +78,61 @@ test("Schedule Board opens to the current local month and resets on reload", asy
   await expect(page.locator("#calendarTitle")).toHaveText("December 2026");
   expect(apiRequests).toEqual(["/api/export", "/api/export"]);
 });
+test("Show Management starts every show collapsed and expands cards independently", async ({ page }) => {
+  await isolateNetwork(page);
+  await page.clock.install({ time: new Date("2026-08-09T12:00:00") });
+  await page.addInitScript(() => {
+    const payload = btoa(JSON.stringify({ exp: 4102444800 }));
+    localStorage.setItem("satt_jwt", JSON.stringify({ token: "test." + payload + ".signature" }));
+  });
+  const apiRequests = [];
+  await page.route("**/api/export", async (route) => {
+    apiRequests.push(new URL(route.request().url()).pathname);
+    const idea = (id, title, status) => ({
+      id, rawNotes: title + " notes", titles: [title], selectedTitle: title,
+      summary: title + " summary", outline: [], status,
+      createdAt: "2026-08-08T12:00:00Z", updatedAt: "2026-08-08T12:00:00Z", imageFileId: null,
+    });
+    await route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({
+        config: {},
+        ideas: [
+          idea("scheduled", "Scheduled Show", "scheduled"),
+          idea("unscheduled", "Unscheduled Show", "processed"),
+          idea("recent", "Recently Edited Show", "processed"),
+        ],
+        jokes: [], songs: [], guests: [], guestAssignments: [],
+        showSlots: [
+          { id: "slot-scheduled", episodeNumber: "EP030", episodeNum: 30, recordDate: "2026-08-11", releaseDate: "2026-08-18", isRollout: false },
+          { id: "slot-horizon", episodeNumber: "EP050", episodeNum: 50, recordDate: "2027-01-05", releaseDate: "2027-01-12", isRollout: false },
+        ],
+        assignments: { "slot-scheduled": "scheduled" },
+        revision: 0,
+      }),
+    });
+  });
+
+  await page.goto("/show_management.html");
+  const cards = page.locator(".idea-list-card");
+  await expect(cards).toHaveCount(3);
+  for (let index = 0; index < 3; index += 1) await expect(cards.nth(index)).not.toHaveClass(/expanded/);
+
+  const scheduled = page.locator(".idea-list-card", { hasText: "Scheduled Show" });
+  const unscheduled = page.locator(".idea-list-card", { hasText: "Unscheduled Show" });
+  await scheduled.locator(".idea-header").click();
+  await expect(scheduled).toHaveClass(/expanded/);
+  await expect(scheduled.getByRole("button", { name: /Edit/ })).toBeVisible();
+  await expect(unscheduled).not.toHaveClass(/expanded/);
+  await unscheduled.locator(".idea-header").click();
+  await expect(unscheduled).toHaveClass(/expanded/);
+  await expect(scheduled).toHaveClass(/expanded/);
+  await scheduled.locator(".idea-header").click();
+  await expect(scheduled).not.toHaveClass(/expanded/);
+  await expect(unscheduled).toHaveClass(/expanded/);
+
+  await page.reload();
+  await expect(cards).toHaveCount(3);
+  for (let index = 0; index < 3; index += 1) await expect(cards.nth(index)).not.toHaveClass(/expanded/);
+  expect(apiRequests).toEqual(["/api/export", "/api/export"]);
+});

@@ -482,7 +482,6 @@
     let draggedIdeaId = null;
     const editingIdeas = new Set();
     const expandedIdeas = new Set();
-    let lastProcessedId = null;
     let pastSectionOpen = false;
 
     // ============================================
@@ -640,8 +639,6 @@
         pastSection.innerHTML = '';
       }
 
-      // Clear auto-expand flag
-      if (lastProcessedId) lastProcessedId = null;
     }
 
     function togglePastSection() {
@@ -656,7 +653,7 @@
       const title = esc(idea.selectedTitle || (idea.titles && idea.titles[0]) || 'Untitled Idea');
       const summary = esc(idea.summary || truncate(idea.rawNotes, 120));
       const isEditing = editingIdeas.has(idea.id);
-      const autoExpand = expandedIdeas.has(idea.id) || (idea.id === lastProcessedId) || isEditing;
+      const isExpanded = expandedIdeas.has(idea.id);
       const guestSummary = GuestPreparation.renderSummary(idea.id, Storage.getGuests(), Storage.getGuestAssignments());
 
       // Schedule info line
@@ -670,7 +667,7 @@
           + '</div>';
       }
 
-      return '<div class="idea-list-card' + (autoExpand ? ' expanded' : '') + '" id="idea-' + idea.id + '" onclick="if (!event.target.closest(\'[data-guest-action]\')) toggleIdeaExpand(\'' + idea.id + '\')">'
+      return '<div class="idea-list-card' + (isExpanded ? ' expanded' : '') + '" id="idea-' + idea.id + '" onclick="if (!event.target.closest(\'[data-guest-action]\')) toggleIdeaExpand(\'' + idea.id + '\')">'
         + '<div class="idea-header">'
         + '<div style="flex:1;">'
         + '<div class="flex items-center gap-sm mb-sm">'
@@ -1193,10 +1190,8 @@
         };
         if (!await Storage.addIdea(idea)) return;
         document.getElementById('ideaNotes').value = '';
-        lastProcessedId = newId;
-        editingIdeas.add(newId);
         renderIdeasList();
-        Toast.success('Idea processed! Review and edit below.');
+        Toast.success('Idea processed and saved.');
       } catch (err) { console.error('Process error:', err); Toast.error('AI processing failed: ' + err.message); }
       finally { document.getElementById('composerOverlay').classList.add('hidden'); document.getElementById('processBtn').disabled = false; }
     }
@@ -1235,10 +1230,8 @@
           aiModelId: config.aiModel === 'openai' ? config.openaiModelId : config.claudeModelId
         });
         if (!saved) return;
-        lastProcessedId = ideaId;
-        editingIdeas.add(ideaId);
         renderIdeasList();
-        Toast.success('Idea processed! Review and edit below.');
+        Toast.success('Idea processed and saved.');
       } catch (err) { Toast.error('Processing failed: ' + err.message); }
     }
 

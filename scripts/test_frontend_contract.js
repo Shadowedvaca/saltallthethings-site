@@ -1325,7 +1325,12 @@ async function main() {
   assert.match(showManagement, /await Storage\.assignSongToIdea\(songId, ideaId\)/);
   assert.match(showManagement, /await Storage\.freeSong\(songId\)/);
   assert.match(showManagement, /const expandedIdeas = new Set\(\)/);
-  assert.match(showManagement, /expandedIdeas\.has\(idea\.id\)/);
+  assert.ok(showManagement.includes("const isExpanded = expandedIdeas.has(idea.id);"));
+  assert.ok(showManagement.includes("(isExpanded ? ' expanded' : '')"));
+  assert.doesNotMatch(showManagement, /lastProcessedId|autoExpand/);
+  assert.ok(showManagement.includes("function enterEditMode(ideaId) {"));
+  assert.ok(showManagement.includes("if (expanded) expandedIdeas.add(ideaId);"));
+  assert.ok(showManagement.includes("else expandedIdeas.delete(ideaId);"));
   assert.match(showManagement, /function rerenderIdeasPreservingExpansion\(ideaId\)/);
   assert.match(showManagement, /selectTitle[\s\S]*rerenderIdeasPreservingExpansion\(ideaId\)/);
   assert.match(showManagement, /selectJokeForIdea[\s\S]*rerenderIdeasPreservingExpansion\(ideaId\)/);
