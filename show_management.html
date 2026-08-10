@@ -1255,7 +1255,7 @@
     var currentSpotifyOverview = '';
 
     function openIdeaDisplay(ideaId) {
-      var slot = getSlotForIdea(ideaId);
+      var slot = getScheduleInfoForIdea(ideaId);
       return slot ? openShowDisplay(slot.id) : openShowDisplay(null, ideaId);
     }
 

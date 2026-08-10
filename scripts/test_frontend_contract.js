@@ -1334,6 +1334,8 @@ async function main() {
   assert.ok(showManagement.includes("await Top3EpisodePlanning.start(function() {"));
   assert.match(showManagement, /href="#idea\/.*openIdeaDisplay/);
   assert.match(showManagement, /function openIdeaDisplay\(ideaId\)/);
+  assert.match(showManagement, /var slot = getScheduleInfoForIdea\(ideaId\)/);
+  assert.doesNotMatch(showManagement, /getSlotForIdea/);
   assert.match(showManagement, /return slot \? openShowDisplay\(slot\.id\) : openShowDisplay\(null, ideaId\)/);
   assert.match(showManagement, /var slot = slotId \? slots\.find/);
   assert.match(showManagement, /slot \? slot\.episodeNumber : 'Unscheduled'/);
