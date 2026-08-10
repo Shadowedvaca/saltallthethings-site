@@ -1584,7 +1584,10 @@
     // ============================================
     function reconcileVisibleStorageState() {
       renderIdeasList();
-      if (document.getElementById('tab-schedule').classList.contains('active')) renderScheduleBoard();
+      if (document.getElementById('tab-schedule').classList.contains('active')) {
+        renderIdeaBank();
+        renderCalendar();
+      }
     }
 
     async function onStorageReady() {

@@ -1416,6 +1416,10 @@ async function main() {
   assert.match(configPage, /Storage\.subscribe\(loadConfig\)/);
   assert.match(jokesPage, /Storage\.subscribe\(renderJokes\)/);
   assert.match(showManagement, /Storage\.subscribe\(reconcileVisibleStorageState\)/);
+  const reconciliationBody = showManagement.match(/function reconcileVisibleStorageState\(\) \{([\s\S]*?)\n    \}/)[1];
+  assert.match(reconciliationBody, /renderIdeaBank\(\)/);
+  assert.match(reconciliationBody, /renderCalendar\(\)/);
+  assert.doesNotMatch(reconciliationBody, /renderScheduleBoard\(\)/);
   assert.match(songBankScript, /Storage\.subscribe\(renderSongs\)/);
   assert.match(guestBankScript, /Storage\.subscribe\(renderGuests\)/);
   assert.match(showManagement, /async function updateReleaseDate/);
