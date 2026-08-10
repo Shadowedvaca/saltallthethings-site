@@ -616,6 +616,7 @@
 
     // Called by Auth after Storage.init() completes
     function onStorageReady() {
+      Storage.subscribe(loadConfig);
       loadConfig();
       var session = Auth._getSession();
       if (session && session.isAdmin) {

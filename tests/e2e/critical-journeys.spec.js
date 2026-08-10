@@ -160,3 +160,88 @@ test("Show Management starts every show collapsed and expands cards independentl
   for (let index = 0; index < 3; index += 1) await expect(cards.nth(index)).not.toHaveClass(/expanded/);
   expect(apiRequests).toEqual(["/api/export", "/api/export"]);
 });
+
+test("Show Management reconciles successful and conflicted mutations without a page reload", async ({ page }) => {
+  await isolateNetwork(page);
+  await page.clock.install({ time: new Date("2026-08-09T12:00:00") });
+  await page.addInitScript(() => {
+    const payload = btoa(JSON.stringify({ exp: 4102444800 }));
+    localStorage.setItem("satt_jwt", JSON.stringify({ token: "test." + payload + ".signature" }));
+  });
+
+  let revision = 0;
+  let mutationCount = 0;
+  let exportCount = 0;
+  const idea = (id, notes, status = "draft") => ({
+    id, rawNotes: notes, titles: [], selectedTitle: null, summary: null, outline: [], status,
+    createdAt: "2026-08-09T12:00:00Z", updatedAt: "2026-08-09T12:00:00Z", imageFileId: null,
+  });
+  let canonicalIdeas = [idea("existing", "Existing canonical draft")];
+  const canonicalState = () => ({
+    config: {}, ideas: canonicalIdeas, jokes: [], songs: [], guests: [], guestAssignments: [],
+    showSlots: [
+      { id: "slot-horizon", episodeNumber: "EP050", episodeNum: 50, recordDate: "2027-01-05", releaseDate: "2027-01-12", isRollout: false },
+    ],
+    assignments: {}, revision,
+  });
+
+  await page.route("**/api/top3/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    const body = pathname === "/api/top3/concepts"
+      ? { revision, concepts: [] }
+      : { revision, assignment: null };
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+  await page.route("**/api/export", async (route) => {
+    exportCount += 1;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(canonicalState()) });
+  });
+  await page.route("**/api/data/ideas", async (route) => {
+    mutationCount += 1;
+    if (mutationCount === 1) {
+      expect(route.request().headers()["if-match"]).toBe("0");
+      canonicalIdeas = JSON.parse(route.request().postData()).map((item) => ({
+        ...item, updatedAt: "2026-08-09T12:01:00Z",
+      }));
+      revision = 1;
+      await route.fulfill({
+        status: 200, contentType: "application/json",
+        body: JSON.stringify({ ok: true, state: canonicalState(), revision }),
+      });
+      return;
+    }
+
+    expect(route.request().headers()["if-match"]).toBe("1");
+    canonicalIdeas = canonicalIdeas.concat([idea("server-newer", "Server canonical concurrent draft")]);
+    revision = 2;
+    await route.fulfill({
+      status: 409, contentType: "application/json",
+      body: JSON.stringify({ detail: { message: "Server data changed", currentRevision: revision } }),
+    });
+  });
+
+  await page.goto("/show_management.html");
+  await expect(page.locator(".idea-list-card")).toHaveCount(1);
+
+  await page.locator("#ideaNotes").fill("Created without reload");
+  await page.getByRole("button", { name: "Save as Draft" }).click();
+  await expect(page.locator("#ideasList")).toContainText("Created without reload");
+  await expect(page.locator(".idea-list-card")).toHaveCount(2);
+  expect(exportCount).toBe(1);
+
+  await page.locator("#ideaNotes").fill("Client stale draft");
+  await page.getByRole("button", { name: "Save as Draft" }).click();
+  await expect(page.locator("#ideasList")).toContainText("Server canonical concurrent draft");
+  await expect(page.locator("#ideasList")).not.toContainText("Client stale draft");
+  await expect(page.locator("#save-status")).toContainText("Newer server data loaded");
+  await expect(page.locator(".idea-list-card")).toHaveCount(3);
+  expect(exportCount).toBe(2);
+  expect(mutationCount).toBe(2);
+
+  await page.reload();
+  await expect(page.locator("#ideasList")).toContainText("Created without reload");
+  await expect(page.locator("#ideasList")).toContainText("Server canonical concurrent draft");
+  await expect(page.locator("#ideasList")).not.toContainText("Client stale draft");
+  await expect(page.locator(".idea-list-card")).toHaveCount(3);
+  expect(exportCount).toBe(3);
+});

@@ -77,6 +77,14 @@ function loadStorage(fetchImpl) {
   return { storage: context.Storage, errors, dom };
 }
 
+function loadShowEngine(storage) {
+  const context = { Date, Storage: storage };
+  vm.createContext(context);
+  const source = fs.readFileSync("js/show-engine.js", "utf8");
+  vm.runInContext(source + "\n;globalThis.ShowEngine = ShowEngine;", context);
+  return context.ShowEngine;
+}
+
 function response(status, data) {
   return {
     ok: status >= 200 && status < 300,
@@ -225,11 +233,7 @@ function testHomepageHeroSpacingContract(homepage) {
 }
 
 function testScheduleBoardCalendarView() {
-  const context = { Date };
-  vm.createContext(context);
-  const source = fs.readFileSync("js/show-engine.js", "utf8");
-  vm.runInContext(source + "\n;globalThis.ShowEngine = ShowEngine;", context);
-  const engine = context.ShowEngine;
+  const engine = loadShowEngine();
 
   assert.deepEqual(
     { ...engine.getInitialCalendarView(new Date(2026, 2, 15, 12)) },
@@ -257,6 +261,37 @@ function testScheduleBoardCalendarView() {
   );
 }
 
+async function testReleaseDateWaitsForCanonicalPersistence() {
+  let slots = [{ id: "slot-1", releaseDate: "2026-08-18" }];
+  let releaseSave;
+  const saveGate = new Promise((resolve) => { releaseSave = resolve; });
+  const storage = {
+    getShowSlots: () => slots,
+    async saveShowSlots(candidate) {
+      await saveGate;
+      slots = JSON.parse(JSON.stringify(candidate));
+      return true;
+    },
+  };
+  const engine = loadShowEngine(storage);
+  const pending = engine.setReleaseDate("slot-1", "2026-08-20");
+  assert.equal(slots[0].releaseDateOverride, undefined);
+  releaseSave();
+  assert.equal((await pending).releaseDateOverride, "2026-08-20");
+  assert.equal(slots[0].releaseDateOverride, "2026-08-20");
+
+  storage.saveShowSlots = async () => false;
+  assert.equal(await engine.setReleaseDate("slot-1", "2026-08-21"), null);
+  assert.equal(slots[0].releaseDateOverride, "2026-08-20");
+
+  storage.saveShowSlots = async (candidate) => {
+    slots = JSON.parse(JSON.stringify(candidate));
+    return true;
+  };
+  assert.equal((await engine.resetReleaseDate("slot-1")).releaseDateOverride, undefined);
+  assert.equal(slots[0].releaseDateOverride, undefined);
+}
+
 async function testSuccessfulCanonicalSave() {
   const requests = [];
   const harness = loadStorage(async (url, options = {}) => {
@@ -271,11 +306,16 @@ async function testSuccessfulCanonicalSave() {
     return response(200, { ok: true, data: ideas, state: canonical, revision: 1 });
   });
   await harness.storage.init();
+  const notifications = [];
+  const unsubscribe = harness.storage.subscribe((event) => notifications.push({ ...event }));
   assert.equal(await harness.storage.addIdea({ id: "idea-1", status: "draft" }), true);
   assert.equal(harness.storage.getIdeas()[0].updatedAt, "2026-07-29T12:00:00+00:00");
   assert.equal(harness.storage._revision, 1);
   assert.deepEqual(harness.errors, []);
   assert.equal(requests[1].url, "/api/data/ideas");
+  assert.deepEqual(notifications, [{ reason: "mutation", revision: 1 }]);
+  unsubscribe();
+  assert.equal(harness.storage._stateListeners.length, 0);
 }
 
 async function testGlobalQueuePreventsOutOfOrderWrites() {
@@ -323,6 +363,8 @@ async function testFailureRollbackRetryAndUnloadGuard() {
     return response(503, { detail: "isolated development failure" });
   });
   await harness.storage.init();
+  const notifications = [];
+  harness.storage.subscribe((event) => notifications.push({ ...event, ideaIds: harness.storage.getIdeas().map((idea) => idea.id) }));
   const pending = harness.storage.addIdea({ id: "not-persisted", status: "draft" });
   const cancelled = harness.storage.addJoke({
     id: "also-not-persisted", text: "queued", status: "unused",
@@ -340,6 +382,7 @@ async function testFailureRollbackRetryAndUnloadGuard() {
   assert.match(status.className, /failed/);
   assert.equal(status.children[0].textContent, "Retry");
   assert.equal(harness.errors.length, 2);
+  assert.deepEqual(notifications, [{ reason: "failure-rollback", revision: 4, ideaIds: ["existing"] }]);
 }
 
 async function testConflictReloadsAndCancelsStaleQueue() {
@@ -358,6 +401,8 @@ async function testConflictReloadsAndCancelsStaleQueue() {
     });
   });
   await harness.storage.init();
+  const notifications = [];
+  harness.storage.subscribe((event) => notifications.push({ ...event, ideaIds: harness.storage.getIdeas().map((idea) => idea.id) }));
   const stale = harness.storage.addIdea({ id: "stale-one", status: "draft" });
   const queued = harness.storage.addIdea({ id: "stale-two", status: "draft" });
   assert.equal(await stale, false);
@@ -366,6 +411,7 @@ async function testConflictReloadsAndCancelsStaleQueue() {
   assert.equal(harness.storage.getIdeas()[0].id, "server-newer");
   assert.equal(harness.storage._revision, 8);
   assert.match(harness.dom.document.getElementById("save-status").className, /conflict/);
+  assert.deepEqual(notifications, [{ reason: "conflict", revision: 8, ideaIds: ["server-newer"] }]);
 }
 
 async function testAtomicScheduleAndImportRoutes() {
@@ -1290,6 +1336,8 @@ async function main() {
   const jokesPage = fs.readFileSync("jokes.html", "utf8");
   const songsPage = fs.readFileSync("songs.html", "utf8");
   const configPage = fs.readFileSync("config.html", "utf8");
+  const songBankScript = fs.readFileSync("js/songs.js", "utf8");
+  const guestBankScript = fs.readFileSync("js/guests.js", "utf8");
   checkInlineScripts("show_management.html", showManagement);
   checkInlineScripts("jokes.html", jokesPage);
   checkInlineScripts("songs.html", songsPage);
@@ -1365,11 +1413,20 @@ async function main() {
   assert.match(configPage, /const id = row\.dataset\.segmentId/);
   assert.match(configPage, /segment_.*Storage\.generateId\(\)/);
   assert.match(configPage, /await Storage\.importAll\(\{/);
+  assert.match(configPage, /Storage\.subscribe\(loadConfig\)/);
+  assert.match(jokesPage, /Storage\.subscribe\(renderJokes\)/);
+  assert.match(showManagement, /Storage\.subscribe\(reconcileVisibleStorageState\)/);
+  assert.match(songBankScript, /Storage\.subscribe\(renderSongs\)/);
+  assert.match(guestBankScript, /Storage\.subscribe\(renderGuests\)/);
+  assert.match(showManagement, /async function updateReleaseDate/);
+  assert.match(showManagement, /await ShowEngine\.setReleaseDate/);
+  assert.match(showManagement, /latest server state is displayed/);
   assert.doesNotMatch(configPage, /Promise\.all\(\[\s*Storage\.saveIdeas/);
   assert.match(showManagement, /data-segment-id=/);
   assert.match(showManagement, /var segmentId = segEl\.dataset\.segmentId/);
   assert.doesNotMatch(showManagement, /segmentId:\s*segName\.toLowerCase/);
 
+  await testReleaseDateWaitsForCanonicalPersistence();
   await testSuccessfulCanonicalSave();
   await testGlobalQueuePreventsOutOfOrderWrites();
   await testFailureRollbackRetryAndUnloadGuard();

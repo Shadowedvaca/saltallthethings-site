@@ -1548,15 +1548,25 @@
       renderScheduleBoard(); renderIdeasList(); Toast.info('Show unassigned.');
     }
 
-    function updateReleaseDate(slotId, newDate) {
-      ShowEngine.setReleaseDate(slotId, newDate);
+    async function updateReleaseDate(slotId, newDate) {
+      if (!await ShowEngine.setReleaseDate(slotId, newDate)) {
+        renderIdeasList();
+        renderCalendar();
+        Toast.error('Release date was not saved. The latest server state is displayed; review and retry.');
+        return;
+      }
       renderIdeasList();
       renderCalendar();
       Toast.show('Release date updated', 'success');
     }
 
-    function resetReleaseDate(slotId) {
-      ShowEngine.resetReleaseDate(slotId);
+    async function resetReleaseDate(slotId) {
+      if (!await ShowEngine.resetReleaseDate(slotId)) {
+        renderIdeasList();
+        renderCalendar();
+        Toast.error('Release date reset was not saved. The latest server state is displayed; review and retry.');
+        return;
+      }
       renderIdeasList();
       renderCalendar();
       Toast.show('Release date reset to default', 'info');
@@ -1572,7 +1582,13 @@
     // ============================================
     // Init — called by Auth after Storage.init()
     // ============================================
+    function reconcileVisibleStorageState() {
+      renderIdeasList();
+      if (document.getElementById('tab-schedule').classList.contains('active')) renderScheduleBoard();
+    }
+
     async function onStorageReady() {
+      Storage.subscribe(reconcileVisibleStorageState);
       ShowEngine.ensureSlots();
       renderIdeasList();
       await Top3EpisodePlanning.start(function() {

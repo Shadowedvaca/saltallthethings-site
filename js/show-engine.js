@@ -180,24 +180,24 @@ const ShowEngine = {
   /**
    * Set a custom release date on a slot
    */
-  setReleaseDate(slotId, newDate) {
-    const slots = Storage.getShowSlots();
-    const slot = slots.find(s => s.id === slotId);
+  async setReleaseDate(slotId, newDate) {
+    const slots = Storage.getShowSlots().map(slot => Object.assign({}, slot));
+    const slot = slots.find(candidate => candidate.id === slotId);
     if (!slot) return null;
     slot.releaseDateOverride = newDate;
-    Storage.saveShowSlots(slots);
-    return slot;
+    if (!await Storage.saveShowSlots(slots)) return null;
+    return Storage.getShowSlots().find(candidate => candidate.id === slotId) || null;
   },
 
   /**
    * Reset release date back to calculated default
    */
-  resetReleaseDate(slotId) {
-    const slots = Storage.getShowSlots();
-    const slot = slots.find(s => s.id === slotId);
+  async resetReleaseDate(slotId) {
+    const slots = Storage.getShowSlots().map(slot => Object.assign({}, slot));
+    const slot = slots.find(candidate => candidate.id === slotId);
     if (!slot) return null;
     delete slot.releaseDateOverride;
-    Storage.saveShowSlots(slots);
-    return slot;
+    if (!await Storage.saveShowSlots(slots)) return null;
+    return Storage.getShowSlots().find(candidate => candidate.id === slotId) || null;
   }
 };
