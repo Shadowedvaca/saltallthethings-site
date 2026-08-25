@@ -161,6 +161,143 @@ test("Show Management starts every show collapsed and expands cards independentl
   expect(apiRequests).toEqual(["/api/export", "/api/export"]);
 });
 
+test("past, future, and unscheduled show edits use one workflow and preserve schedule state", async ({ page }) => {
+  await isolateNetwork(page);
+  await page.clock.install({ time: new Date("2026-08-25T12:00:00") });
+  await page.addInitScript(() => {
+    const payload = btoa(JSON.stringify({ exp: 4102444800 }));
+    localStorage.setItem("satt_jwt", JSON.stringify({ token: "test." + payload + ".signature" }));
+  });
+
+  let revision = 0;
+  let ideaMutations = 0;
+  const idea = (id, title, status) => ({
+    id, rawNotes: title + " notes", titles: [title], selectedTitle: title,
+    summary: title + " summary", outline: [], status,
+    createdAt: "2026-08-09T12:00:00Z", updatedAt: "2026-08-09T12:00:00Z", imageFileId: null,
+  });
+  let canonicalIdeas = [
+    idea("future-edit", "Future Editable Show", "scheduled"),
+    idea("past-edit", "Past Editable Show", "scheduled"),
+    idea("unscheduled-edit", "Unscheduled Editable Show", "processed"),
+  ];
+  const futureSlot = {
+    id: "slot-future", episodeNumber: "EP041", episodeNum: 41,
+    recordDate: "2026-09-01", releaseDate: "2026-09-08",
+    releaseDateOverride: null, isRollout: false,
+  };
+  const pastSlot = {
+    id: "slot-past", episodeNumber: "EP040", episodeNum: 40,
+    recordDate: "2026-08-11", releaseDate: "2026-08-18",
+    releaseDateOverride: "2026-08-19", isRollout: false,
+  };
+  const canonicalState = () => ({
+    config: {}, ideas: canonicalIdeas, jokes: [], songs: [], guests: [], guestAssignments: [],
+    showSlots: [pastSlot, futureSlot],
+    assignments: { "slot-past": "past-edit", "slot-future": "future-edit" }, revision,
+  });
+
+  await page.route("**/api/top3/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    const body = pathname === "/api/top3/concepts"
+      ? { revision, concepts: [] }
+      : { revision, assignment: null };
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+  await page.route("**/api/export", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(canonicalState()) });
+  });
+  await page.route("**/api/data/ideas", async (route) => {
+    ideaMutations += 1;
+    expect(route.request().headers()["if-match"]).toBe(String(revision));
+    canonicalIdeas = JSON.parse(route.request().postData()).map((item) => ({
+      ...item, updatedAt: "2026-08-09T12:01:00Z",
+    }));
+    revision += 1;
+    await route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({ ok: true, state: canonicalState(), revision }),
+    });
+  });
+
+  await page.goto("/show_management.html");
+  let scheduled = page.locator("#idea-future-edit");
+  await expect(scheduled).not.toHaveClass(/expanded/);
+  await expect(scheduled.getByRole("button", { name: "Edit show" })).toBeVisible();
+
+  const scheduleBefore = await page.evaluate(() => ({
+    assignments: Storage.getAssignments(),
+    slots: Storage.getShowSlots(),
+  }));
+  await scheduled.getByRole("button", { name: "Edit show" }).click();
+  await expect(scheduled).toHaveClass(/expanded/);
+  await scheduled.locator("[data-edit-summary]").fill("Scheduled content saved in place");
+  await scheduled.getByRole("button", { name: "Save Changes" }).click();
+  await expect(scheduled).toContainText("Scheduled content saved in place");
+  expect(ideaMutations).toBe(1);
+  expect(await page.evaluate(() => ({
+    assignments: Storage.getAssignments(),
+    slots: Storage.getShowSlots(),
+  }))).toEqual(scheduleBefore);
+  expect(await page.evaluate(() => Storage.getIdeas().find((item) => item.id === "future-edit").status)).toBe("scheduled");
+
+  await page.reload();
+  scheduled = page.locator("#idea-future-edit");
+  await expect(scheduled).toContainText("Scheduled content saved in place");
+  expect(await page.evaluate(() => ({
+    assignments: Storage.getAssignments(),
+    slots: Storage.getShowSlots(),
+  }))).toEqual(scheduleBefore);
+
+  await scheduled.getByRole("button", { name: "Edit show" }).click();
+  await scheduled.locator("[data-edit-summary]").fill("Discard this scheduled edit");
+  await scheduled.getByRole("button", { name: "Cancel" }).click();
+  await expect(scheduled).toContainText("Scheduled content saved in place");
+  await expect(scheduled).not.toContainText("Discard this scheduled edit");
+  expect(ideaMutations).toBe(1);
+  expect(await page.evaluate(() => ({
+    assignments: Storage.getAssignments(),
+    slots: Storage.getShowSlots(),
+  }))).toEqual(scheduleBefore);
+
+  const unscheduled = page.locator("#idea-unscheduled-edit");
+  await expect(unscheduled.getByRole("button", { name: "Edit show" })).toBeVisible();
+  await unscheduled.getByRole("button", { name: "Edit show" }).click();
+  await unscheduled.locator("[data-edit-summary]").fill("Unscheduled workflow still edits");
+  await unscheduled.getByRole("button", { name: "Save Changes" }).click();
+  await expect(unscheduled).toContainText("Unscheduled workflow still edits");
+  expect(ideaMutations).toBe(2);
+  expect(await page.evaluate(() => Storage.getIdeas().find((item) => item.id === "unscheduled-edit").status)).toBe("processed");
+  expect(await page.evaluate(() => ({
+    assignments: Storage.getAssignments(),
+    slots: Storage.getShowSlots(),
+  }))).toEqual(scheduleBefore);
+
+  await page.getByRole("heading", { name: "Past Episodes" }).click();
+  let past = page.locator("#idea-past-edit");
+  await expect(past.getByRole("button", { name: "Edit show" })).toBeVisible();
+  await past.getByRole("button", { name: "Edit show" }).click();
+  await past.locator("[data-edit-summary]").fill("Past show content remains editable");
+  await past.getByRole("button", { name: "Save Changes" }).click();
+  await expect(past).toContainText("Past show content remains editable");
+  expect(ideaMutations).toBe(3);
+  expect(await page.evaluate(() => Storage.getIdeas().find((item) => item.id === "past-edit").status)).toBe("scheduled");
+  expect(await page.evaluate(() => ({
+    assignments: Storage.getAssignments(),
+    slots: Storage.getShowSlots(),
+  }))).toEqual(scheduleBefore);
+
+  await page.reload();
+  await page.getByRole("heading", { name: "Past Episodes" }).click();
+  past = page.locator("#idea-past-edit");
+  await expect(past).toContainText("Past show content remains editable");
+  await expect(page.locator("#idea-future-edit")).toContainText("Scheduled content saved in place");
+  await expect(page.locator("#idea-unscheduled-edit")).toContainText("Unscheduled workflow still edits");
+  expect(await page.evaluate(() => ({
+    assignments: Storage.getAssignments(),
+    slots: Storage.getShowSlots(),
+  }))).toEqual(scheduleBefore);
+});
 test("Show Management reconciles successful and conflicted mutations without a page reload", async ({ page }) => {
   await isolateNetwork(page);
   await page.clock.install({ time: new Date("2026-08-09T12:00:00") });

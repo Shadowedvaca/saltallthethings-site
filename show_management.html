@@ -654,6 +654,7 @@
       const summary = esc(idea.summary || truncate(idea.rawNotes, 120));
       const isEditing = editingIdeas.has(idea.id);
       const isExpanded = expandedIdeas.has(idea.id);
+      const isEditable = idea.status === 'processed' || idea.status === 'scheduled';
       const guestSummary = GuestPreparation.renderSummary(idea.id, Storage.getGuests(), Storage.getGuestAssignments());
 
       // Schedule info line
@@ -687,6 +688,7 @@
         + '</div>'
         + '<div class="flex gap-xs" onclick="event.stopPropagation()">'
         + (idea.status === 'draft' ? '<button class="btn btn-secondary btn-sm" onclick="reprocessIdea(\'' + idea.id + '\')">Process</button>' : '')
+        + (isEditable && !isEditing ? '<button type="button" class="btn btn-secondary btn-sm show-edit-action" aria-label="Edit show" onclick="enterEditMode(\'' + idea.id + '\')">Edit</button>' : '')
         + '<button class="btn btn-ghost btn-sm" onclick="deleteIdea(\'' + idea.id + '\')" title="Delete this episode idea" style="color: var(--danger, #cc4444); font-size: 0.7rem; padding: 4px 8px;">Delete</button>'
         + '</div>'
         + '</div>'
@@ -730,10 +732,6 @@
     function renderViewMode(idea, jokeHtml, songHtml, guestHtml) {
       var html = '';
 
-      // Edit button
-      html += '<div style="display:flex; justify-content:flex-end; margin-bottom: var(--space-sm);">'
-        + '<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); enterEditMode(\'' + idea.id + '\')">✏️ Edit</button>'
-        + '</div>';
 
       // Title options
       html += '<div class="mb-md">'

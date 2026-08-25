@@ -1377,6 +1377,8 @@ async function main() {
   assert.ok(showManagement.includes("(isExpanded ? ' expanded' : '')"));
   assert.doesNotMatch(showManagement, /lastProcessedId|autoExpand/);
   assert.ok(showManagement.includes("function enterEditMode(ideaId) {"));
+  assert.match(showManagement, /const isEditable = idea\.status === 'processed' \|\| idea\.status === 'scheduled'/);
+  assert.match(showManagement, /show-edit-action[^>]*aria-label="Edit show"[^>]*enterEditMode/);
   assert.ok(showManagement.includes("if (expanded) expandedIdeas.add(ideaId);"));
   assert.ok(showManagement.includes("else expandedIdeas.delete(ideaId);"));
   assert.ok(showManagement.includes("await Top3EpisodePlanning.start(function() {"));
