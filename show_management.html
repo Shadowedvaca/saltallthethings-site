@@ -476,12 +476,12 @@
     // ============================================
     // State
     // ============================================
-    let currentMonth = 2; // March
-    let currentYear = 2026;
+    const initialCalendarView = ShowEngine.getInitialCalendarView();
+    let currentMonth = initialCalendarView.month;
+    let currentYear = initialCalendarView.year;
     let draggedIdeaId = null;
     const editingIdeas = new Set();
     const expandedIdeas = new Set();
-    let lastProcessedId = null;
     let pastSectionOpen = false;
 
     // ============================================
@@ -639,8 +639,6 @@
         pastSection.innerHTML = '';
       }
 
-      // Clear auto-expand flag
-      if (lastProcessedId) lastProcessedId = null;
     }
 
     function togglePastSection() {
@@ -655,21 +653,27 @@
       const title = esc(idea.selectedTitle || (idea.titles && idea.titles[0]) || 'Untitled Idea');
       const summary = esc(idea.summary || truncate(idea.rawNotes, 120));
       const isEditing = editingIdeas.has(idea.id);
-      const autoExpand = expandedIdeas.has(idea.id) || (idea.id === lastProcessedId) || isEditing;
+      const isExpanded = expandedIdeas.has(idea.id);
+      const isEditable = idea.status === 'processed' || idea.status === 'scheduled';
       const guestSummary = GuestPreparation.renderSummary(idea.id, Storage.getGuests(), Storage.getGuestAssignments());
 
       // Schedule info line
       var scheduleHtml = '';
       if (slot) {
         scheduleHtml = '<div class="schedule-info">'
-          + '<span class="date-badge ep">' + slot.episodeNumber + '</span>'
+          + '<span class="date-badge ep">' + ShowEngine.getEffectiveEpisodeNumber(slot) + '</span>'
           + '<span class="date-badge record">Record: ' + ShowEngine.formatDateShort(slot.recordDate) + '</span>'
           + '<span class="date-badge release' + (slot.releaseDateOverride ? ' override' : '') + '">Release: ' + ShowEngine.formatDateShort(ShowEngine.getEffectiveReleaseDate(slot)) + (slot.releaseDateOverride ? ' ✎' : '') + '</span>'
           + '<a href="#show/' + slot.id + '" class="show-display-link" onclick="event.stopPropagation(); openShowDisplay(\'' + slot.id + '\'); return false;" title="Full show display">⛶ View</a>'
           + '</div>';
+      } else {
+        scheduleHtml = '<div class="schedule-info">'
+          + '<span class="date-badge">Unscheduled</span>'
+          + '<a href="#idea/' + idea.id + '" class="show-display-link" onclick="event.stopPropagation(); openIdeaDisplay(\'' + idea.id + '\'); return false;" title="Full show display">⛶ View</a>'
+          + '</div>';
       }
 
-      return '<div class="idea-list-card' + (autoExpand ? ' expanded' : '') + '" id="idea-' + idea.id + '" onclick="if (!event.target.closest(\'[data-guest-action]\')) toggleIdeaExpand(\'' + idea.id + '\')">'
+      return '<div class="idea-list-card' + (isExpanded ? ' expanded' : '') + '" id="idea-' + idea.id + '" onclick="if (!event.target.closest(\'[data-guest-action]\')) toggleIdeaExpand(\'' + idea.id + '\')">'
         + '<div class="idea-header">'
         + '<div style="flex:1;">'
         + '<div class="flex items-center gap-sm mb-sm">'
@@ -684,6 +688,7 @@
         + '</div>'
         + '<div class="flex gap-xs" onclick="event.stopPropagation()">'
         + (idea.status === 'draft' ? '<button class="btn btn-secondary btn-sm" onclick="reprocessIdea(\'' + idea.id + '\')">Process</button>' : '')
+        + (isEditable && !isEditing ? '<button type="button" class="btn btn-secondary btn-sm show-edit-action" aria-label="Edit show" onclick="enterEditMode(\'' + idea.id + '\')">Edit</button>' : '')
         + '<button class="btn btn-ghost btn-sm" onclick="deleteIdea(\'' + idea.id + '\')" title="Delete this episode idea" style="color: var(--danger, #cc4444); font-size: 0.7rem; padding: 4px 8px;">Delete</button>'
         + '</div>'
         + '</div>'
@@ -727,10 +732,6 @@
     function renderViewMode(idea, jokeHtml, songHtml, guestHtml) {
       var html = '';
 
-      // Edit button
-      html += '<div style="display:flex; justify-content:flex-end; margin-bottom: var(--space-sm);">'
-        + '<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); enterEditMode(\'' + idea.id + '\')">✏️ Edit</button>'
-        + '</div>';
 
       // Title options
       html += '<div class="mb-md">'
@@ -821,6 +822,18 @@
           + 'style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-default); border-radius: 4px; padding: 4px 8px; font-size: 0.8rem;">'
           + (isOverridden ? '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); resetReleaseDate(\'' + editSlot.id + '\')" title="Reset to calculated default">↩ Reset</button>' : '')
           + (isOverridden ? '<span class="text-xs" style="color: var(--gold-bright);">✎ Custom date</span>' : '<span class="text-xs text-muted">(default: record + 7 days)</span>')
+          + '</div>';
+      }
+
+      // Episode number override (only scheduled shows have a number)
+      if (editSlot) {
+        var episodeOverride = editSlot.episodeNumberOverride;
+        html += '<div class="mb-md" onclick="event.stopPropagation()" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">'
+          + '<label class="text-xs text-muted" for="episode-number-' + editSlot.id + '" style="text-transform:uppercase; letter-spacing:0.5px; font-weight:600;">Episode Number:</label>'
+          + '<input id="episode-number-' + editSlot.id + '" type="number" min="1" max="2147483647" step="1" inputmode="numeric" class="edit-field edit-field-sm" data-edit-episode-number value="' + (episodeOverride == null ? '' : episodeOverride) + '" placeholder="' + editSlot.episodeNum + '" aria-label="Episode number override" style="width:120px;">'
+          + '<button type="button" class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); updateEpisodeNumberOverride(\'' + editSlot.id + '\', \'' + idea.id + '\')">Save Number</button>'
+          + (episodeOverride == null ? '' : '<button type="button" class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); resetEpisodeNumberOverride(\'' + editSlot.id + '\', \'' + idea.id + '\')">Use Automatic</button>')
+          + '<span class="text-xs text-muted">Automatic: ' + editSlot.episodeNumber + '; showing: ' + ShowEngine.getEffectiveEpisodeNumber(editSlot) + '</span>'
           + '</div>';
       }
 
@@ -1192,10 +1205,8 @@
         };
         if (!await Storage.addIdea(idea)) return;
         document.getElementById('ideaNotes').value = '';
-        lastProcessedId = newId;
-        editingIdeas.add(newId);
         renderIdeasList();
-        Toast.success('Idea processed! Review and edit below.');
+        Toast.success('Idea processed and saved.');
       } catch (err) { console.error('Process error:', err); Toast.error('AI processing failed: ' + err.message); }
       finally { document.getElementById('composerOverlay').classList.add('hidden'); document.getElementById('processBtn').disabled = false; }
     }
@@ -1234,10 +1245,8 @@
           aiModelId: config.aiModel === 'openai' ? config.openaiModelId : config.claudeModelId
         });
         if (!saved) return;
-        lastProcessedId = ideaId;
-        editingIdeas.add(ideaId);
         renderIdeasList();
-        Toast.success('Idea processed! Review and edit below.');
+        Toast.success('Idea processed and saved.');
       } catch (err) { Toast.error('Processing failed: ' + err.message); }
     }
 
@@ -1255,18 +1264,23 @@
     // ============================================
     var currentSpotifyOverview = '';
 
-    async function openShowDisplay(slotId) {
+    function openIdeaDisplay(ideaId) {
+      var slot = getScheduleInfoForIdea(ideaId);
+      return slot ? openShowDisplay(slot.id) : openShowDisplay(null, ideaId);
+    }
+
+    async function openShowDisplay(slotId, unscheduledIdeaId) {
       var slots = Storage.getShowSlots();
       var assignments = Storage.getAssignments();
       var ideas = Storage.getIdeas();
 
-      var slot = slots.find(function(s) { return s.id === slotId; });
-      if (!slot) { Toast.error('Show slot not found.'); return; }
+      var slot = slotId ? slots.find(function(s) { return s.id === slotId; }) : null;
+      if (slotId && !slot) { Toast.error('Show slot not found.'); return; }
 
-      var ideaId = assignments[slotId];
+      var ideaId = slot ? assignments[slotId] : unscheduledIdeaId;
       var idea = ideaId ? ideas.find(function(i) { return i.id === ideaId; }) : null;
 
-      if (!idea) { Toast.error('No idea assigned to this slot.'); return; }
+      if (!idea) { Toast.error(slot ? 'No idea assigned to this slot.' : 'Show not found.'); return; }
 
       try {
         await Top3EpisodePlanning.loadEpisode(idea.id);
@@ -1281,7 +1295,8 @@
       }
 
       // Update URL hash
-      if (location.hash !== '#show/' + slotId) history.pushState(null, '', '#show/' + slotId);
+      var displayHash = slot ? '#show/' + slotId : '#idea/' + idea.id;
+      if (location.hash !== displayHash) history.pushState(null, '', displayHash);
 
       var title = idea.selectedTitle || (idea.titles && idea.titles[0]) || 'Untitled';
       var assignedJoke = Storage.getJokeForIdea(idea.id);
@@ -1290,9 +1305,9 @@
 
       var html = '<div class="show-display-header">'
         + '<div>'
-        + '<span class="ep-badge">' + slot.episodeNumber + '</span>'
+        + '<span class="ep-badge">' + (slot ? ShowEngine.getEffectiveEpisodeNumber(slot) : 'Unscheduled') + '</span>'
         + '<h1>' + esc(title) + '</h1>'
-        + '<div class="dates">Record: ' + ShowEngine.formatDateShort(slot.recordDate) + ' &nbsp;|&nbsp; Release: ' + ShowEngine.formatDateShort(ShowEngine.getEffectiveReleaseDate(slot)) + '</div>'
+        + '<div class="dates">' + (slot ? 'Record: ' + ShowEngine.formatDateShort(slot.recordDate) + ' &nbsp;|&nbsp; Release: ' + ShowEngine.formatDateShort(ShowEngine.getEffectiveReleaseDate(slot)) : 'No schedule slot assigned') + '</div>'
         + '</div>'
         + '<button class="show-display-close" onclick="closeShowDisplay()">✕ Close</button>'
         + '</div>';
@@ -1345,7 +1360,7 @@
       }
 
       // Next show preview
-      var next = getNextShowInfo(slot.recordDate);
+      var next = slot ? getNextShowInfo(slot.recordDate) : null;
       if (next) {
         html += '<div class="show-display-next">'
           + '<h3>Next Recording (' + ShowEngine.formatDateShort(next.slot.recordDate) + ')</h3>';
@@ -1391,7 +1406,7 @@
       currentSpotifyOverview = '';
       document.body.style.overflow = '';
       // Clean URL hash
-      if (location.hash.startsWith('#show/')) {
+      if (location.hash.startsWith('#show/') || location.hash.startsWith('#idea/')) {
         history.pushState(null, '', location.pathname + location.search);
       }
     }
@@ -1401,6 +1416,9 @@
       if (location.hash.startsWith('#show/')) {
         var slotId = location.hash.replace('#show/', '');
         openShowDisplay(slotId);
+      } else if (location.hash.startsWith('#idea/')) {
+        var ideaId = location.hash.replace('#idea/', '');
+        openIdeaDisplay(ideaId);
       } else {
         closeShowDisplay();
       }
@@ -1478,7 +1496,7 @@
         if (assignedIdeaId) {
           var idea = ideas.find(function(i) { return i.id === assignedIdeaId; });
           recordHtml = '<div class="tuesday-drop has-show" data-slot-id="' + recordSlot.id + '" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event, \'' + recordSlot.id + '\')">'
-            + '<div class="show-info"><span class="ep-num">' + recordSlot.episodeNumber + '</span><span class="show-title">' + esc(idea ? (idea.selectedTitle || (idea.titles && idea.titles[0]) || 'Untitled') : 'Untitled') + '</span>'
+            + '<div class="show-info"><span class="ep-num">' + ShowEngine.getEffectiveEpisodeNumber(recordSlot) + '</span><span class="show-title">' + esc(idea ? (idea.selectedTitle || (idea.titles && idea.titles[0]) || 'Untitled') : 'Untitled') + '</span>'
             + '<a href="#show/' + recordSlot.id + '" class="cal-display-link" onclick="event.stopPropagation(); openShowDisplay(\'' + recordSlot.id + '\'); return false;" title="View show">⛶</a>'
             + '<button class="unassign-btn" onclick="event.stopPropagation(); unassignShow(\'' + recordSlot.id + '\')" title="Remove">✕</button></div></div>';
         } else {
@@ -1494,7 +1512,7 @@
           if (aid) {
             var idea = ideas.find(function(i) { return i.id === aid; });
             return '<div class="tuesday-drop has-show" style="border-left: 2px solid var(--status-scheduled);">'
-              + '<div class="show-info"><span class="ep-num">' + ps.episodeNumber + '</span><span class="show-title">' + esc(idea ? (idea.selectedTitle || (idea.titles && idea.titles[0]) || 'Untitled') : 'Untitled') + '</span></div></div>';
+              + '<div class="show-info"><span class="ep-num">' + ShowEngine.getEffectiveEpisodeNumber(ps) + '</span><span class="show-title">' + esc(idea ? (idea.selectedTitle || (idea.titles && idea.titles[0]) || 'Untitled') : 'Untitled') + '</span></div></div>';
           }
           return '<div class="tuesday-drop" style="border-left: 2px solid var(--status-scheduled); opacity: 0.5;"><span class="empty-placeholder">' + ps.episodeNumber + '</span></div>';
         }).join('');
@@ -1511,9 +1529,9 @@
     }
 
     function changeMonth(delta) {
-      currentMonth += delta;
-      if (currentMonth > 11) { currentMonth = 0; currentYear++; }
-      if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+      var nextView = ShowEngine.moveCalendarView(currentYear, currentMonth, delta);
+      currentMonth = nextView.month;
+      currentYear = nextView.year;
       renderCalendar();
     }
 
@@ -1533,25 +1551,64 @@
       if (!await Storage.assignIdeaToSlot(ideaId, slotId)) return;
       renderScheduleBoard(); renderIdeasList();
       var slot = ShowEngine.getSlotById(slotId);
-      Toast.success('Assigned to ' + slot.episodeNumber + ' (record ' + ShowEngine.formatDateShort(slot.recordDate) + ')');
+      Toast.success('Assigned to ' + ShowEngine.getEffectiveEpisodeNumber(slot) + ' (record ' + ShowEngine.formatDateShort(slot.recordDate) + ')');
     }
     async function unassignShow(slotId) {
       if (!await Storage.unassignSlot(slotId)) return;
       renderScheduleBoard(); renderIdeasList(); Toast.info('Show unassigned.');
     }
 
-    function updateReleaseDate(slotId, newDate) {
-      ShowEngine.setReleaseDate(slotId, newDate);
+    async function updateReleaseDate(slotId, newDate) {
+      if (!await ShowEngine.setReleaseDate(slotId, newDate)) {
+        renderIdeasList();
+        renderCalendar();
+        Toast.error('Release date was not saved. The latest server state is displayed; review and retry.');
+        return;
+      }
       renderIdeasList();
       renderCalendar();
       Toast.show('Release date updated', 'success');
     }
 
-    function resetReleaseDate(slotId) {
-      ShowEngine.resetReleaseDate(slotId);
+    async function resetReleaseDate(slotId) {
+      if (!await ShowEngine.resetReleaseDate(slotId)) {
+        renderIdeasList();
+        renderCalendar();
+        Toast.error('Release date reset was not saved. The latest server state is displayed; review and retry.');
+        return;
+      }
       renderIdeasList();
       renderCalendar();
       Toast.show('Release date reset to default', 'info');
+    }
+
+    async function updateEpisodeNumberOverride(slotId, ideaId) {
+      var container = document.getElementById('expanded-' + ideaId);
+      var input = container ? container.querySelector('[data-edit-episode-number]') : null;
+      var episodeNumber = ShowEngine.parseEpisodeNumberOverride(input ? input.value : '');
+      if (episodeNumber === null) {
+        Toast.error('Episode number must be a positive whole number.');
+        return;
+      }
+      if (!await Storage.setEpisodeNumberOverride(slotId, episodeNumber)) {
+        renderIdeasList();
+        renderCalendar();
+        return;
+      }
+      rerenderIdeasPreservingExpansion(ideaId);
+      renderCalendar();
+      Toast.success('Episode number updated.');
+    }
+
+    async function resetEpisodeNumberOverride(slotId, ideaId) {
+      if (!await Storage.clearEpisodeNumberOverride(slotId)) {
+        renderIdeasList();
+        renderCalendar();
+        return;
+      }
+      rerenderIdeasPreservingExpansion(ideaId);
+      renderCalendar();
+      Toast.info('Episode number returned to automatic calculation.');
     }
 
     // ============================================
@@ -1564,16 +1621,27 @@
     // ============================================
     // Init — called by Auth after Storage.init()
     // ============================================
+    function reconcileVisibleStorageState() {
+      renderIdeasList();
+      if (document.getElementById('tab-schedule').classList.contains('active')) {
+        renderIdeaBank();
+        renderCalendar();
+      }
+    }
+
     async function onStorageReady() {
+      Storage.subscribe(reconcileVisibleStorageState);
       ShowEngine.ensureSlots();
       renderIdeasList();
-      await Top3EpisodePlanning.start(function(ideaId) {
-        if (ideaId) rerenderIdeasPreservingExpansion(ideaId);
-        else renderIdeasList();
+      await Top3EpisodePlanning.start(function() {
+        renderIdeasList();
       }, async function(ideaId) {
-        if (!location.hash.startsWith('#show/')) return;
-        var slotId = location.hash.replace('#show/', '');
-        if (Storage.getAssignments()[slotId] === ideaId) await openShowDisplay(slotId);
+        if (location.hash.startsWith('#show/')) {
+          var slotId = location.hash.replace('#show/', '');
+          if (Storage.getAssignments()[slotId] === ideaId) await openShowDisplay(slotId);
+        } else if (location.hash === '#idea/' + ideaId) {
+          await openIdeaDisplay(ideaId);
+        }
       });
 
       // Check for hash-based show display on load
@@ -1581,6 +1649,9 @@
         var slotId = location.hash.replace('#show/', '');
         // Small delay to ensure data is ready
         setTimeout(function() { openShowDisplay(slotId); }, 100);
+      } else if (location.hash.startsWith('#idea/')) {
+        var ideaId = location.hash.replace('#idea/', '');
+        setTimeout(function() { openIdeaDisplay(ideaId); }, 100);
       }
     }
 

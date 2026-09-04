@@ -1,7 +1,9 @@
 /* Authenticated Top 3 concept workshop and bank page. */
 (function(root, factory) {
   if (typeof module === 'object' && module.exports) {
-    module.exports = factory(root);
+    var exported = factory(root);
+    exported.createForTesting = factory;
+    module.exports = exported;
   } else {
     var api = factory({
       document: root.document,
@@ -24,6 +26,7 @@
   var currentQuery = '';
   var editingConceptId = null;
   var acceptedProvenance = null;
+  var draftConceptId = null;
 
   function escapeHtml(value) {
     if (value == null) return '';
@@ -39,6 +42,21 @@
     var detail = body && (body.error || body.detail);
     if (detail && typeof detail === 'object') detail = detail.message;
     return detail || 'Top 3 request failed (' + status + ').';
+  }
+
+  function bankFingerprint(items) {
+    return JSON.stringify((items || []).map(function(concept) {
+      return {
+        concept: conceptPayload(concept),
+        assignedEpisodes: (concept.assignedEpisodes || []).map(function(assignment) {
+          return {
+            ideaId: assignment.ideaId,
+            title: assignment.title,
+            episodeNumber: assignment.episodeNumber
+          };
+        }).sort(function(left, right) { return left.ideaId.localeCompare(right.ideaId); })
+      };
+    }).sort(function(left, right) { return left.concept.id.localeCompare(right.concept.id); }));
   }
 
   async function apiRequest(path, options) {
@@ -59,9 +77,22 @@
     var body = await response.json().catch(function() { return {}; });
     if (!response.ok) {
       var conflict = response.status === 409;
-      if (conflict) await loadConcepts();
+      var bankChanged = false;
+      if (conflict) {
+        var beforeConflict = bankFingerprint(concepts);
+        await loadConcepts();
+        bankChanged = beforeConflict !== bankFingerprint(concepts);
+        // A shared revision can advance for unrelated application data. Retry
+        // once only when the canonical bank projection proves this mutation
+        // cannot overwrite a concurrent Top 3 concept or assignment change.
+        if (options.mutation && !options.conflictRetry && !bankChanged) {
+          return apiRequest(path, Object.assign({}, options, { conflictRetry: true }));
+        }
+      }
       var error = new Error(conflict
-        ? 'The Top 3 Bank changed on the server. The latest concepts are shown; review your form and retry.'
+        ? bankChanged
+          ? 'The Top 3 Bank changed on the server. The latest concepts are shown; your proposal is preserved for review and retry.'
+          : 'The server revision changed again while saving. The latest Top 3 Bank is shown; your proposal is preserved for retry.'
         : errorMessage(body, response.status));
       error.status = response.status;
       throw error;
@@ -254,6 +285,7 @@
   function resetForm() {
     editingConceptId = null;
     acceptedProvenance = null;
+    draftConceptId = null;
     root.document.getElementById('top3Form').reset();
     root.document.getElementById('top3FormHeading').textContent = 'Create a Top 3 Concept';
     root.document.getElementById('generateTop3Button').textContent = 'Generate AI Proposal';
@@ -298,8 +330,10 @@
     var button = root.document.getElementById('generateTop3Button');
     button.disabled = true;
     announce(editingConceptId || acceptedProvenance ? 'Regenerating AI proposal…' : 'Generating AI proposal…');
+    var proposal;
+    var beforeGeneration = bankFingerprint(concepts);
     try {
-      var proposal = await apiRequest('/ai/top3-concept', {
+      proposal = await apiRequest('/ai/top3-concept', {
         method: 'POST',
         body: {
           description: String(values.description).trim(),
@@ -308,21 +342,39 @@
           hostNotes: String(values.hostNotes || '').trim() || null
         }
       });
-      acceptedProvenance = {
-        source: 'ai',
-        aiProvider: proposal.aiProvider,
-        aiModelId: proposal.aiModelId,
-        aiGeneratedAt: proposal.aiGeneratedAt
-      };
-      setFormValues(proposal);
-      root.document.getElementById('proposalNotice').textContent = 'AI proposal loaded for review. These are fictional examples, not participant picks. Nothing has been saved yet.';
-      root.document.getElementById('generateTop3Button').textContent = 'Regenerate AI Proposal';
-      root.document.getElementById('saveTop3Button').textContent = editingConceptId ? 'Save AI Concept Changes' : 'Save AI Proposal';
-      announce('AI proposal ready for review and editing.');
-      root.document.getElementById('top3Name').focus();
     } catch (error) {
       showError(error.message);
       announce('AI generation failed. Your workshop entries are unchanged; correct the issue and retry.');
+      button.disabled = false;
+      return;
+    }
+
+    acceptedProvenance = {
+      source: 'ai',
+      aiProvider: proposal.aiProvider,
+      aiModelId: proposal.aiModelId,
+      aiGeneratedAt: proposal.aiGeneratedAt
+    };
+    setFormValues(proposal);
+    root.document.getElementById('generateTop3Button').textContent = 'Regenerate AI Proposal';
+    root.document.getElementById('saveTop3Button').textContent = editingConceptId ? 'Save AI Concept Changes' : 'Save AI Proposal';
+    try {
+      // AI generation is intentionally read-only, but its network round trip
+      // can outlive another mutation. Refresh both the bank and revision while
+      // leaving the generated workshop values untouched.
+      await loadConcepts();
+      var bankChanged = beforeGeneration !== bankFingerprint(concepts);
+      renderConcepts();
+      root.document.getElementById('proposalNotice').textContent = bankChanged
+        ? 'AI proposal loaded and preserved. The Top 3 Bank changed during generation, so the latest concepts are shown; review both before saving.'
+        : 'AI proposal loaded for review. These are fictional examples, not participant picks. Nothing has been saved yet.';
+      announce(bankChanged
+        ? 'AI proposal ready. The latest Top 3 Bank was reconciled for review.'
+        : 'AI proposal ready for review and editing.');
+      root.document.getElementById('top3Name').focus();
+    } catch (error) {
+      showError('The AI proposal is preserved, but the latest Top 3 revision could not be loaded. Retry generation or reload before saving.');
+      announce('AI proposal ready, but revision reconciliation failed. Do not save until the bank reloads successfully.');
     } finally {
       button.disabled = false;
     }
@@ -349,8 +401,9 @@
     var provenance = acceptedProvenance || {
       source: 'manual', aiProvider: null, aiModelId: null, aiGeneratedAt: null
     };
+    if (!existing && !draftConceptId) draftConceptId = generateId();
     var payload = Object.assign({
-      id: existing ? existing.id : generateId(),
+      id: existing ? existing.id : draftConceptId,
       status: existing ? existing.status : 'active'
     }, values, provenance);
     var button = root.document.getElementById('saveTop3Button');
@@ -465,8 +518,11 @@
     normalizeExamples: normalizeExamples,
     validateConceptInput: validateConceptInput,
     conceptPayload: conceptPayload,
+    bankFingerprint: bankFingerprint,
     conceptMatches: conceptMatches,
     conceptCardMarkup: conceptCardMarkup,
+    generateProposal: generateProposal,
+    saveConcept: saveConcept,
     onStorageReady: onStorageReady,
     start: start
   };

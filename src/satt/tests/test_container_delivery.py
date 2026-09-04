@@ -215,10 +215,10 @@ def test_pull_request_workflow_has_minimal_permissions_and_pinned_actions():
     assert "python scripts/validate_release.py" in source
     assert "Validate current release contract without publishing" in source
     assert "Exercise isolated migration rollback and recovery" in source
-    assert "app alembic downgrade 0008" in source
-    assert 'test "$revision" = "0008"' in source
-    assert "app alembic upgrade head" in source
+    assert "app alembic downgrade 0009" in source
     assert 'test "$revision" = "0009"' in source
+    assert "app alembic upgrade head" in source
+    assert 'test "$revision" = "0010"' in source
     assert "docker compose -f compose.ci.yaml up -d --wait app" in source
     assert "Exercise isolated production backup restore" in source
     assert "pg_dump --format=custom --schema=satt" in source
@@ -358,7 +358,7 @@ def test_production_deploy_is_tag_only_immutable_and_recoverable():
 
     deploy = workflow["jobs"]["deploy"]
     assert deploy["environment"] == "production"
-    assert deploy["permissions"] == {"contents": "read"}
+    assert deploy["permissions"] == {"actions": "read", "contents": "read"}
     assert deploy["outputs"] == {
         "release_sha": "${{ steps.release.outputs.sha }}",
         "release_tag": "${{ steps.release.outputs.tag }}",
@@ -390,6 +390,13 @@ def test_production_deploy_is_tag_only_immutable_and_recoverable():
         'test "$sha" = "$tag_sha"',
         'git merge-base --is-ancestor "$sha" origin/main',
         "main:refs/remotes/origin/main",
+        "Verify exact commit passed test promotion",
+        "actions/workflows/deploy-test.yml/runs",
+        '-f head_sha="$TESTED_SHA"',
+        'run.get("head_branch") == "main"',
+        'run.get("head_sha") == tested_sha',
+        'run.get("conclusion") == "success"',
+        "Production blocked: no successful exact-SHA test promotion",
         'git checkout --detach "$deploy_tag"',
         'test "$(git rev-parse HEAD)" = "$deploy_sha"',
         "bash scripts/production_deploy.sh",
@@ -417,6 +424,10 @@ def test_production_deploy_is_tag_only_immutable_and_recoverable():
         "set -euo pipefail",
     ):
         assert required in combined
+
+    assert source.index("Verify exact commit passed test promotion") < source.index(
+        "Configure strict SSH trust"
+    )
 
     for forbidden in (
         "DEV_HOST",

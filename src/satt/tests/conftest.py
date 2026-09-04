@@ -1,7 +1,7 @@
 """Test configuration and shared fixtures for SATT tests.
 
-DB-requiring tests use the `db_session` and `db_client` fixtures, which
-connect to a Postgres instance at TEST_DATABASE_URL (or the default sattdb).
+DB-requiring tests use the `db_session` and `db_client` fixtures, which connect
+only to the explicitly configured Postgres instance at TEST_DATABASE_URL.
 
 Tests that don't need a DB (e.g. health) use the plain `client` fixture.
 

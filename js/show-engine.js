@@ -14,6 +14,21 @@ const ShowEngine = {
   GENERATE_MONTHS_AHEAD: 3,
 
   /**
+   * Get the local calendar month and year used when Schedule Board opens.
+   */
+  getInitialCalendarView(date = new Date()) {
+    return { month: date.getMonth(), year: date.getFullYear() };
+  },
+
+  /**
+   * Move a calendar view by the requested number of months.
+   */
+  moveCalendarView(year, month, delta) {
+    const target = new Date(year, month + delta, 1);
+    return { month: target.getMonth(), year: target.getFullYear() };
+  },
+
+  /**
    * Initialize or refresh show slots.
    * Ensures slots exist from start date through 3 months from today.
    */
@@ -119,6 +134,27 @@ const ShowEngine = {
   },
 
   /**
+   * Parse a positive whole-number override without coercing partial values.
+   */
+  parseEpisodeNumberOverride(value) {
+    const normalized = String(value == null ? '' : value).trim();
+    if (!/^[1-9]\d*$/.test(normalized)) return null;
+    const parsed = Number(normalized);
+    return Number.isSafeInteger(parsed) && parsed <= 2147483647 ? parsed : null;
+  },
+
+  /**
+   * Return the one canonical number displayed for an assigned show.
+   */
+  getEffectiveEpisodeNumber(slot) {
+    if (!slot) return '';
+    if (Number.isInteger(slot.episodeNumberOverride) && slot.episodeNumberOverride > 0) {
+      return this._formatEpNumber(slot.episodeNumberOverride);
+    }
+    return slot.effectiveEpisodeNumber || slot.episodeNumber || this._formatEpNumber(slot.episodeNum);
+  },
+
+  /**
    * Get the show slot for a specific record date (YYYY-MM-DD string)
    */
   getSlotByRecordDate(dateStr) {
@@ -165,24 +201,24 @@ const ShowEngine = {
   /**
    * Set a custom release date on a slot
    */
-  setReleaseDate(slotId, newDate) {
-    const slots = Storage.getShowSlots();
-    const slot = slots.find(s => s.id === slotId);
+  async setReleaseDate(slotId, newDate) {
+    const slots = Storage.getShowSlots().map(slot => Object.assign({}, slot));
+    const slot = slots.find(candidate => candidate.id === slotId);
     if (!slot) return null;
     slot.releaseDateOverride = newDate;
-    Storage.saveShowSlots(slots);
-    return slot;
+    if (!await Storage.saveShowSlots(slots)) return null;
+    return Storage.getShowSlots().find(candidate => candidate.id === slotId) || null;
   },
 
   /**
    * Reset release date back to calculated default
    */
-  resetReleaseDate(slotId) {
-    const slots = Storage.getShowSlots();
-    const slot = slots.find(s => s.id === slotId);
+  async resetReleaseDate(slotId) {
+    const slots = Storage.getShowSlots().map(slot => Object.assign({}, slot));
+    const slot = slots.find(candidate => candidate.id === slotId);
     if (!slot) return null;
     delete slot.releaseDateOverride;
-    Storage.saveShowSlots(slots);
-    return slot;
+    if (!await Storage.saveShowSlots(slots)) return null;
+    return Storage.getShowSlots().find(candidate => candidate.id === slotId) || null;
   }
 };

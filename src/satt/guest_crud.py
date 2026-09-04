@@ -9,6 +9,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from satt.crud import bump_data_revision
+from satt.episode_numbers import effective_episode_number
 from satt.guest_contract import (
     GuestContractError,
     validate_guest_assignments,
@@ -57,6 +58,8 @@ async def get_guests(db: AsyncSession) -> list[dict]:
             Idea.selected_title,
             Assignment.slot_id,
             ShowSlot.episode_number,
+            ShowSlot.episode_num,
+            ShowSlot.episode_number_override,
             effective_release_date.label("release_date"),
         )
         .join(Idea, Idea.id == GuestAssignment.idea_id)
@@ -70,7 +73,15 @@ async def get_guests(db: AsyncSession) -> list[dict]:
                 "ideaId": row.idea_id,
                 "title": row.selected_title,
                 "slotId": row.slot_id,
-                "episodeNumber": row.episode_number,
+                "episodeNumber": (
+                    effective_episode_number(
+                        row.episode_number,
+                        row.episode_num,
+                        row.episode_number_override,
+                    )
+                    if row.episode_number is not None
+                    else None
+                ),
                 "releaseDate": row.release_date.isoformat()
                 if row.release_date is not None
                 else None,

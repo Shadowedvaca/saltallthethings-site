@@ -8,6 +8,13 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from satt.episode_numbers import (
+    EpisodeNumberContractError,
+    effective_episode_number,
+    effective_episode_value,
+    format_episode_number,
+    normalize_episode_number_override,
+)
 from satt.joke_contract import validate_banked_jokes
 from satt.models import Assignment, Config, DataRevision, Idea, Joke, ShowSlot, Song
 from satt.serializers import serialize_idea, serialize_joke, serialize_postprod_row, serialize_show_slot
@@ -372,9 +379,22 @@ async def get_show_slots(db: AsyncSession) -> list[dict]:
     return [serialize_show_slot(row) for row in result.scalars()]
 
 
-async def replace_show_slots(db: AsyncSession, slots: list[dict]) -> None:
+async def replace_show_slots(
+    db: AsyncSession,
+    slots: list[dict],
+    *,
+    validate_assignments: bool = True,
+) -> None:
+    normalized_slots = []
+    for raw_slot in slots:
+        slot = dict(raw_slot)
+        slot["episodeNumberOverride"] = normalize_episode_number_override(
+            slot.get("episodeNumberOverride")
+        )
+        normalized_slots.append(slot)
+
     await _lock_schedule_lifecycle(db)
-    new_ids = {slot["id"] for slot in slots}
+    new_ids = {slot["id"] for slot in normalized_slots}
     existing_result = await db.execute(select(ShowSlot.id))
     deleted_ids = {row.id for row in existing_result} - new_ids
 
@@ -396,12 +416,13 @@ async def replace_show_slots(db: AsyncSession, slots: list[dict]) -> None:
         await db.execute(delete(ShowSlot))
     await db.flush()
 
-    for slot in slots:
+    for slot in normalized_slots:
         sid = slot["id"]
         stmt = pg_insert(ShowSlot.__table__).values(
             id=sid,
             episode_number=slot.get("episodeNumber") or "",
             episode_num=slot.get("episodeNum") or 0,
+            episode_number_override=slot["episodeNumberOverride"],
             record_date=_parse_date(slot.get("recordDate")),
             release_date=_parse_date(slot.get("releaseDate")),
             is_rollout=slot.get("isRollout") or False,
@@ -412,6 +433,7 @@ async def replace_show_slots(db: AsyncSession, slots: list[dict]) -> None:
             set_={
                 "episode_number": stmt.excluded.episode_number,
                 "episode_num": stmt.excluded.episode_num,
+                "episode_number_override": stmt.excluded.episode_number_override,
                 "record_date": stmt.excluded.record_date,
                 "release_date": stmt.excluded.release_date,
                 "is_rollout": stmt.excluded.is_rollout,
@@ -420,6 +442,48 @@ async def replace_show_slots(db: AsyncSession, slots: list[dict]) -> None:
         )
         await db.execute(ins)
     await db.flush()
+    if validate_assignments:
+        await validate_assigned_episode_numbers(db)
+    await bump_data_revision(db)
+
+
+async def validate_assigned_episode_numbers(db: AsyncSession) -> None:
+    """Reject duplicate effective numbers among actual assigned shows."""
+    result = await db.execute(
+        select(
+            Assignment.slot_id,
+            ShowSlot.episode_num,
+            ShowSlot.episode_number_override,
+        ).join(ShowSlot, ShowSlot.id == Assignment.slot_id)
+    )
+    seen: dict[int, str] = {}
+    for slot_id, automatic_number, override in result:
+        effective = effective_episode_value(automatic_number, override)
+        prior_slot_id = seen.get(effective)
+        if prior_slot_id is not None:
+            raise EpisodeNumberContractError(
+                f"Episode number {format_episode_number(effective)} is already "
+                "used by another scheduled show"
+            )
+        seen[effective] = slot_id
+
+
+async def set_episode_number_override(
+    db: AsyncSession,
+    slot_id: str,
+    override: int | None,
+) -> None:
+    """Set or clear one slot override without changing its schedule fields."""
+    normalized = normalize_episode_number_override(override)
+    await _lock_schedule_lifecycle(db)
+    slot = await db.scalar(
+        select(ShowSlot).where(ShowSlot.id == slot_id).with_for_update()
+    )
+    if slot is None:
+        raise DataNotFoundError("Show slot not found")
+    slot.episode_number_override = normalized
+    await db.flush()
+    await validate_assigned_episode_numbers(db)
     await bump_data_revision(db)
 
 
@@ -462,6 +526,7 @@ async def replace_assignments(db: AsyncSession, assignments: dict) -> None:
             .values(status="scheduled", updated_at=datetime.now(timezone.utc))
         )
     await db.flush()
+    await validate_assigned_episode_numbers(db)
     await bump_data_revision(db)
 
 
@@ -509,6 +574,7 @@ async def assign_idea_to_slot(
         .values(status="scheduled", updated_at=datetime.now(timezone.utc))
     )
     await db.flush()
+    await validate_assigned_episode_numbers(db)
     await bump_data_revision(db)
 
 
@@ -628,6 +694,8 @@ async def get_released_episodes(
     base_q = (
         select(
             ShowSlot.episode_number,
+            ShowSlot.episode_num,
+            ShowSlot.episode_number_override,
             Idea.selected_title,
             Idea.summary,
             Idea.image_file_id,
@@ -653,7 +721,11 @@ async def get_released_episodes(
 
     episodes = [
         {
-            "episodeNumber": row.episode_number,
+            "episodeNumber": effective_episode_number(
+                row.episode_number,
+                row.episode_num,
+                row.episode_number_override,
+            ),
             "title": row.selected_title,
             "summary": row.summary,
             "imageFileId": row.image_file_id,

@@ -77,11 +77,117 @@ function loadStorage(fetchImpl) {
   return { storage: context.Storage, errors, dom };
 }
 
+function loadShowEngine(storage) {
+  const context = { Date, Storage: storage };
+  vm.createContext(context);
+  const source = fs.readFileSync("js/show-engine.js", "utf8");
+  vm.runInContext(source + "\n;globalThis.ShowEngine = ShowEngine;", context);
+  return context.ShowEngine;
+}
+
 function response(status, data) {
   return {
     ok: status >= 200 && status < 300,
     status,
     json: async () => data,
+  };
+}
+
+function top3PageHarness(fetchImpl) {
+  const elements = new Map();
+  const formFieldIds = [
+    "top3Description", "top3Name", "top3Rules", "top3HostNotes",
+    "top3Example1", "top3Example2", "top3Example3",
+  ];
+  const ids = [
+    "pageNotice", "top3Form", "top3FormHeading", "generateTop3Button",
+    "saveTop3Button", "cancelTop3EditButton", "proposalNotice", "top3FormError",
+    "top3Count", "top3List", "noTop3Concepts", ...formFieldIds,
+  ];
+  function element(id) {
+    const attributes = new Map();
+    const item = {
+      id,
+      value: "",
+      textContent: "",
+      innerHTML: "",
+      className: id === "cancelTop3EditButton" || id === "noTop3Concepts" ? "hidden" : "",
+      disabled: false,
+      classList: {
+        add(name) {
+          if (!item.className.split(/\s+/).includes(name)) item.className = (item.className + " " + name).trim();
+        },
+        remove(name) {
+          item.className = item.className.split(/\s+/).filter((candidate) => candidate && candidate !== name).join(" ");
+        },
+        toggle(name, force) {
+          const present = item.className.split(/\s+/).includes(name);
+          const enabled = force === undefined ? !present : Boolean(force);
+          if (enabled) this.add(name); else this.remove(name);
+          return enabled;
+        },
+      },
+      setAttribute(name, value) { attributes.set(name, String(value)); },
+      removeAttribute(name) { attributes.delete(name); },
+      focus() { item.focused = true; },
+      scrollIntoView() {},
+      addEventListener() {},
+    };
+    return item;
+  }
+  ids.forEach((id) => elements.set(id, element(id)));
+  elements.get("top3Form").reset = () => {
+    formFieldIds.forEach((id) => { elements.get(id).value = ""; });
+  };
+  const toasts = [];
+  const root = {
+    document: {
+      getElementById(id) { return elements.get(id) || null; },
+      querySelectorAll(selector) {
+        if (selector === "#top3Form input, #top3Form textarea") {
+          return formFieldIds.map((id) => elements.get(id));
+        }
+        return [];
+      },
+    },
+    Auth: { getToken: () => "test-token" },
+    Toast: {
+      success(message) { toasts.push({ type: "success", message }); },
+      error(message) { toasts.push({ type: "error", message }); },
+    },
+    fetch: fetchImpl,
+    crypto: { randomUUID: () => "stable-draft-id" },
+    confirm: () => true,
+  };
+  return {
+    page: Top3BankPage.createForTesting(root),
+    elements,
+    toasts,
+  };
+}
+
+function top3Proposal() {
+  return {
+    name: "Top Dungeon Snacks",
+    description: "Rank three snacks for a dungeon run.",
+    rules: "Explain each rank.",
+    hostNotes: "Keep the discussion surprising.",
+    aiExample: ["Cheese wheel", "Spiced jerky", "Moonberry juice"],
+    status: "active",
+    source: "ai",
+    aiProvider: "claude",
+    aiModelId: "claude-test-model",
+    aiGeneratedAt: "2026-08-03T12:00:00Z",
+  };
+}
+
+function canonicalTop3Concept(payload) {
+  return {
+    ...payload,
+    assignedEpisodes: [],
+    createdByUserId: 101,
+    createdAt: "2026-08-03T12:00:01Z",
+    updatedAt: "2026-08-03T12:00:01Z",
   };
 }
 
@@ -107,6 +213,134 @@ function checkInlineScripts(filename, html) {
   }
 }
 
+function testHomepageHeroSpacingContract(homepage) {
+  const heroRule = homepage.match(/\.hero\s*\{([^}]+)\}/);
+  const scrollHintRule = homepage.match(/\.scroll-hint\s*\{([^}]+)\}/);
+
+  assert.ok(heroRule, "homepage defines the hero layout");
+  assert.ok(scrollHintRule, "homepage defines the Explore scroll hint");
+  assert.match(heroRule[1], /display:\s*flex/);
+  assert.match(heroRule[1], /flex-direction:\s*column/);
+  assert.match(heroRule[1], /gap:\s*clamp\(/);
+  assert.match(scrollHintRule[1], /position:\s*relative/);
+  assert.match(scrollHintRule[1], /bottom:\s*auto/);
+  assert.match(scrollHintRule[1], /flex:\s*0\s+0\s+auto/);
+  assert.doesNotMatch(scrollHintRule[1], /position:\s*absolute/);
+  assert.match(
+    homepage,
+    /<p class="hero-subtitle">A little salt for your day<\/p>[\s\S]*<div class="scroll-hint">[\s\S]*<span>Explore<\/span>/,
+  );
+}
+
+function testScheduleBoardCalendarView() {
+  const engine = loadShowEngine();
+
+  assert.deepEqual(
+    { ...engine.getInitialCalendarView(new Date(2026, 2, 15, 12)) },
+    { month: 2, year: 2026 },
+  );
+  assert.deepEqual(
+    { ...engine.getInitialCalendarView(new Date(2026, 7, 9, 12)) },
+    { month: 7, year: 2026 },
+  );
+  assert.deepEqual(
+    { ...engine.getInitialCalendarView(new Date(2026, 0, 1, 12)) },
+    { month: 0, year: 2026 },
+  );
+  assert.deepEqual(
+    { ...engine.getInitialCalendarView(new Date(2026, 11, 31, 12)) },
+    { month: 11, year: 2026 },
+  );
+  assert.deepEqual(
+    { ...engine.moveCalendarView(2026, 11, 1) },
+    { month: 0, year: 2027 },
+  );
+  assert.deepEqual(
+    { ...engine.moveCalendarView(2026, 0, -1) },
+    { month: 11, year: 2025 },
+  );
+}
+
+function testEpisodeNumberOverrideContract() {
+  const engine = loadShowEngine();
+  assert.equal(engine.parseEpisodeNumberOverride("42"), 42);
+  for (const invalid of ["", "0", "-1", "1.5", "12abc", "2147483648"]) {
+    assert.equal(engine.parseEpisodeNumberOverride(invalid), null);
+  }
+  assert.equal(engine.getEffectiveEpisodeNumber({
+    episodeNumber: "EP041", episodeNum: 41, episodeNumberOverride: 40,
+  }), "EP040");
+  assert.equal(engine.getEffectiveEpisodeNumber({
+    episodeNumber: "EP041", episodeNum: 41, episodeNumberOverride: null,
+  }), "EP041");
+}
+
+async function testEpisodeNumberStorageRoutes() {
+  const requests = [];
+  let revision = 0;
+  let override = null;
+  const canonical = () => state(revision, { showSlots: [{
+    id: "slot-41", episodeNumber: "EP041", episodeNum: 41,
+    episodeNumberOverride: override,
+    effectiveEpisodeNumber: override == null ? "EP041" : "EP040",
+    recordDate: "2026-09-01", releaseDate: "2026-09-08", isRollout: false,
+  }] });
+  const harness = loadStorage(async (url, options = {}) => {
+    if (url === "/api/export") return response(200, canonical());
+    requests.push({ url, options });
+    assert.equal(options.headers["If-Match"], String(revision));
+    if (options.method === "PUT") {
+      assert.deepEqual(JSON.parse(options.body), { episodeNumber: 40 });
+      override = 40;
+    } else {
+      assert.equal(options.method, "DELETE");
+      override = null;
+    }
+    revision += 1;
+    return response(200, { ok: true, state: canonical(), revision });
+  });
+  await harness.storage.init();
+  assert.equal(await harness.storage.setEpisodeNumberOverride("slot-41", 40), true);
+  assert.equal(harness.storage.getShowSlots()[0].effectiveEpisodeNumber, "EP040");
+  assert.equal(await harness.storage.clearEpisodeNumberOverride("slot-41"), true);
+  assert.equal(harness.storage.getShowSlots()[0].effectiveEpisodeNumber, "EP041");
+  assert.deepEqual(requests.map((request) => [request.url, request.options.method]), [
+    ["/api/schedule/slot-41/episode-number", "PUT"],
+    ["/api/schedule/slot-41/episode-number", "DELETE"],
+  ]);
+}
+
+async function testReleaseDateWaitsForCanonicalPersistence() {
+  let slots = [{ id: "slot-1", releaseDate: "2026-08-18" }];
+  let releaseSave;
+  const saveGate = new Promise((resolve) => { releaseSave = resolve; });
+  const storage = {
+    getShowSlots: () => slots,
+    async saveShowSlots(candidate) {
+      await saveGate;
+      slots = JSON.parse(JSON.stringify(candidate));
+      return true;
+    },
+  };
+  const engine = loadShowEngine(storage);
+  const pending = engine.setReleaseDate("slot-1", "2026-08-20");
+  assert.equal(slots[0].releaseDateOverride, undefined);
+  releaseSave();
+  assert.equal((await pending).releaseDateOverride, "2026-08-20");
+  assert.equal(slots[0].releaseDateOverride, "2026-08-20");
+
+  storage.saveShowSlots = async () => false;
+  assert.equal(await engine.setReleaseDate("slot-1", "2026-08-21"), null);
+  assert.equal(slots[0].releaseDateOverride, "2026-08-20");
+
+  storage.saveShowSlots = async (candidate) => {
+    slots = JSON.parse(JSON.stringify(candidate));
+    return true;
+  };
+  assert.equal((await engine.resetReleaseDate("slot-1")).releaseDateOverride, undefined);
+  assert.equal(slots[0].releaseDateOverride, undefined);
+}
+
 async function testSuccessfulCanonicalSave() {
   const requests = [];
   const harness = loadStorage(async (url, options = {}) => {
@@ -121,11 +355,16 @@ async function testSuccessfulCanonicalSave() {
     return response(200, { ok: true, data: ideas, state: canonical, revision: 1 });
   });
   await harness.storage.init();
+  const notifications = [];
+  const unsubscribe = harness.storage.subscribe((event) => notifications.push({ ...event }));
   assert.equal(await harness.storage.addIdea({ id: "idea-1", status: "draft" }), true);
   assert.equal(harness.storage.getIdeas()[0].updatedAt, "2026-07-29T12:00:00+00:00");
   assert.equal(harness.storage._revision, 1);
   assert.deepEqual(harness.errors, []);
   assert.equal(requests[1].url, "/api/data/ideas");
+  assert.deepEqual(notifications, [{ reason: "mutation", revision: 1 }]);
+  unsubscribe();
+  assert.equal(harness.storage._stateListeners.length, 0);
 }
 
 async function testGlobalQueuePreventsOutOfOrderWrites() {
@@ -173,6 +412,8 @@ async function testFailureRollbackRetryAndUnloadGuard() {
     return response(503, { detail: "isolated development failure" });
   });
   await harness.storage.init();
+  const notifications = [];
+  harness.storage.subscribe((event) => notifications.push({ ...event, ideaIds: harness.storage.getIdeas().map((idea) => idea.id) }));
   const pending = harness.storage.addIdea({ id: "not-persisted", status: "draft" });
   const cancelled = harness.storage.addJoke({
     id: "also-not-persisted", text: "queued", status: "unused",
@@ -190,6 +431,7 @@ async function testFailureRollbackRetryAndUnloadGuard() {
   assert.match(status.className, /failed/);
   assert.equal(status.children[0].textContent, "Retry");
   assert.equal(harness.errors.length, 2);
+  assert.deepEqual(notifications, [{ reason: "failure-rollback", revision: 4, ideaIds: ["existing"] }]);
 }
 
 async function testConflictReloadsAndCancelsStaleQueue() {
@@ -208,6 +450,8 @@ async function testConflictReloadsAndCancelsStaleQueue() {
     });
   });
   await harness.storage.init();
+  const notifications = [];
+  harness.storage.subscribe((event) => notifications.push({ ...event, ideaIds: harness.storage.getIdeas().map((idea) => idea.id) }));
   const stale = harness.storage.addIdea({ id: "stale-one", status: "draft" });
   const queued = harness.storage.addIdea({ id: "stale-two", status: "draft" });
   assert.equal(await stale, false);
@@ -216,6 +460,7 @@ async function testConflictReloadsAndCancelsStaleQueue() {
   assert.equal(harness.storage.getIdeas()[0].id, "server-newer");
   assert.equal(harness.storage._revision, 8);
   assert.match(harness.dom.document.getElementById("save-status").className, /conflict/);
+  assert.deepEqual(notifications, [{ reason: "conflict", revision: 8, ideaIds: ["server-newer"] }]);
 }
 
 async function testAtomicScheduleAndImportRoutes() {
@@ -651,6 +896,95 @@ function testTop3BankPageContract() {
   }
 }
 
+async function testInitialTop3AIProposalReconcilesUnrelatedRevisionAndSaves() {
+  let revision = 5;
+  const concepts = [];
+  const mutationRequests = [];
+  const harness = top3PageHarness(async (url, options = {}) => {
+    if (url === "/api/top3/concepts" && (!options.method || options.method === "GET")) {
+      return response(200, { revision, concepts: JSON.parse(JSON.stringify(concepts)) });
+    }
+    if (url === "/api/ai/top3-concept") return response(200, top3Proposal());
+    if (url === "/api/top3/concepts" && options.method === "POST") {
+      mutationRequests.push({
+        ifMatch: options.headers["If-Match"],
+        body: JSON.parse(options.body),
+      });
+      if (options.headers["If-Match"] !== String(revision)) {
+        return response(409, { detail: { message: "Server data changed", currentRevision: revision } });
+      }
+      concepts.push(canonicalTop3Concept(JSON.parse(options.body)));
+      revision += 1;
+      return response(201, { revision, concept: concepts[0] });
+    }
+    throw new Error(`Unexpected Top 3 request: ${options.method || "GET"} ${url}`);
+  });
+
+  await harness.page.onStorageReady();
+  harness.elements.get("top3Description").value = "Rank dungeon snacks.";
+  await harness.page.generateProposal();
+  revision = 6; // Unrelated server data changed after generation; the bank did not.
+  await harness.page.saveConcept({ preventDefault() {} });
+
+  assert.equal(mutationRequests.length, 2);
+  assert.deepEqual(mutationRequests.map((request) => request.ifMatch), ["5", "6"]);
+  assert.equal(mutationRequests[0].body.id, "top3-stable-draft-id");
+  assert.equal(mutationRequests[1].body.id, mutationRequests[0].body.id);
+  assert.equal(concepts.length, 1);
+  assert.equal(concepts[0].name, "Top Dungeon Snacks");
+  assert.equal(harness.elements.get("top3Name").value, "");
+  assert.deepEqual(harness.toasts, [{ type: "success", message: "Top 3 concept banked." }]);
+}
+
+async function testTop3AIProposalPreservesRealConflictForDeliberateRetry() {
+  let revision = 10;
+  const concepts = [];
+  const mutationRequests = [];
+  const harness = top3PageHarness(async (url, options = {}) => {
+    if (url === "/api/top3/concepts" && (!options.method || options.method === "GET")) {
+      return response(200, { revision, concepts: JSON.parse(JSON.stringify(concepts)) });
+    }
+    if (url === "/api/ai/top3-concept") return response(200, top3Proposal());
+    if (url === "/api/top3/concepts" && options.method === "POST") {
+      mutationRequests.push({
+        ifMatch: options.headers["If-Match"],
+        body: JSON.parse(options.body),
+      });
+      if (options.headers["If-Match"] !== String(revision)) {
+        return response(409, { detail: { message: "Server data changed", currentRevision: revision } });
+      }
+      concepts.push(canonicalTop3Concept(JSON.parse(options.body)));
+      revision += 1;
+      return response(201, { revision, concept: concepts[concepts.length - 1] });
+    }
+    throw new Error(`Unexpected Top 3 request: ${options.method || "GET"} ${url}`);
+  });
+
+  await harness.page.onStorageReady();
+  harness.elements.get("top3Description").value = "Rank dungeon snacks.";
+  await harness.page.generateProposal();
+  concepts.push(canonicalTop3Concept({
+    ...top3Proposal(),
+    id: "other-client-concept",
+    name: "Other client concept",
+  }));
+  revision = 11;
+
+  await harness.page.saveConcept({ preventDefault() {} });
+  assert.equal(mutationRequests.length, 1);
+  assert.match(harness.elements.get("top3FormError").textContent, /Top 3 Bank changed on the server/);
+  assert.equal(harness.elements.get("top3Name").value, "Top Dungeon Snacks");
+  assert.deepEqual(harness.toasts, []);
+
+  await harness.page.saveConcept({ preventDefault() {} });
+  assert.equal(mutationRequests.length, 2);
+  assert.deepEqual(mutationRequests.map((request) => request.ifMatch), ["10", "11"]);
+  assert.equal(mutationRequests[1].body.id, mutationRequests[0].body.id);
+  assert.equal(concepts.length, 2);
+  assert.equal(concepts.filter((concept) => concept.id === mutationRequests[0].body.id).length, 1);
+  assert.deepEqual(harness.toasts, [{ type: "success", message: "Top 3 concept banked." }]);
+}
+
 function testTop3BankBrowserStartupWithLexicalDependencies() {
   let authInitCalls = 0;
   const element = { addEventListener() {} };
@@ -1046,14 +1380,24 @@ async function testTop3EpisodeBrowserActionsUseViewerScopedApi() {
 }
 
 async function main() {
+  const homepage = fs.readFileSync("index.html", "utf8");
   const showManagement = fs.readFileSync("show_management.html", "utf8");
   const jokesPage = fs.readFileSync("jokes.html", "utf8");
   const songsPage = fs.readFileSync("songs.html", "utf8");
   const configPage = fs.readFileSync("config.html", "utf8");
+  const songBankScript = fs.readFileSync("js/songs.js", "utf8");
+  const guestBankScript = fs.readFileSync("js/guests.js", "utf8");
   checkInlineScripts("show_management.html", showManagement);
   checkInlineScripts("jokes.html", jokesPage);
   checkInlineScripts("songs.html", songsPage);
   checkInlineScripts("config.html", configPage);
+  testHomepageHeroSpacingContract(homepage);
+  testScheduleBoardCalendarView();
+  testEpisodeNumberOverrideContract();
+  assert.match(showManagement, /const initialCalendarView = ShowEngine\.getInitialCalendarView\(\)/);
+  assert.match(showManagement, /let currentMonth = initialCalendarView\.month/);
+  assert.match(showManagement, /let currentYear = initialCalendarView\.year/);
+  assert.match(showManagement, /ShowEngine\.moveCalendarView\(currentYear, currentMonth, delta\)/);
   for (const page of [showManagement, jokesPage, songsPage, configPage, fs.readFileSync("postproduction.html", "utf8")]) {
     assert.match(page, /href="songs\.html"/);
   }
@@ -1079,7 +1423,24 @@ async function main() {
   assert.match(showManagement, /await Storage\.assignSongToIdea\(songId, ideaId\)/);
   assert.match(showManagement, /await Storage\.freeSong\(songId\)/);
   assert.match(showManagement, /const expandedIdeas = new Set\(\)/);
-  assert.match(showManagement, /expandedIdeas\.has\(idea\.id\)/);
+  assert.ok(showManagement.includes("const isExpanded = expandedIdeas.has(idea.id);"));
+  assert.ok(showManagement.includes("(isExpanded ? ' expanded' : '')"));
+  assert.doesNotMatch(showManagement, /lastProcessedId|autoExpand/);
+  assert.ok(showManagement.includes("function enterEditMode(ideaId) {"));
+  assert.match(showManagement, /const isEditable = idea\.status === 'processed' \|\| idea\.status === 'scheduled'/);
+  assert.match(showManagement, /show-edit-action[^>]*aria-label="Edit show"[^>]*enterEditMode/);
+  assert.ok(showManagement.includes("if (expanded) expandedIdeas.add(ideaId);"));
+  assert.ok(showManagement.includes("else expandedIdeas.delete(ideaId);"));
+  assert.ok(showManagement.includes("await Top3EpisodePlanning.start(function() {"));
+  assert.match(showManagement, /href="#idea\/.*openIdeaDisplay/);
+  assert.match(showManagement, /function openIdeaDisplay\(ideaId\)/);
+  assert.match(showManagement, /var slot = getScheduleInfoForIdea\(ideaId\)/);
+  assert.doesNotMatch(showManagement, /getSlotForIdea/);
+  assert.match(showManagement, /return slot \? openShowDisplay\(slot\.id\) : openShowDisplay\(null, ideaId\)/);
+  assert.match(showManagement, /var slot = slotId \? slots\.find/);
+  assert.match(showManagement, /slot \? ShowEngine\.getEffectiveEpisodeNumber\(slot\) : 'Unscheduled'/);
+  assert.match(showManagement, /slot \? getNextShowInfo\(slot\.recordDate\) : null/);
+  assert.match(showManagement, /location\.hash\.startsWith\('#idea\/'\)/);
   assert.match(showManagement, /function rerenderIdeasPreservingExpansion\(ideaId\)/);
   assert.match(showManagement, /selectTitle[\s\S]*rerenderIdeasPreservingExpansion\(ideaId\)/);
   assert.match(showManagement, /selectJokeForIdea[\s\S]*rerenderIdeasPreservingExpansion\(ideaId\)/);
@@ -1096,6 +1457,10 @@ async function main() {
   assert.match(showManagement, /await Storage\.deleteIdea\(ideaId\)/);
   assert.match(showManagement, /await Storage\.assignIdeaToSlot\(ideaId, slotId\)/);
   assert.match(showManagement, /await Storage\.unassignSlot\(slotId\)/);
+  assert.match(showManagement, /data-edit-episode-number/);
+  assert.match(showManagement, /await Storage\.setEpisodeNumberOverride\(slotId, episodeNumber\)/);
+  assert.match(showManagement, /await Storage\.clearEpisodeNumberOverride\(slotId\)/);
+  assert.match(showManagement, /ShowEngine\.getEffectiveEpisodeNumber\(slot\)/);
   assert.doesNotMatch(showManagement, /freeJokesForIdea/);
   assert.doesNotMatch(showManagement, /lastModified/);
   assert.match(jokesPage, /!config\.claudeApiKeyConfigured/);
@@ -1104,11 +1469,25 @@ async function main() {
   assert.match(configPage, /const id = row\.dataset\.segmentId/);
   assert.match(configPage, /segment_.*Storage\.generateId\(\)/);
   assert.match(configPage, /await Storage\.importAll\(\{/);
+  assert.match(configPage, /Storage\.subscribe\(loadConfig\)/);
+  assert.match(jokesPage, /Storage\.subscribe\(renderJokes\)/);
+  assert.match(showManagement, /Storage\.subscribe\(reconcileVisibleStorageState\)/);
+  const reconciliationBody = showManagement.match(/function reconcileVisibleStorageState\(\) \{([\s\S]*?)\n    \}/)[1];
+  assert.match(reconciliationBody, /renderIdeaBank\(\)/);
+  assert.match(reconciliationBody, /renderCalendar\(\)/);
+  assert.doesNotMatch(reconciliationBody, /renderScheduleBoard\(\)/);
+  assert.match(songBankScript, /Storage\.subscribe\(renderSongs\)/);
+  assert.match(guestBankScript, /Storage\.subscribe\(renderGuests\)/);
+  assert.match(showManagement, /async function updateReleaseDate/);
+  assert.match(showManagement, /await ShowEngine\.setReleaseDate/);
+  assert.match(showManagement, /latest server state is displayed/);
   assert.doesNotMatch(configPage, /Promise\.all\(\[\s*Storage\.saveIdeas/);
   assert.match(showManagement, /data-segment-id=/);
   assert.match(showManagement, /var segmentId = segEl\.dataset\.segmentId/);
   assert.doesNotMatch(showManagement, /segmentId:\s*segName\.toLowerCase/);
 
+  await testEpisodeNumberStorageRoutes();
+  await testReleaseDateWaitsForCanonicalPersistence();
   await testSuccessfulCanonicalSave();
   await testGlobalQueuePreventsOutOfOrderWrites();
   await testFailureRollbackRetryAndUnloadGuard();
@@ -1122,6 +1501,8 @@ async function main() {
   testEpisodeSongPreparationContract();
   await testEpisodeOverviewContract();
   testTop3BankPageContract();
+  await testInitialTop3AIProposalReconcilesUnrelatedRevisionAndSaves();
+  await testTop3AIProposalPreservesRealConflictForDeliberateRetry();
   testTop3BankBrowserStartupWithLexicalDependencies();
   testTop3EpisodePlanningContract();
   await testTop3EpisodeBrowserActionsUseViewerScopedApi();

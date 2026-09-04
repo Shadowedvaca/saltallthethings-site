@@ -14,10 +14,12 @@ from sqlalchemy import delete
 from satt.config import get_settings
 from satt.database import get_session_factory
 from satt.models import (
+    Assignment,
     Guest,
     GuestAssignment,
     Idea,
     InviteCode,
+    ShowSlot,
     Top3Assignment,
     Top3Concept,
     User,
@@ -321,6 +323,117 @@ async def _cleanup_song_records(
         _expect_status(response, 200, f"cleanup idea {idea_id}")
         return
     raise SmokeFailure("temporary Song Bank idea cleanup did not complete")
+
+
+async def _cleanup_episode_number_records(idea_id: str, slot_id: str) -> None:
+    """Remove only uniquely named episode-number smoke records."""
+    factory = get_session_factory()
+    async with factory() as session:
+        await session.execute(delete(Assignment).where(Assignment.slot_id == slot_id))
+        await session.execute(delete(ShowSlot).where(ShowSlot.id == slot_id))
+        await session.execute(delete(Idea).where(Idea.id == idea_id))
+        await session.commit()
+
+
+async def _exercise_episode_number_override(
+    client: httpx.AsyncClient,
+    token: str,
+) -> None:
+    """Verify override persistence/reset without changing schedule metadata."""
+    suffix = secrets.token_hex(8)
+    idea_id = f"deploy-smoke-episode-number-idea-{suffix}"
+    slot_id = f"deploy-smoke-episode-number-slot-{suffix}"
+    override = 2_000_000_000
+    try:
+        state = await _latest_state(client, token)
+        idea = {
+            "id": idea_id,
+            "titles": ["Deployment episode-number smoke"],
+            "selectedTitle": "Deployment episode-number smoke",
+            "summary": "Temporary non-production episode-number validation",
+            "outline": [],
+            "status": "processed",
+        }
+        created = await client.put(
+            "/api/data/ideas",
+            json=[*state["ideas"], idea],
+            headers=_headers(token, state["revision"]),
+        )
+        _expect_status(created, 200, "temporary episode-number idea creation")
+        state = created.json()["state"]
+        slot = {
+            "id": slot_id,
+            "episodeNumber": "EP2000000001",
+            "episodeNum": 2_000_000_001,
+            "episodeNumberOverride": None,
+            "recordDate": "2099-01-05",
+            "releaseDate": "2099-01-12",
+            "isRollout": False,
+            "releaseDateOverride": "2099-01-13",
+        }
+        created = await client.put(
+            "/api/data/showSlots",
+            json=[*state["showSlots"], slot],
+            headers=_headers(token, state["revision"]),
+        )
+        _expect_status(created, 200, "temporary episode-number slot creation")
+        state = created.json()["state"]
+        assigned = await client.put(
+            f"/api/schedule/{slot_id}/assignment",
+            json={"ideaId": idea_id},
+            headers=_headers(token, state["revision"]),
+        )
+        _expect_status(assigned, 200, "temporary episode-number assignment")
+        state = assigned.json()["state"]
+        created_slot = next(
+            item for item in state["showSlots"] if item["id"] == slot_id
+        )
+        schedule_before = {
+            "assignment": state["assignments"].get(slot_id),
+            "recordDate": created_slot["recordDate"],
+            "releaseDate": created_slot["releaseDate"],
+            "releaseDateOverride": created_slot["releaseDateOverride"],
+        }
+
+        saved = await client.put(
+            f"/api/schedule/{slot_id}/episode-number",
+            json={"episodeNumber": override},
+            headers=_headers(token, state["revision"]),
+        )
+        _expect_status(saved, 200, "episode-number override save")
+        state = saved.json()["state"]
+        saved_slot = next(item for item in state["showSlots"] if item["id"] == slot_id)
+        _require(
+            saved_slot["episodeNumberOverride"] == override
+            and saved_slot["effectiveEpisodeNumber"] == "EP2000000000",
+            "episode-number override did not persist canonically",
+        )
+        _require(
+            {
+                "assignment": state["assignments"].get(slot_id),
+                "recordDate": saved_slot["recordDate"],
+                "releaseDate": saved_slot["releaseDate"],
+                "releaseDateOverride": saved_slot["releaseDateOverride"],
+            }
+            == schedule_before,
+            "episode-number override changed schedule metadata",
+        )
+
+        reset = await client.delete(
+            f"/api/schedule/{slot_id}/episode-number",
+            headers=_headers(token, state["revision"]),
+        )
+        _expect_status(reset, 200, "episode-number override reset")
+        reset_slot = next(
+            item for item in reset.json()["state"]["showSlots"] if item["id"] == slot_id
+        )
+        _require(
+            reset_slot["episodeNumberOverride"] is None
+            and reset_slot["effectiveEpisodeNumber"] == "EP2000000001",
+            "episode-number reset did not restore automatic calculation",
+        )
+    finally:
+        await _cleanup_episode_number_records(idea_id, slot_id)
 
 
 async def _exercise_song_bank(client: httpx.AsyncClient, token: str) -> None:
@@ -1183,6 +1296,7 @@ async def run_smoke(
             await _exercise_top3_ai_boundary(client, token, authenticated_export.json())
             await _exercise_song_bank(client, token)
             await _exercise_guest_bank(client, token)
+            await _exercise_episode_number_override(client, token)
             await _exercise_top3(client, token, viewer_token)
 
             for attempt in (1, 2):

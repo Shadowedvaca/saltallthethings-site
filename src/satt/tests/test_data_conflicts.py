@@ -50,6 +50,8 @@ def _slot(slot_id: str, episode: int) -> dict:
         "id": slot_id,
         "episodeNumber": f"EP{episode}",
         "episodeNum": episode,
+        "episodeNumberOverride": None,
+        "effectiveEpisodeNumber": f"EP{episode}",
         "recordDate": "2026-08-01",
         "releaseDate": "2026-08-08",
         "isRollout": False,
@@ -150,6 +152,48 @@ async def test_schedule_mutations_update_assignments_and_statuses_atomically(
         "idea-2": "processed",
     }
 
+
+@pytest.mark.asyncio
+async def test_editing_scheduled_idea_preserves_assignment_and_slot_dates(
+    db_client: AsyncClient,
+):
+    await db_client.put(
+        "/api/data/ideas",
+        json=[_idea("scheduled-edit")],
+        headers=_headers(),
+    )
+    slot = _slot("scheduled-edit-slot", 41)
+    await db_client.put(
+        "/api/data/showSlots",
+        json=[slot],
+        headers=_headers(),
+    )
+    assigned = await db_client.put(
+        "/api/schedule/scheduled-edit-slot/assignment",
+        json={"ideaId": "scheduled-edit"},
+        headers=_headers(),
+    )
+    assigned_state = assigned.json()["state"]
+    scheduled_idea = assigned_state["ideas"][0]
+    assert scheduled_idea["status"] == "scheduled"
+
+    scheduled_idea["summary"] = "Edited while the show remains scheduled"
+    edited = await db_client.put(
+        "/api/data/ideas",
+        json=[scheduled_idea],
+        headers=_headers(),
+    )
+    state = edited.json()["state"]
+
+    assert state["assignments"] == {"scheduled-edit-slot": "scheduled-edit"}
+    assert state["showSlots"] == [slot]
+    assert state["ideas"][0]["status"] == "scheduled"
+    assert state["ideas"][0]["summary"] == "Edited while the show remains scheduled"
+
+    reloaded = (await db_client.get("/api/export", headers=_headers())).json()
+    assert reloaded["assignments"] == state["assignments"]
+    assert reloaded["showSlots"] == state["showSlots"]
+    assert reloaded["ideas"] == state["ideas"]
 
 @pytest.mark.asyncio
 async def test_import_failure_rolls_back_every_entity(db_client: AsyncClient):

@@ -328,7 +328,7 @@
     }
 
     // Called by Auth after Storage.init() completes
-    function onStorageReady() { renderJokes(); }
+    function onStorageReady() { Storage.subscribe(renderJokes); renderJokes(); }
   </script>
 </body>
 </html>

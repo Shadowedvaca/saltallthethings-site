@@ -1,227 +1,102 @@
-# Git & CI/CD Workflow — SATT Standard
+# Git and CI/CD Operations — SATT
 
-This document provides operational environment and Git detail.
-`reference/work-management.md` and `reference/development-and-release.md` are
-authoritative for issue lifecycle, delivery slices, approval boundaries,
-review, integration, and release authorization. `docs/delivery.md` is the
-human-facing companion. If these documents conflict, the two canonical
-references win.
+This document contains operational Git and environment detail only.
+`reference/work-management.md` is authoritative for delivery slices, external
+run inputs, pull requests, approvals, and closure.
+`reference/development-and-release.md` is authoritative for quality,
+promotion, versions, release notes, and rollback.
 
----
+## Branches
 
-## Philosophy
+| Pattern | Purpose |
+|---|---|
+| `codex/<slice-slug>` | Normal Parent- or Child-cadence delivery slice. |
+| `hotfix/<focused-slug>` | Separately approved emergency correction branched from current `main`. |
 
-- **Branches are cheap. Direct commits to main are not.**
-- Every environment has a gate. Dev is the sandbox. Test is the integration check. Prod is the contract.
-- Hotfixes are legitimate — they need their own fast lane, not a different philosophy.
-- main should always reflect what is in or about to go to test/prod. Keep it clean.
+Never commit directly to `main`. Parent Integration Cadence uses one cumulative
+branch and pull request for all selected children; Child cadence uses one per
+child. Do not create a PR per child under Parent cadence.
 
----
+## Environment inventory
 
-## Branch Types
+| Tier | Source | Host alias | Compose project | App port | Database volume |
+|---|---|---|---|---|---|
+| Development | Explicit `codex/*` branch | `my-web-apps-dev` | `satt-development` | `127.0.0.1:8300` | `satt-development-postgres` |
+| Test | Exact pushed `main` commit | `my-web-apps-test` | `satt-test` | `127.0.0.1:8300` | `satt-test-postgres` |
+| Production | Exact tested commit with validated `prod-v*` tag | Production host | `satt-production` | Internal app port behind Nginx | `satt-production-postgres` |
 
-| Prefix | Purpose | Version bump |
-|--------|---------|-------------|
-| `codex/<parent-issue-title-slug>` | Ordered parent/child delivery on one cumulative branch | Release target selected by the parent |
-| `codex/<focused-fix-slug>` | Independent planned fix | PATCH (`x.y.Z`) |
-| `hotfix/*` | Separately approved emergency production fix | PATCH (`x.y.Z`) |
+The shared non-production servers reserve port `8300` for SATT. Other
+applications use their own ports and resources; never operate on them.
 
----
+Required GitHub configuration names are:
 
-## Environments
+- development: `DEV_HOST`, `DEPLOY_SSH_KEY`, `DEV_SSH_KNOWN_HOSTS`;
+- test: `TEST_HOST`, `DEPLOY_SSH_KEY`, `TEST_SSH_KNOWN_HOSTS`; and
+- production: `PROD_HOST`, `DEPLOY_SSH_KEY`, `PROD_SSH_KNOWN_HOSTS`.
 
-Three environments, three gates:
+Values remain in protected GitHub/server configuration and must not be printed.
 
-| Environment | Purpose | Deployed by |
-|-------------|---------|-------------|
-| **dev** | Fast feedback sandbox. Break things here. | Manual trigger from feature branch |
-| **test** | Integration gate. Matches prod config. | Auto on push to `main` (i.e. merged PR) |
-| **prod** | Live. Real users/data. | Validated `prod-v*` tag after explicit approval |
+## Normal operational sequence
 
----
+Use the active slice slug and the exact version supplied by Mike. Approval
+timing comes from `reference/work-management.md`; the commands below do not
+grant authority by themselves.
 
-## Shared non-production server inventory
+```powershell
+git switch main
+git pull --ff-only
+git switch -c codex/<slice-slug>
 
-Development and test run on separate shared servers. The same application port
-is reserved on both servers so environment definitions remain symmetric.
+# Implement and run applicable validation.
+git push -u origin codex/<slice-slug>
+gh workflow run deploy-dev.yml -f branch=codex/<slice-slug>
 
-| Port | Application | Development | Test |
-|---|---|---|---|
-| `8100` | Pull All The Things | `dev.pullallthethings.com` | `test.pullallthethings.com` |
-| `8200` | Shadowedvaca site | `dev.shadowedvaca.com` | `test.shadowedvaca.com` |
-| `8300` | Salt All The Things | `dev.saltallthethings.com` | `test.saltallthethings.com` |
+# At the single approved test-promotion gate, merge the ready PR.
+# The resulting push to main triggers deploy-test.yml.
 
-SATT development uses:
-
-- SSH alias `my-web-apps-dev`;
-- repository path `/opt/satt-platform`;
-- Compose project `satt-development`;
-- loopback binding `127.0.0.1:8300`;
-- database volume `satt-development-postgres`; and
-- GitHub environment `development`.
-
-The manual workflow requires the configured secret names `DEV_HOST`,
-`DEPLOY_SSH_KEY`, and `DEV_SSH_KNOWN_HOSTS`. It resolves the explicit
-`codex/*` branch to an immutable commit before SSH and deploys only that commit.
-See `docs/development-environment.md` for bootstrap, isolation, backup, smoke,
-cleanup, and rollback procedures.
-
-SATT test uses:
-
-- SSH alias `my-web-apps-test`;
-- repository path `/opt/satt-platform`;
-- Compose project `satt-test`;
-- loopback binding `127.0.0.1:8300`;
-- database volume `satt-test-postgres`; and
-- GitHub environment `test`.
-
-`deploy-test.yml` runs only for the exact pushed `main` commit after separate
-merge approval. It uses `TEST_HOST`, `DEPLOY_SSH_KEY`, and
-`TEST_SSH_KNOWN_HOSTS`, performs bounded backup/migration/health/integration
-checks, and cannot operate on development or production. See
-`docs/test-environment.md`.
-
----
-
-## Normal Feature Flow
-
-```
-1. Branch from main
-   git checkout main && git pull
-   git checkout -b codex/parent-issue-title
-
-2. Develop, iterate
-   [write code, run tests]
-
-3. Deploy to dev — verify it works
-   git push origin codex/parent-issue-title
-   gh workflow run deploy-dev.yml -f branch=codex/parent-issue-title
-   [verify in dev environment]
-
-4. Obtain explicit merge approval, merge to main → test auto-deploys
-   git checkout main
-   git merge codex/parent-issue-title --no-ff
-   git push origin main
-   [verify in test environment]
-
-5. Verify test, obtain separate production-release approval, then tag
-   git tag prod-vX.Y.Z && git push origin prod-vX.Y.Z
+# At the single approved production-promotion gate only:
+git tag prod-vX.Y.Z <exact-tested-main-commit>
+git push origin prod-vX.Y.Z
 ```
 
-**Rules:**
-- Keep the cumulative branch and draft pull request until every ordered child
-  and release integration check is complete
-- Don't skip dev verification just because the change feels small
-- Child approval authorizes only the next child; it never authorizes merge,
-  test deployment, a production tag, or production deployment
+`deploy-dev.yml` resolves the explicit branch to an immutable commit before
+deployment. `deploy-test.yml` accepts only the pushed `main` commit.
+`deploy-prod.yml` accepts only a validated matching immutable tag, queries
+GitHub Actions for a completed successful `deploy-test.yml` push run with the
+same exact SHA on `main`, and fails before SSH if that proof is absent. It
+publishes the curated GitHub Release only after production verification
+succeeds.
 
----
+## Hotfix operations
 
-## Hotfix Flow (something is broken in prod RIGHT NOW)
+A hotfix branches from current `main`, contains only the emergency correction,
+and uses the same evidence, approval, exact-version, tag, and reconciliation
+rules as normal delivery. It has no implied test-bypass privilege. Any proposed
+exception must follow `reference/testing-and-validation.md`, identify the exact
+commit and omitted/minimum evidence, and receive explicit approval. The current
+production workflow still requires successful isolated test deployment for the
+exact SHA and cannot be bypassed by branch naming or prose.
 
-Hotfixes follow the same branch discipline — no shortcuts on that — but they have a fast lane to prod that bypasses the normal test-first requirement.
-
-```
-1. Branch from main (not from a stale feature branch)
-   git checkout main && git pull
-   git checkout -b hotfix/describe-the-break
-
-2. Make the MINIMAL fix — only what is broken, nothing else
-
-3. Verify in dev
-   git push origin hotfix/describe-the-break
-   gh workflow run deploy-dev.yml -f branch=hotfix/describe-the-break
-   [confirm the fix works]
-
-4. Obtain explicit emergency merge and production approvals; do not infer either
-   from the incident
-   git checkout main
-   git merge hotfix/describe-the-break --no-ff
-   git push origin main                          ← this auto-deploys test
-   git tag prod-vX.Y.Z && git push origin prod-vX.Y.Z  ← only after approval
+```powershell
+git switch main
+git pull --ff-only
+git switch -c hotfix/<focused-slug>
 ```
 
-**Hotfix rules:**
-- Hotfixes always branch from `main` — never from a feature branch
-- Fix only the broken thing. No opportunistic cleanup. No "while I'm in here..."
-- Merge back to main immediately so test stays current with prod
-- Document in the commit message that this is a hotfix and why it bypassed normal flow
-- If the hotfix temporarily breaks test, that is acceptable — fix it on the next regular cycle
+Follow the same development artifact, ready PR, test promotion, and production
+promotion mechanics after that point. Mike selects the exact version; do not
+derive a patch number from the branch type.
 
----
+## Operational references
 
-## Emergency Patch (something is broken mid-feature, blocking current work)
+- `docs/development-environment.md` — development deployment and recovery.
+- `docs/test-environment.md` — test deployment, smoke checks, reset, and
+  recovery.
+- `docs/production-cutover.md` — production preflight, backups, migration,
+  continuity, rollback, and observation.
+- `docs/versioning-and-releases.md` — applying Mike's exact version and
+  validating notes/tag/release consistency.
+- `.github/workflows/pull-request-validation.yml` — actual CI validation.
 
-Same as hotfix, just scoped to unblock active work rather than a prod incident. Same rules apply: branch, minimal fix, dev verify, merge to main, tag if needed.
-
-The distinction is only semantic — the process is identical.
-
----
-
-## Version Numbering — `MAJOR.MINOR.PATCH`
-
-| Segment | When to bump | Reset on bump |
-|---------|-------------|---------------|
-| **MAJOR** | Breaking changes, full architecture overhaul, major new system | MINOR and PATCH → 0 |
-| **MINOR** | New feature, new endpoint, new module, meaningful new capability | PATCH → 0 |
-| **PATCH** | Bug fix, hotfix, data/content change, config tweak, docs | — |
-
-**In practice:** most day-to-day work bumps PATCH. A shipping milestone bumps MINOR. MAJOR is rare.
-
-Tag format: `prod-vMAJOR.MINOR.PATCH` (e.g. `prod-v0.1.6`)
-
----
-
-## Key Rules — Never Break These
-
-1. **Never commit directly to `main`** — always a branch + merge, even for a 1-line fix
-2. **Never skip the branch step** — hotfixes still get branches, just shorter ones
-3. **main is always test-deployable** — if main is broken, that is a P0
-4. **Tags are permanent** — never reuse or force-push a tag
-5. **Hotfix ≠ license for scope creep** — fix the one thing, ship it, move on
-6. **Dev and test verify before prod tag** — exceptions require explicit,
-   recorded emergency approval
-
----
-
-## Quick Reference
-
-```bash
-# --- NORMAL FEATURE ---
-git checkout main && git pull
-git checkout -b codex/parent-issue-title
-# ... work ...
-git push origin codex/parent-issue-title
-gh workflow run deploy-dev.yml -f branch=codex/parent-issue-title  # verify in dev
-# obtain explicit merge approval
-git checkout main && git merge codex/parent-issue-title --no-ff && git push origin main  # → test
-# verify test and obtain separate production approval
-git tag prod-vX.Y.Z && git push origin prod-vX.Y.Z       # → prod
-
-# --- HOTFIX ---
-git checkout main && git pull
-git checkout -b hotfix/what-is-broken
-# ... minimal fix ...
-git push origin hotfix/what-is-broken
-gh workflow run deploy-dev.yml -f branch=hotfix/what-is-broken  # verify
-git checkout main && git merge hotfix/what-is-broken --no-ff && git push origin main
-git tag prod-vX.Y.Z && git push origin prod-vX.Y.Z
-```
-
----
-
-## Adapting to a New Project
-
-When setting up CI/CD for a new project, the three-workflow pattern should mirror this structure:
-
-| File | Trigger | Target |
-|------|---------|--------|
-| `deploy-dev.yml` | `workflow_dispatch` with `branch` input | dev environment |
-| `deploy-test.yml` | `push: branches: [main]` | test environment |
-| `deploy-prod.yml` | `push: tags: ['prod-v*']` | production environment |
-
-Each workflow must preserve its environment boundary and exact source commit. Production additionally requires release validation, a verified backup, safe migrations, continuity fingerprints, bounded health checks, and recovery of only the prior application runtime as documented in `docs/production-cutover.md`.
-
----
-
-*Last updated: 2026-07-30*
+Tags are immutable. Never reuse or force-push a production tag. Never print
+expanded Compose configuration or secret-bearing environment values.

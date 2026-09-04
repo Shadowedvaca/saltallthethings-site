@@ -310,6 +310,7 @@
   }
 
   function onStorageReady() {
+    if (typeof root.Storage.subscribe === 'function') root.Storage.subscribe(renderSongs);
     renderSongs();
     announce('Song Bank loaded.');
   }

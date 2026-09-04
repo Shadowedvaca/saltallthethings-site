@@ -38,6 +38,8 @@ jobs:
     steps:
       - name: Check out the proposed commit
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -53,6 +55,9 @@ jobs:
 
       - name: Compile Python
         run: python -m compileall -q src/satt
+
+      - name: Validate repository documentation contracts
+        run: python scripts/validate_repository_docs.py
 
       - name: Validate current release contract without publishing
         run: python scripts/validate_release.py
@@ -72,6 +77,32 @@ jobs:
         run: |
           node scripts/test_frontend_contract.js
           node scripts/test_guest_bank_frontend.js
+
+      - name: Set up Node for browser automation
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install deterministic browser validation dependencies
+        run: npm ci
+
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Run critical browser journeys
+        run: npm run test:e2e
+
+      - name: Retain browser failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-failure-${{ github.event.pull_request.head.sha }}
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
 
   container:
     name: Production image and fresh-database health
@@ -119,7 +150,7 @@ jobs:
             docker compose -f compose.ci.yaml exec -T database \
               sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from satt.alembic_version"'
           )"
-          test "$revision" = "0009"
+          test "$revision" = "0010"
 
       - name: Exercise isolated migration rollback and recovery
         shell: bash
@@ -129,12 +160,12 @@ jobs:
           set -euo pipefail
           docker compose -f compose.ci.yaml stop app
           docker compose -f compose.ci.yaml run --rm --no-deps \
-            app alembic downgrade 0008
+            app alembic downgrade 0009
           revision="$(
             docker compose -f compose.ci.yaml exec -T database \
               sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from satt.alembic_version"'
           )"
-          test "$revision" = "0008"
+          test "$revision" = "0009"
 
           docker compose -f compose.ci.yaml run --rm --no-deps \
             app alembic upgrade head
@@ -142,7 +173,7 @@ jobs:
             docker compose -f compose.ci.yaml exec -T database \
               sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from satt.alembic_version"'
           )"
-          test "$revision" = "0009"
+          test "$revision" = "0010"
           docker compose -f compose.ci.yaml up -d --wait app
           docker compose -f compose.ci.yaml exec -T app python -c \
             "import json, os, sys, urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8200/api/health', timeout=2)); assert data['status']=='ok'; assert data['environment']=='test'; assert data['version']==sys.argv[1]; assert data['commit']==os.environ['COMMIT_SHA']" \

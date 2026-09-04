@@ -157,7 +157,7 @@ jobs:
               sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from satt.alembic_version"' \
               < /dev/null
           )"
-          test "$revision" = "0009"
+          test "$revision" = "0010"
           echo "Development migration verified at revision $revision"
 
           compose exec -T app /usr/local/bin/satt-entrypoint \

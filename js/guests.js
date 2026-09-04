@@ -283,6 +283,7 @@
   }
 
   function onStorageReady() {
+    if (typeof root.Storage.subscribe === 'function') root.Storage.subscribe(renderGuests);
     renderGuests();
     announce('Guest Bank loaded.');
   }

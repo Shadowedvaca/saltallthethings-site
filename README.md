@@ -4,9 +4,10 @@ Website and internal production tools for the *Salt All The Things* WoW podcast.
 
 **Production:** https://saltallthethings.com
 
-The Foundation milestone is establishing isolated development and test
-environments. See `docs/delivery.md` for the authoritative rollout state and
-approval gates.
+SATT uses isolated development and test environments plus an immutable,
+tag-gated production workflow. See `docs/delivery.md` for the human-facing
+system description; the authoritative AI process lives in
+`reference/work-management.md` and `reference/development-and-release.md`.
 
 ---
 
@@ -30,6 +31,10 @@ The post-Foundation contract promotes one immutable frontend/backend commit:
    test.
 3. After separate production approval, deploy only the matching immutable
    `prod-vX.Y.Z` tag.
+
+Before opening a production connection, the tag workflow fails closed unless
+the exact tag SHA has a completed successful SATT test-deployment run from
+`main`; ancestry alone is insufficient.
 
 The standard GitHub configuration names are `DEV_HOST`, `TEST_HOST`,
 `PROD_HOST`, and `DEPLOY_SSH_KEY`. Values remain in GitHub/server-side

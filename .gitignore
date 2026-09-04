@@ -32,6 +32,14 @@ __pycache__/
 .production-assets/
 .pytest_cache/
 *.egg-info/
+.coverage
+coverage.json
+.test-tmp-*/
+
+# Node/browser validation artifacts
+node_modules/
+playwright-report/
+test-results/
 
 # Logs
 *.log

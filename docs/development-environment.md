@@ -86,7 +86,7 @@ uses `ssh-keyscan` to trust a key observed during deployment.
 6. builds the shared application image and starts only the
    `satt-development` services;
 7. waits for Compose health and verifies local and public health report
-   `development`, version `0.0.6`, and the exact resolved commit; and
+   `development`, the exact `VERSION` value, and the exact resolved commit; and
 8. prints at most 100 lines of SATT app/database logs on failure.
 
 Manual dispatch:
@@ -98,10 +98,16 @@ gh workflow run deploy-dev.yml \
 
 ## Validation
 
-After each deployment:
+The deployment workflow performs health, migration, public-route, and
+authenticated environment-smoke checks as AI-executable technical validation.
+These results belong in the Child development complete evidence.
 
-1. Verify `/api/health` reports status `ok`, environment `development`, version
-   `0.0.6`, and the dispatched commit.
+Only after the applicable Child development complete approval, and only when
+User Validation Timing is `Child` or `Parent`, use the prepared cumulative
+development artifact for the due manual human UI validation:
+
+1. Confirm `/api/health` reports status `ok`, environment `development`, the
+   exact `VERSION` value, and the dispatched commit.
 2. Verify public pages and public API routes.
 3. Sign in with a development-only account and verify protected pages,
    persistence, reload behavior, migrations, and the active child's acceptance

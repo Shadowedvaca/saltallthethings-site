@@ -452,11 +452,18 @@ class Top3Reveal(Base):
 
 class ShowSlot(Base):
     __tablename__ = "show_slots"
-    __table_args__ = {"schema": "satt"}
+    __table_args__ = (
+        CheckConstraint(
+            "episode_number_override IS NULL OR episode_number_override > 0",
+            name="show_slots_positive_episode_number_override",
+        ),
+        {"schema": "satt"},
+    )
 
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     episode_number: Mapped[str] = mapped_column(Text, nullable=False)
     episode_num: Mapped[int] = mapped_column(Integer, nullable=False)
+    episode_number_override: Mapped[Optional[int]] = mapped_column(Integer)
     record_date: Mapped[date] = mapped_column(Date, nullable=False)
     release_date: Mapped[date] = mapped_column(Date, nullable=False)
     is_rollout: Mapped[bool] = mapped_column(

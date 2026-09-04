@@ -73,6 +73,7 @@ class _FakeSlot:
     id = "slot-1"
     episode_number = "EP042"
     episode_num = 42
+    episode_number_override = None
     production_file_key = "EP042_War-Within-Seasons-Ranked_2026-03-01"
     asset_inventory = {
         "transcript_txt": {

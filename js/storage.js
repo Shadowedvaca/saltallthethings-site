@@ -18,6 +18,7 @@ const Storage = {
   _pendingWrites: 0,
   _statusTimer: null,
   _beforeUnloadRegistered: false,
+  _stateListeners: [],
 
   // Full-array writes remain supported for ideas, jokes, slots, and
   // assignments, but every mutation is serialized globally and guarded by
@@ -42,7 +43,7 @@ const Storage = {
     return typeof Auth !== 'undefined' ? Auth.getToken() : null;
   },
 
-  _applyState(state) {
+  _applyState(state, reason) {
     if (!state) return;
     if (Object.prototype.hasOwnProperty.call(state, 'config')) this._cache.config = state.config || null;
     if (Object.prototype.hasOwnProperty.call(state, 'ideas')) this._cache.ideas = state.ideas || [];
@@ -66,9 +67,10 @@ const Storage = {
         revision: this._revision
       };
     }
+    this._notifyStateListeners(reason || 'canonical');
   },
 
-  _restoreServerState() {
+  _restoreServerState(reason) {
     if (!this._serverState) return;
     var canonical = this._clone(this._serverState);
     this._cache.config = canonical.config;
@@ -80,9 +82,10 @@ const Storage = {
     this._cache.showSlots = canonical.showSlots;
     this._cache.assignments = canonical.assignments;
     this._revision = canonical.revision;
+    this._notifyStateListeners(reason || 'rollback');
   },
 
-  async _reloadLatest() {
+  async _reloadLatest(reason) {
     const token = this._getToken();
     if (!token) throw new Error('Not authenticated');
     const resp = await fetch(this._apiUrl + '/export', {
@@ -91,8 +94,29 @@ const Storage = {
     if (resp.status === 401) throw new Error('Invalid credentials');
     if (!resp.ok) throw new Error('API error: ' + resp.status);
     const data = await resp.json();
-    this._applyState(data);
+    this._applyState(data, reason || 'reload');
     return data;
+  },
+
+  subscribe(listener) {
+    if (typeof listener !== 'function') throw new TypeError('Storage listener must be a function');
+    if (!this._stateListeners.includes(listener)) this._stateListeners.push(listener);
+    return () => {
+      this._stateListeners = this._stateListeners.filter(function(candidate) {
+        return candidate !== listener;
+      });
+    };
+  },
+
+  _notifyStateListeners(reason) {
+    var event = { reason: reason, revision: this._revision };
+    this._stateListeners.slice().forEach(function(listener) {
+      try {
+        listener(event);
+      } catch (error) {
+        console.error('Storage state listener failed:', error);
+      }
+    });
   },
 
   get(key) {
@@ -132,21 +156,21 @@ const Storage = {
       }
       return run();
     }).then((body) => {
-      this._applyState(body.state || body);
+      this._applyState(body.state || body, 'mutation');
       return body;
     }).catch(async (err) => {
       if (!err.cancelled) this._writeGeneration += 1;
       if (err.status === 409 && !err.cancelled) {
         try {
-          await this._reloadLatest();
+          await this._reloadLatest('conflict');
           this._setStatus('conflict', 'Newer server data loaded. Review your change and save again.');
         } catch (reloadError) {
-          this._restoreServerState();
+          this._restoreServerState('conflict-rollback');
           this._setStatus('failed', 'Conflict detected; reload failed', () => this._reloadLatest());
         }
-      } else {
-        this._restoreServerState();
-        if (!err.cancelled) this._setStatus('failed', 'Save failed', retry);
+      } else if (!err.cancelled) {
+        this._restoreServerState('failure-rollback');
+        this._setStatus('failed', 'Save failed', retry);
       }
       throw err;
     }).finally(() => {
@@ -590,6 +614,38 @@ const Storage = {
 
   saveShowSlots(slots) {
     return this.set('showSlots', slots);
+  },
+
+  async setEpisodeNumberOverride(slotId, episodeNumber) {
+    try {
+      await this._enqueueMutation(
+        () => this._request('/schedule/' + encodeURIComponent(slotId) + '/episode-number', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ episodeNumber: episodeNumber })
+        }),
+        () => this.setEpisodeNumberOverride(slotId, episodeNumber)
+      );
+      return true;
+    } catch (err) {
+      console.error('Episode number override failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to save episode number: ' + err.message);
+      return false;
+    }
+  },
+
+  async clearEpisodeNumberOverride(slotId) {
+    try {
+      await this._enqueueMutation(
+        () => this._request('/schedule/' + encodeURIComponent(slotId) + '/episode-number', { method: 'DELETE' }),
+        () => this.clearEpisodeNumberOverride(slotId)
+      );
+      return true;
+    } catch (err) {
+      console.error('Episode number reset failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to reset episode number: ' + err.message);
+      return false;
+    }
   },
 
   // ---- Assignments ----

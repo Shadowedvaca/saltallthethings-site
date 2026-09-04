@@ -69,7 +69,32 @@ def main() -> int:
         "TEST_DATABASE_URL": migration_url,
     }
     _run(
-        [sys.executable, "-m", "pytest", "src/satt/tests", "-q"],
+        [
+            sys.executable,
+            "-m",
+            "coverage",
+            "run",
+            "--rcfile=coverage.toml",
+            "-m",
+            "pytest",
+            "src/satt/tests",
+            "-q",
+        ],
+        test_environment,
+    )
+    _run(
+        [sys.executable, "-m", "coverage", "json", "--rcfile=coverage.toml"],
+        test_environment,
+    )
+    _run(
+        [
+            sys.executable,
+            "scripts/coverage_gate.py",
+            "--coverage",
+            "coverage.json",
+            "--base",
+            "origin/main",
+        ],
         test_environment,
     )
     return 0

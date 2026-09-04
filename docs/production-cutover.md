@@ -76,7 +76,9 @@ Immediately before a production tag is approved:
    the intended new tag matches `VERSION`, release-note filename and heading,
    exact tested main commit, and protected production policy.
 8. Confirm the latest pull-request, fresh-database, isolated restore,
-   development, and test checks passed for the exact intended commit.
+   development, and test checks passed for the exact intended commit. Confirm
+   GitHub Actions records a completed successful `deploy-test.yml` push run on
+   `main` whose `head_sha` is that exact commit.
 
 ## Server-side production configuration
 
@@ -107,11 +109,14 @@ environment is intentionally unavailable.
 
 ## Approved first-cutover sequence
 
-After corrected development integration, explicit merge approval, isolated test
-validation, and separate production-release approval, create a new immutable
-patch tag on the exact tested main commit. The tag workflow performs:
+After corrected development integration, the approved Promotion to test,
+isolated test validation, and the approved Promotion to production, create the
+exact Mike-selected immutable tag on the exact tested main commit. The tag
+workflow performs:
 
-1. Validate tag/version/notes, exact tag target, and main ancestry.
+1. Validate tag/version/notes, exact tag target, main ancestry, and a completed
+   successful exact-SHA `deploy-test.yml` push run for `main`. Stop before SSH
+   if test-promotion proof is absent.
 2. Establish strict SSH trust through the protected production environment.
 3. Capture the prior checkout and switch to the exact immutable tag.
 4. Validate tools, configuration mode and configured status, production tiers,
