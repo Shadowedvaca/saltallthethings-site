@@ -217,6 +217,28 @@ async def test_override_routes_reject_missing_slots_and_invalid_full_writes(
     )
     assert missing_delete.status_code == 404
 
+    empty_assignment = await db_client.put(
+        "/api/schedule/missing/assignment",
+        json={"ideaId": " "},
+        headers=_headers(),
+    )
+    assert empty_assignment.status_code == 422
+    missing_assignment = await db_client.put(
+        "/api/schedule/missing/assignment",
+        json={"ideaId": "missing"},
+        headers=_headers(),
+    )
+    assert missing_assignment.status_code == 404
+
+    malformed_slots = await db_client.put(
+        "/api/data/showSlots", json={}, headers=_headers()
+    )
+    assert malformed_slots.status_code == 422
+    malformed_assignments = await db_client.put(
+        "/api/data/assignments", json=[], headers=_headers()
+    )
+    assert malformed_assignments.status_code == 422
+
     invalid_slots = await db_client.put(
         "/api/data/showSlots",
         json=[{**_slot("slot-1", 1), "episodeNumberOverride": "7"}],

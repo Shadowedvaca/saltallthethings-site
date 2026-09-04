@@ -2,6 +2,7 @@
 
 import pytest
 
+from satt.crud import validate_assigned_episode_numbers
 from satt.episode_numbers import (
     EpisodeNumberContractError,
     effective_episode_number,
@@ -26,3 +27,36 @@ def test_effective_episode_number_prefers_override_and_restores_automatic():
     assert effective_episode_number("EP041", 41, None) == "EP041"
     assert effective_episode_value(41, None) == 41
     assert effective_episode_number("", 41, None) == "EP041"
+
+
+class _AssignedNumberResult:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def __iter__(self):
+        return iter(self.rows)
+
+
+class _AssignedNumberDatabase:
+    def __init__(self, rows):
+        self.rows = rows
+
+    async def execute(self, _statement):
+        return _AssignedNumberResult(self.rows)
+
+
+@pytest.mark.asyncio
+async def test_assigned_number_validator_accepts_unique_and_rejects_duplicates():
+    await validate_assigned_episode_numbers(
+        _AssignedNumberDatabase([
+            ("slot-1", 1, None),
+            ("slot-2", 2, 3),
+        ])
+    )
+    with pytest.raises(EpisodeNumberContractError, match="EP003"):
+        await validate_assigned_episode_numbers(
+            _AssignedNumberDatabase([
+                ("slot-2", 2, 3),
+                ("slot-3", 3, None),
+            ])
+        )
