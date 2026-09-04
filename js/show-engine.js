@@ -134,6 +134,27 @@ const ShowEngine = {
   },
 
   /**
+   * Parse a positive whole-number override without coercing partial values.
+   */
+  parseEpisodeNumberOverride(value) {
+    const normalized = String(value == null ? '' : value).trim();
+    if (!/^[1-9]\d*$/.test(normalized)) return null;
+    const parsed = Number(normalized);
+    return Number.isSafeInteger(parsed) && parsed <= 2147483647 ? parsed : null;
+  },
+
+  /**
+   * Return the one canonical number displayed for an assigned show.
+   */
+  getEffectiveEpisodeNumber(slot) {
+    if (!slot) return '';
+    if (Number.isInteger(slot.episodeNumberOverride) && slot.episodeNumberOverride > 0) {
+      return this._formatEpNumber(slot.episodeNumberOverride);
+    }
+    return slot.effectiveEpisodeNumber || slot.episodeNumber || this._formatEpNumber(slot.episodeNum);
+  },
+
+  /**
    * Get the show slot for a specific record date (YYYY-MM-DD string)
    */
   getSlotByRecordDate(dateStr) {

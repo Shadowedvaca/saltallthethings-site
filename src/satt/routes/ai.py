@@ -16,6 +16,7 @@ from satt.auth import require_auth
 from satt.config import get_settings
 from satt.crud import get_config, get_idea_and_slot, get_jokes, save_config, set_asset_inventory, set_idea_image_file_id
 from satt.database import get_db
+from satt.episode_numbers import effective_episode_number, effective_episode_value
 from satt.gdrive import (
     build_asset_inventory,
     delete_file,
@@ -569,7 +570,15 @@ async def generate_art_direction(
         )
 
     episode_data = {
-        "episodeNumber": slot.episode_number if slot else "",
+        "episodeNumber": (
+            effective_episode_number(
+                slot.episode_number,
+                slot.episode_num,
+                slot.episode_number_override,
+            )
+            if slot
+            else ""
+        ),
         "title": idea.selected_title or "",
         "summary": idea.summary or "",
         "outline": idea.outline or [],
@@ -613,8 +622,20 @@ async def generate_art_direction(
     # Update artLog — cap at 50 entries
     art_log = config.get("artLog") or []
     art_log.append({
-        "episodeNum": slot.episode_num if slot else 0,
-        "episodeNumber": slot.episode_number if slot else "",
+        "episodeNum": (
+            effective_episode_value(slot.episode_num, slot.episode_number_override)
+            if slot
+            else 0
+        ),
+        "episodeNumber": (
+            effective_episode_number(
+                slot.episode_number,
+                slot.episode_num,
+                slot.episode_number_override,
+            )
+            if slot
+            else ""
+        ),
         "archetypeId": result["archetype"]["id"],
         "environment": result["environment"],
         "babyGags": result["babyGags"],

@@ -234,6 +234,8 @@ async def test_put_show_slots_then_get(db_client: AsyncClient):
     assert slots[0]["id"] == SLOT["id"]
     assert slots[0]["episodeNumber"] == SLOT["episodeNumber"]
     assert slots[0]["episodeNum"] == SLOT["episodeNum"]
+    assert slots[0]["episodeNumberOverride"] is None
+    assert slots[0]["effectiveEpisodeNumber"] == SLOT["episodeNumber"]
     assert slots[0]["recordDate"] == SLOT["recordDate"]
     assert slots[0]["releaseDate"] == SLOT["releaseDate"]
     assert slots[0]["isRollout"] == SLOT["isRollout"]

@@ -50,6 +50,8 @@ def _slot(slot_id: str, episode: int) -> dict:
         "id": slot_id,
         "episodeNumber": f"EP{episode}",
         "episodeNum": episode,
+        "episodeNumberOverride": None,
+        "effectiveEpisodeNumber": f"EP{episode}",
         "recordDate": "2026-08-01",
         "releaseDate": "2026-08-08",
         "isRollout": False,

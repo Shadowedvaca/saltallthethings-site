@@ -88,6 +88,20 @@ OPTIONAL_DATA_QUERIES = {
 }
 
 
+OPTIONAL_COLUMN_QUERIES = {
+    "show_slot_episode_overrides": {
+        "table": "show_slots",
+        "column": "episode_number_override",
+        "query": """
+            SELECT id, episode_number_override
+            FROM satt.show_slots
+            WHERE episode_number_override IS NOT NULL
+            ORDER BY id
+        """,
+    },
+}
+
+
 def configure_private_database_url() -> None:
     """Build the private container URL without exposing its components."""
 
@@ -169,6 +183,34 @@ async def _query_group(
     return rows_by_table
 
 
+async def _query_optional_columns() -> dict[str, list[dict[str, Any]]]:
+    """Query additive columns only when the current schema contains them."""
+    engine = get_engine()
+    rows_by_group: dict[str, list[dict[str, Any]]] = {}
+    async with engine.connect() as connection:
+        for group, spec in OPTIONAL_COLUMN_QUERIES.items():
+            exists = await connection.scalar(
+                text(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_schema = 'satt'
+                          AND table_name = :table
+                          AND column_name = :column
+                    )
+                    """
+                ),
+                {"table": spec["table"], "column": spec["column"]},
+            )
+            if not exists:
+                rows_by_group[group] = []
+                continue
+            result = await connection.execute(text(spec["query"]))
+            rows_by_group[group] = [dict(row) for row in result.mappings()]
+    return rows_by_group
+
+
 async def fingerprint_production() -> dict[str, Any]:
     settings = get_settings()
     if settings.environment != "production":
@@ -179,6 +221,7 @@ async def fingerprint_production() -> dict[str, Any]:
     auth_rows = await _query_group(AUTH_QUERIES)
     data_rows = await _query_group(DATA_QUERIES)
     data_rows.update(await _query_group(OPTIONAL_DATA_QUERIES, optional=True))
+    data_rows.update(await _query_optional_columns())
     await get_engine().dispose()
     return {
         "auth": fingerprint_rows(auth_rows),

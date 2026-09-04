@@ -261,6 +261,55 @@ function testScheduleBoardCalendarView() {
   );
 }
 
+function testEpisodeNumberOverrideContract() {
+  const engine = loadShowEngine();
+  assert.equal(engine.parseEpisodeNumberOverride("42"), 42);
+  for (const invalid of ["", "0", "-1", "1.5", "12abc", "2147483648"]) {
+    assert.equal(engine.parseEpisodeNumberOverride(invalid), null);
+  }
+  assert.equal(engine.getEffectiveEpisodeNumber({
+    episodeNumber: "EP041", episodeNum: 41, episodeNumberOverride: 40,
+  }), "EP040");
+  assert.equal(engine.getEffectiveEpisodeNumber({
+    episodeNumber: "EP041", episodeNum: 41, episodeNumberOverride: null,
+  }), "EP041");
+}
+
+async function testEpisodeNumberStorageRoutes() {
+  const requests = [];
+  let revision = 0;
+  let override = null;
+  const canonical = () => state(revision, { showSlots: [{
+    id: "slot-41", episodeNumber: "EP041", episodeNum: 41,
+    episodeNumberOverride: override,
+    effectiveEpisodeNumber: override == null ? "EP041" : "EP040",
+    recordDate: "2026-09-01", releaseDate: "2026-09-08", isRollout: false,
+  }] });
+  const harness = loadStorage(async (url, options = {}) => {
+    if (url === "/api/export") return response(200, canonical());
+    requests.push({ url, options });
+    assert.equal(options.headers["If-Match"], String(revision));
+    if (options.method === "PUT") {
+      assert.deepEqual(JSON.parse(options.body), { episodeNumber: 40 });
+      override = 40;
+    } else {
+      assert.equal(options.method, "DELETE");
+      override = null;
+    }
+    revision += 1;
+    return response(200, { ok: true, state: canonical(), revision });
+  });
+  await harness.storage.init();
+  assert.equal(await harness.storage.setEpisodeNumberOverride("slot-41", 40), true);
+  assert.equal(harness.storage.getShowSlots()[0].effectiveEpisodeNumber, "EP040");
+  assert.equal(await harness.storage.clearEpisodeNumberOverride("slot-41"), true);
+  assert.equal(harness.storage.getShowSlots()[0].effectiveEpisodeNumber, "EP041");
+  assert.deepEqual(requests.map((request) => [request.url, request.options.method]), [
+    ["/api/schedule/slot-41/episode-number", "PUT"],
+    ["/api/schedule/slot-41/episode-number", "DELETE"],
+  ]);
+}
+
 async function testReleaseDateWaitsForCanonicalPersistence() {
   let slots = [{ id: "slot-1", releaseDate: "2026-08-18" }];
   let releaseSave;
@@ -1344,6 +1393,7 @@ async function main() {
   checkInlineScripts("config.html", configPage);
   testHomepageHeroSpacingContract(homepage);
   testScheduleBoardCalendarView();
+  testEpisodeNumberOverrideContract();
   assert.match(showManagement, /const initialCalendarView = ShowEngine\.getInitialCalendarView\(\)/);
   assert.match(showManagement, /let currentMonth = initialCalendarView\.month/);
   assert.match(showManagement, /let currentYear = initialCalendarView\.year/);
@@ -1388,7 +1438,7 @@ async function main() {
   assert.doesNotMatch(showManagement, /getSlotForIdea/);
   assert.match(showManagement, /return slot \? openShowDisplay\(slot\.id\) : openShowDisplay\(null, ideaId\)/);
   assert.match(showManagement, /var slot = slotId \? slots\.find/);
-  assert.match(showManagement, /slot \? slot\.episodeNumber : 'Unscheduled'/);
+  assert.match(showManagement, /slot \? ShowEngine\.getEffectiveEpisodeNumber\(slot\) : 'Unscheduled'/);
   assert.match(showManagement, /slot \? getNextShowInfo\(slot\.recordDate\) : null/);
   assert.match(showManagement, /location\.hash\.startsWith\('#idea\/'\)/);
   assert.match(showManagement, /function rerenderIdeasPreservingExpansion\(ideaId\)/);
@@ -1407,6 +1457,10 @@ async function main() {
   assert.match(showManagement, /await Storage\.deleteIdea\(ideaId\)/);
   assert.match(showManagement, /await Storage\.assignIdeaToSlot\(ideaId, slotId\)/);
   assert.match(showManagement, /await Storage\.unassignSlot\(slotId\)/);
+  assert.match(showManagement, /data-edit-episode-number/);
+  assert.match(showManagement, /await Storage\.setEpisodeNumberOverride\(slotId, episodeNumber\)/);
+  assert.match(showManagement, /await Storage\.clearEpisodeNumberOverride\(slotId\)/);
+  assert.match(showManagement, /ShowEngine\.getEffectiveEpisodeNumber\(slot\)/);
   assert.doesNotMatch(showManagement, /freeJokesForIdea/);
   assert.doesNotMatch(showManagement, /lastModified/);
   assert.match(jokesPage, /!config\.claudeApiKeyConfigured/);
@@ -1432,6 +1486,7 @@ async function main() {
   assert.match(showManagement, /var segmentId = segEl\.dataset\.segmentId/);
   assert.doesNotMatch(showManagement, /segmentId:\s*segName\.toLowerCase/);
 
+  await testEpisodeNumberStorageRoutes();
   await testReleaseDateWaitsForCanonicalPersistence();
   await testSuccessfulCanonicalSave();
   await testGlobalQueuePreventsOutOfOrderWrites();

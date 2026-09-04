@@ -215,10 +215,10 @@ def test_pull_request_workflow_has_minimal_permissions_and_pinned_actions():
     assert "python scripts/validate_release.py" in source
     assert "Validate current release contract without publishing" in source
     assert "Exercise isolated migration rollback and recovery" in source
-    assert "app alembic downgrade 0008" in source
-    assert 'test "$revision" = "0008"' in source
-    assert "app alembic upgrade head" in source
+    assert "app alembic downgrade 0009" in source
     assert 'test "$revision" = "0009"' in source
+    assert "app alembic upgrade head" in source
+    assert 'test "$revision" = "0010"' in source
     assert "docker compose -f compose.ci.yaml up -d --wait app" in source
     assert "Exercise isolated production backup restore" in source
     assert "pg_dump --format=custom --schema=satt" in source

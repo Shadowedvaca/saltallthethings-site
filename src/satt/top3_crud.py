@@ -19,6 +19,7 @@ from satt.models import (
     Top3Submission,
     User,
 )
+from satt.episode_numbers import effective_episode_number
 from satt.serializers import serialize_top3_concept, serialize_top3_submission
 
 _TOP3_LIFECYCLE_LOCK_ID = 0x53415433
@@ -53,6 +54,8 @@ async def list_concepts(db: AsyncSession) -> list[dict]:
             Idea.selected_title,
             Idea.titles,
             ShowSlot.episode_number,
+            ShowSlot.episode_num,
+            ShowSlot.episode_number_override,
         )
         .join(Idea, Idea.id == Top3Assignment.idea_id)
         .outerjoin(ScheduleAssignment, ScheduleAssignment.idea_id == Idea.id)
@@ -60,7 +63,15 @@ async def list_concepts(db: AsyncSession) -> list[dict]:
         .order_by(ShowSlot.episode_num.nulls_last(), Idea.id)
     )
     assignments_by_concept: dict[str, list[dict]] = {}
-    for concept_id, idea_id, selected_title, titles, episode_number in assignment_result:
+    for (
+        concept_id,
+        idea_id,
+        selected_title,
+        titles,
+        episode_number,
+        episode_num,
+        episode_number_override,
+    ) in assignment_result:
         fallback_title = next(
             (title for title in (titles or []) if isinstance(title, str) and title.strip()),
             None,
@@ -69,7 +80,15 @@ async def list_concepts(db: AsyncSession) -> list[dict]:
             {
                 "ideaId": idea_id,
                 "title": selected_title or fallback_title or "Untitled episode idea",
-                "episodeNumber": episode_number,
+                "episodeNumber": (
+                    effective_episode_number(
+                        episode_number,
+                        episode_num,
+                        episode_number_override,
+                    )
+                    if episode_number is not None
+                    else None
+                ),
             }
         )
     for concept in concepts:

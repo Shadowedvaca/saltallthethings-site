@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
+from satt.episode_numbers import effective_episode_number
+
 
 def _iso(value: datetime | date | None) -> str | None:
     if value is None:
@@ -141,6 +143,12 @@ def serialize_show_slot(row: Any) -> dict:
         "id": row.id,
         "episodeNumber": row.episode_number,
         "episodeNum": row.episode_num,
+        "episodeNumberOverride": row.episode_number_override,
+        "effectiveEpisodeNumber": effective_episode_number(
+            row.episode_number,
+            row.episode_num,
+            row.episode_number_override,
+        ),
         "recordDate": _iso(row.record_date),
         "releaseDate": _iso(row.release_date),
         "isRollout": row.is_rollout,
@@ -174,7 +182,11 @@ def _compute_next_step(slot: Any) -> str:
 def serialize_postprod_row(slot: Any, idea: Any) -> dict:
     return {
         "slotId": slot.id,
-        "episodeNumber": slot.episode_number,
+        "episodeNumber": effective_episode_number(
+            slot.episode_number,
+            slot.episode_num,
+            slot.episode_number_override,
+        ),
         "episodeNum": slot.episode_num,
         "recordDate": _iso(slot.record_date),
         "releaseDate": _iso(slot.release_date),

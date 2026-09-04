@@ -298,6 +298,122 @@ test("past, future, and unscheduled show edits use one workflow and preserve sch
     slots: Storage.getShowSlots(),
   }))).toEqual(scheduleBefore);
 });
+
+test("episode number override persists across management, view, schedule, and reset", async ({ page }) => {
+  await isolateNetwork(page);
+  await page.clock.install({ time: new Date("2026-08-25T12:00:00") });
+  await page.addInitScript(() => {
+    const payload = btoa(JSON.stringify({ exp: 4102444800 }));
+    localStorage.setItem("satt_jwt", JSON.stringify({ token: "test." + payload + ".signature" }));
+  });
+
+  let revision = 0;
+  let episodeNumberMutations = 0;
+  const idea = {
+    id: "override-edit", rawNotes: "Override notes", titles: ["Override Show"],
+    selectedTitle: "Override Show", summary: "Override summary", outline: [], status: "scheduled",
+    createdAt: "2026-08-09T12:00:00Z", updatedAt: "2026-08-09T12:00:00Z", imageFileId: null,
+  };
+  const slot = {
+    id: "slot-override", episodeNumber: "EP041", episodeNum: 41,
+    episodeNumberOverride: null, effectiveEpisodeNumber: "EP041",
+    recordDate: "2026-09-01", releaseDate: "2026-09-08",
+    releaseDateOverride: "2026-09-09", isRollout: false,
+  };
+  const horizon = {
+    id: "slot-horizon", episodeNumber: "EP060", episodeNum: 60,
+    episodeNumberOverride: null, effectiveEpisodeNumber: "EP060",
+    recordDate: "2027-01-12", releaseDate: "2027-01-19",
+    releaseDateOverride: null, isRollout: false,
+  };
+  const canonicalState = () => ({
+    config: {}, ideas: [idea], jokes: [], songs: [], guests: [], guestAssignments: [],
+    showSlots: [slot, horizon], assignments: { "slot-override": "override-edit" }, revision,
+  });
+
+  await page.route("**/api/top3/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    const body = pathname === "/api/top3/concepts"
+      ? { revision, concepts: [] }
+      : { revision, assignment: null };
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+  await page.route("**/api/export", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(canonicalState()) });
+  });
+  await page.route("**/api/schedule/slot-override/episode-number", async (route) => {
+    episodeNumberMutations += 1;
+    expect(route.request().headers()["if-match"]).toBe(String(revision));
+    if (route.request().method() === "PUT") {
+      const payload = JSON.parse(route.request().postData());
+      expect(payload).toEqual({ episodeNumber: 40 });
+      slot.episodeNumberOverride = 40;
+      slot.effectiveEpisodeNumber = "EP040";
+    } else {
+      expect(route.request().method()).toBe("DELETE");
+      slot.episodeNumberOverride = null;
+      slot.effectiveEpisodeNumber = "EP041";
+    }
+    revision += 1;
+    await route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({ ok: true, state: canonicalState(), revision }),
+    });
+  });
+
+  await page.goto("/show_management.html");
+  let card = page.locator("#idea-override-edit");
+  const scheduleBefore = await page.evaluate(() => ({
+    assignments: Storage.getAssignments(),
+    recordDate: Storage.getShowSlots()[0].recordDate,
+    releaseDate: Storage.getShowSlots()[0].releaseDate,
+    releaseDateOverride: Storage.getShowSlots()[0].releaseDateOverride,
+  }));
+  await card.getByRole("button", { name: "Edit show" }).click();
+
+  const numberInput = card.getByRole("spinbutton", { name: "Episode number override" });
+  await numberInput.fill("");
+  await card.getByRole("button", { name: "Save Number" }).click();
+  await expect(page.getByText("Episode number must be a positive whole number.")).toBeVisible();
+  expect(episodeNumberMutations).toBe(0);
+
+  await numberInput.fill("40");
+  await card.getByRole("button", { name: "Save Number" }).click();
+  await expect(card).toContainText("EP040");
+  expect(episodeNumberMutations).toBe(1);
+  expect(await page.evaluate(() => ({
+    assignments: Storage.getAssignments(),
+    recordDate: Storage.getShowSlots()[0].recordDate,
+    releaseDate: Storage.getShowSlots()[0].releaseDate,
+    releaseDateOverride: Storage.getShowSlots()[0].releaseDateOverride,
+  }))).toEqual(scheduleBefore);
+
+  await card.getByRole("link", { name: /View/ }).click();
+  await expect(page.locator("#showDisplayContent .ep-badge")).toHaveText("EP040");
+  await page.getByRole("button", { name: /Close/ }).click();
+  await page.getByRole("button", { name: "Schedule Board" }).click();
+  await page.getByRole("button", { name: /Next/ }).click();
+  await expect(page.locator('[data-slot-id="slot-override"] .ep-num')).toHaveText("EP040");
+
+  await page.reload();
+  card = page.locator("#idea-override-edit");
+  await expect(card).toContainText("EP040");
+  await card.getByRole("button", { name: "Edit show" }).click();
+  await expect(card.getByRole("spinbutton", { name: "Episode number override" })).toHaveValue("40");
+  await card.getByRole("button", { name: "Use Automatic" }).click();
+  await expect(card).toContainText("EP041");
+  expect(episodeNumberMutations).toBe(2);
+
+  await page.reload();
+  card = page.locator("#idea-override-edit");
+  await expect(card).toContainText("EP041");
+  expect(await page.evaluate(() => ({
+    assignments: Storage.getAssignments(),
+    recordDate: Storage.getShowSlots()[0].recordDate,
+    releaseDate: Storage.getShowSlots()[0].releaseDate,
+    releaseDateOverride: Storage.getShowSlots()[0].releaseDateOverride,
+  }))).toEqual(scheduleBefore);
+});
 test("Show Management reconciles successful and conflicted mutations without a page reload", async ({ page }) => {
   await isolateNetwork(page);
   await page.clock.install({ time: new Date("2026-08-09T12:00:00") });

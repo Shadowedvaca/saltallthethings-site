@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictInt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from satt.auth import require_auth
@@ -28,9 +28,11 @@ from satt.crud import (
     replace_show_slots,
     require_data_revision,
     save_config,
+    set_episode_number_override,
     unassign_idea_from_slot,
 )
 from satt.database import get_db
+from satt.episode_numbers import EpisodeNumberContractError
 from satt.guest_contract import GuestContractError
 from satt.guest_crud import (
     GuestLifecycleError,
@@ -65,6 +67,10 @@ class JokeAssignmentRequest(BaseModel):
 
 class ScheduleAssignmentRequest(BaseModel):
     ideaId: str
+
+
+class EpisodeNumberOverrideRequest(BaseModel):
+    episodeNumber: StrictInt
 
 
 def _public_config(config: dict) -> dict:
@@ -305,7 +311,10 @@ async def put_data(
     elif key == "showSlots":
         if not isinstance(body, list):
             raise HTTPException(status_code=422, detail="showSlots must be an array")
-        await replace_show_slots(db, body)
+        try:
+            await replace_show_slots(db, body)
+        except EpisodeNumberContractError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
         saved = await get_show_slots(db)
     else:
         if not isinstance(body, dict):
@@ -380,11 +389,18 @@ async def bulk_import(
         except GuestLifecycleError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
     if "showSlots" in body:
-        await replace_show_slots(db, body["showSlots"])
+        try:
+            await replace_show_slots(
+                db,
+                body["showSlots"],
+                validate_assignments="assignments" not in body,
+            )
+        except EpisodeNumberContractError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
     if "assignments" in body:
         try:
             await replace_assignments(db, body["assignments"])
-        except ValueError as error:
+        except (ValueError, EpisodeNumberContractError) as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
     if "guestAssignments" in body:
         try:
@@ -477,11 +493,48 @@ async def put_schedule_assignment(
         await assign_idea_to_slot(db, body.ideaId.strip(), slot_id)
     except DataNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+    except EpisodeNumberContractError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
     state = await _export_state(db)
     return _mutation_response(
         state,
         {"ideas": state["ideas"], "assignments": state["assignments"]},
     )
+
+
+@router.put("/schedule/{slot_id}/episode-number")
+async def put_episode_number_override(
+    slot_id: str,
+    body: EpisodeNumberOverrideRequest,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    _user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    await _guard_revision(db, if_match)
+    try:
+        await set_episode_number_override(db, slot_id, body.episodeNumber)
+    except DataNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except EpisodeNumberContractError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    state = await _export_state(db)
+    return _mutation_response(state, state["showSlots"])
+
+
+@router.delete("/schedule/{slot_id}/episode-number")
+async def delete_episode_number_override(
+    slot_id: str,
+    if_match: str | None = Header(default=None, alias="If-Match"),
+    _user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    await _guard_revision(db, if_match)
+    try:
+        await set_episode_number_override(db, slot_id, None)
+    except DataNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    state = await _export_state(db)
+    return _mutation_response(state, state["showSlots"])
 
 
 @router.delete("/schedule/{slot_id}/assignment")

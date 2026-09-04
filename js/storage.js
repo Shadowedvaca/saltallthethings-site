@@ -616,6 +616,38 @@ const Storage = {
     return this.set('showSlots', slots);
   },
 
+  async setEpisodeNumberOverride(slotId, episodeNumber) {
+    try {
+      await this._enqueueMutation(
+        () => this._request('/schedule/' + encodeURIComponent(slotId) + '/episode-number', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ episodeNumber: episodeNumber })
+        }),
+        () => this.setEpisodeNumberOverride(slotId, episodeNumber)
+      );
+      return true;
+    } catch (err) {
+      console.error('Episode number override failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to save episode number: ' + err.message);
+      return false;
+    }
+  },
+
+  async clearEpisodeNumberOverride(slotId) {
+    try {
+      await this._enqueueMutation(
+        () => this._request('/schedule/' + encodeURIComponent(slotId) + '/episode-number', { method: 'DELETE' }),
+        () => this.clearEpisodeNumberOverride(slotId)
+      );
+      return true;
+    } catch (err) {
+      console.error('Episode number reset failed:', err);
+      if (typeof Toast !== 'undefined') Toast.error('Failed to reset episode number: ' + err.message);
+      return false;
+    }
+  },
+
   // ---- Assignments ----
   getAssignments() {
     return this.get('assignments') || {};

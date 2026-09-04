@@ -661,7 +661,7 @@
       var scheduleHtml = '';
       if (slot) {
         scheduleHtml = '<div class="schedule-info">'
-          + '<span class="date-badge ep">' + slot.episodeNumber + '</span>'
+          + '<span class="date-badge ep">' + ShowEngine.getEffectiveEpisodeNumber(slot) + '</span>'
           + '<span class="date-badge record">Record: ' + ShowEngine.formatDateShort(slot.recordDate) + '</span>'
           + '<span class="date-badge release' + (slot.releaseDateOverride ? ' override' : '') + '">Release: ' + ShowEngine.formatDateShort(ShowEngine.getEffectiveReleaseDate(slot)) + (slot.releaseDateOverride ? ' ✎' : '') + '</span>'
           + '<a href="#show/' + slot.id + '" class="show-display-link" onclick="event.stopPropagation(); openShowDisplay(\'' + slot.id + '\'); return false;" title="Full show display">⛶ View</a>'
@@ -822,6 +822,18 @@
           + 'style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-default); border-radius: 4px; padding: 4px 8px; font-size: 0.8rem;">'
           + (isOverridden ? '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); resetReleaseDate(\'' + editSlot.id + '\')" title="Reset to calculated default">↩ Reset</button>' : '')
           + (isOverridden ? '<span class="text-xs" style="color: var(--gold-bright);">✎ Custom date</span>' : '<span class="text-xs text-muted">(default: record + 7 days)</span>')
+          + '</div>';
+      }
+
+      // Episode number override (only scheduled shows have a number)
+      if (editSlot) {
+        var episodeOverride = editSlot.episodeNumberOverride;
+        html += '<div class="mb-md" onclick="event.stopPropagation()" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">'
+          + '<label class="text-xs text-muted" for="episode-number-' + editSlot.id + '" style="text-transform:uppercase; letter-spacing:0.5px; font-weight:600;">Episode Number:</label>'
+          + '<input id="episode-number-' + editSlot.id + '" type="number" min="1" max="2147483647" step="1" inputmode="numeric" class="edit-field edit-field-sm" data-edit-episode-number value="' + (episodeOverride == null ? '' : episodeOverride) + '" placeholder="' + editSlot.episodeNum + '" aria-label="Episode number override" style="width:120px;">'
+          + '<button type="button" class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); updateEpisodeNumberOverride(\'' + editSlot.id + '\', \'' + idea.id + '\')">Save Number</button>'
+          + (episodeOverride == null ? '' : '<button type="button" class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); resetEpisodeNumberOverride(\'' + editSlot.id + '\', \'' + idea.id + '\')">Use Automatic</button>')
+          + '<span class="text-xs text-muted">Automatic: ' + editSlot.episodeNumber + '; showing: ' + ShowEngine.getEffectiveEpisodeNumber(editSlot) + '</span>'
           + '</div>';
       }
 
@@ -1293,7 +1305,7 @@
 
       var html = '<div class="show-display-header">'
         + '<div>'
-        + '<span class="ep-badge">' + (slot ? slot.episodeNumber : 'Unscheduled') + '</span>'
+        + '<span class="ep-badge">' + (slot ? ShowEngine.getEffectiveEpisodeNumber(slot) : 'Unscheduled') + '</span>'
         + '<h1>' + esc(title) + '</h1>'
         + '<div class="dates">' + (slot ? 'Record: ' + ShowEngine.formatDateShort(slot.recordDate) + ' &nbsp;|&nbsp; Release: ' + ShowEngine.formatDateShort(ShowEngine.getEffectiveReleaseDate(slot)) : 'No schedule slot assigned') + '</div>'
         + '</div>'
@@ -1484,7 +1496,7 @@
         if (assignedIdeaId) {
           var idea = ideas.find(function(i) { return i.id === assignedIdeaId; });
           recordHtml = '<div class="tuesday-drop has-show" data-slot-id="' + recordSlot.id + '" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event, \'' + recordSlot.id + '\')">'
-            + '<div class="show-info"><span class="ep-num">' + recordSlot.episodeNumber + '</span><span class="show-title">' + esc(idea ? (idea.selectedTitle || (idea.titles && idea.titles[0]) || 'Untitled') : 'Untitled') + '</span>'
+            + '<div class="show-info"><span class="ep-num">' + ShowEngine.getEffectiveEpisodeNumber(recordSlot) + '</span><span class="show-title">' + esc(idea ? (idea.selectedTitle || (idea.titles && idea.titles[0]) || 'Untitled') : 'Untitled') + '</span>'
             + '<a href="#show/' + recordSlot.id + '" class="cal-display-link" onclick="event.stopPropagation(); openShowDisplay(\'' + recordSlot.id + '\'); return false;" title="View show">⛶</a>'
             + '<button class="unassign-btn" onclick="event.stopPropagation(); unassignShow(\'' + recordSlot.id + '\')" title="Remove">✕</button></div></div>';
         } else {
@@ -1500,7 +1512,7 @@
           if (aid) {
             var idea = ideas.find(function(i) { return i.id === aid; });
             return '<div class="tuesday-drop has-show" style="border-left: 2px solid var(--status-scheduled);">'
-              + '<div class="show-info"><span class="ep-num">' + ps.episodeNumber + '</span><span class="show-title">' + esc(idea ? (idea.selectedTitle || (idea.titles && idea.titles[0]) || 'Untitled') : 'Untitled') + '</span></div></div>';
+              + '<div class="show-info"><span class="ep-num">' + ShowEngine.getEffectiveEpisodeNumber(ps) + '</span><span class="show-title">' + esc(idea ? (idea.selectedTitle || (idea.titles && idea.titles[0]) || 'Untitled') : 'Untitled') + '</span></div></div>';
           }
           return '<div class="tuesday-drop" style="border-left: 2px solid var(--status-scheduled); opacity: 0.5;"><span class="empty-placeholder">' + ps.episodeNumber + '</span></div>';
         }).join('');
@@ -1539,7 +1551,7 @@
       if (!await Storage.assignIdeaToSlot(ideaId, slotId)) return;
       renderScheduleBoard(); renderIdeasList();
       var slot = ShowEngine.getSlotById(slotId);
-      Toast.success('Assigned to ' + slot.episodeNumber + ' (record ' + ShowEngine.formatDateShort(slot.recordDate) + ')');
+      Toast.success('Assigned to ' + ShowEngine.getEffectiveEpisodeNumber(slot) + ' (record ' + ShowEngine.formatDateShort(slot.recordDate) + ')');
     }
     async function unassignShow(slotId) {
       if (!await Storage.unassignSlot(slotId)) return;
@@ -1568,6 +1580,35 @@
       renderIdeasList();
       renderCalendar();
       Toast.show('Release date reset to default', 'info');
+    }
+
+    async function updateEpisodeNumberOverride(slotId, ideaId) {
+      var container = document.getElementById('expanded-' + ideaId);
+      var input = container ? container.querySelector('[data-edit-episode-number]') : null;
+      var episodeNumber = ShowEngine.parseEpisodeNumberOverride(input ? input.value : '');
+      if (episodeNumber === null) {
+        Toast.error('Episode number must be a positive whole number.');
+        return;
+      }
+      if (!await Storage.setEpisodeNumberOverride(slotId, episodeNumber)) {
+        renderIdeasList();
+        renderCalendar();
+        return;
+      }
+      rerenderIdeasPreservingExpansion(ideaId);
+      renderCalendar();
+      Toast.success('Episode number updated.');
+    }
+
+    async function resetEpisodeNumberOverride(slotId, ideaId) {
+      if (!await Storage.clearEpisodeNumberOverride(slotId)) {
+        renderIdeasList();
+        renderCalendar();
+        return;
+      }
+      rerenderIdeasPreservingExpansion(ideaId);
+      renderCalendar();
+      Toast.info('Episode number returned to automatic calculation.');
     }
 
     // ============================================

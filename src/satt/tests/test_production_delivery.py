@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from satt.scripts.production_fingerprint import (
+    OPTIONAL_COLUMN_QUERIES,
     OPTIONAL_DATA_QUERIES,
     configure_private_database_url,
     fingerprint_rows,
@@ -156,6 +157,24 @@ def test_song_fingerprint_is_additive_across_migration_boundary():
     before = fingerprint_rows({"songs": []})
     after_empty_migration = fingerprint_rows({"songs": []})
     assert before == after_empty_migration
+
+
+def test_episode_override_fingerprint_is_additive_and_preserves_values():
+    spec = OPTIONAL_COLUMN_QUERIES["show_slot_episode_overrides"]
+    assert spec["table"] == "show_slots"
+    assert spec["column"] == "episode_number_override"
+    assert "WHERE episode_number_override IS NOT NULL" in spec["query"]
+    before = fingerprint_rows({"show_slot_episode_overrides": []})
+    after_empty_migration = fingerprint_rows({"show_slot_episode_overrides": []})
+    with_override = fingerprint_rows(
+        {
+            "show_slot_episode_overrides": [
+                {"id": "slot-1", "episode_number_override": 42}
+            ]
+        }
+    )
+    assert before == after_empty_migration
+    assert with_override != after_empty_migration
 
 
 def test_backup_refuses_an_unknown_cutover_phase(tmp_path: Path):
