@@ -200,3 +200,39 @@ async def test_assignment_cannot_activate_a_duplicate_effective_number(
     assert next(
         idea for idea in state["ideas"] if idea["id"] == "idea-1"
     )["status"] == "processed"
+
+
+@pytest.mark.asyncio
+async def test_override_routes_reject_missing_slots_and_invalid_full_writes(
+    db_client: AsyncClient,
+):
+    missing_put = await db_client.put(
+        "/api/schedule/missing/episode-number",
+        json={"episodeNumber": 7},
+        headers=_headers(),
+    )
+    assert missing_put.status_code == 404
+    missing_delete = await db_client.delete(
+        "/api/schedule/missing/episode-number", headers=_headers()
+    )
+    assert missing_delete.status_code == 404
+
+    invalid_slots = await db_client.put(
+        "/api/data/showSlots",
+        json=[{**_slot("slot-1", 1), "episodeNumberOverride": "7"}],
+        headers=_headers(),
+    )
+    assert invalid_slots.status_code == 422
+    assert "positive whole number" in invalid_slots.json()["detail"]
+
+    invalid_import = await db_client.put(
+        "/api/import",
+        json={
+            "showSlots": [
+                {**_slot("slot-1", 1), "episodeNumberOverride": 0}
+            ]
+        },
+        headers=_headers(),
+    )
+    assert invalid_import.status_code == 422
+    assert "between 1 and 2147483647" in invalid_import.json()["detail"]

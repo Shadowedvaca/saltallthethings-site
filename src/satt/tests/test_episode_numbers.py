@@ -25,3 +25,4 @@ def test_effective_episode_number_prefers_override_and_restores_automatic():
     assert effective_episode_value(41, 40) == 40
     assert effective_episode_number("EP041", 41, None) == "EP041"
     assert effective_episode_value(41, None) == 41
+    assert effective_episode_number("", 41, None) == "EP041"
