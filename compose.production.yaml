@@ -43,6 +43,7 @@ services:
       SITE_URL: https://saltallthethings.com
       CORS_ORIGINS: https://saltallthethings.com
       COMMIT_SHA: ${COMMIT_SHA:?COMMIT_SHA is required}
+      SATT_VERSION: ${SATT_VERSION:?SATT_VERSION is required}
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
       GOOGLE_OAUTH_REFRESH_TOKEN: ${GOOGLE_OAUTH_REFRESH_TOKEN:-}

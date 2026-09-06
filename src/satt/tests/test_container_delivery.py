@@ -362,6 +362,7 @@ def test_production_deploy_is_tag_only_immutable_and_recoverable():
     assert deploy["outputs"] == {
         "release_sha": "${{ steps.release.outputs.sha }}",
         "release_tag": "${{ steps.release.outputs.tag }}",
+        "release_notes_path": "${{ steps.release.outputs.notes_path }}",
     }
     publish = workflow["jobs"]["publish"]
     assert publish["needs"] == "deploy"
@@ -370,6 +371,7 @@ def test_production_deploy_is_tag_only_immutable_and_recoverable():
     assert publish["with"] == {
         "release_sha": "${{ needs.deploy.outputs.release_sha }}",
         "release_tag": "${{ needs.deploy.outputs.release_tag }}",
+        "release_notes_path": "${{ needs.deploy.outputs.release_notes_path }}",
     }
 
     action_uses = re.findall(r"uses:\s*([^\s#]+)", source)
@@ -387,6 +389,9 @@ def test_production_deploy_is_tag_only_immutable_and_recoverable():
         "PROD_SSH_KNOWN_HOSTS",
         "python scripts/validate_release.py",
         '--tag "$GITHUB_REF_NAME"',
+        '--notes-path "$notes_path"',
+        "Release-Record: ",
+        'test "$(git cat-file -t "$GITHUB_REF_NAME")" = "tag"',
         'test "$sha" = "$tag_sha"',
         'git merge-base --is-ancestor "$sha" origin/main',
         "main:refs/remotes/origin/main",
@@ -400,6 +405,8 @@ def test_production_deploy_is_tag_only_immutable_and_recoverable():
         'git checkout --detach "$deploy_tag"',
         'test "$(git rev-parse HEAD)" = "$deploy_sha"',
         "bash scripts/production_deploy.sh",
+        'SATT_VERSION="$version"',
+        'previous_version="${previous_tag#prod-v}"',
         "scripts/production_nightly_backup.sh",
         "rollback-cron",
         "-f compose.production.yaml",
@@ -524,14 +531,8 @@ def test_canonical_guidance_matches_current_production_gate():
         encoding="utf-8"
     )
     normalized_versioning = " ".join(versioning.split())
-    assert (
-        "only then invokes the separate GitHub Release publisher"
-        in normalized_versioning
-    )
-    assert (
-        "A failed or unapproved production deployment cannot create"
-        in normalized_versioning
-    )
+    assert "Only after deployment and public verification succeed" in normalized_versioning
+    assert "immutable `prod-vX.Y.Z` tag is the production-version authority" in normalized_versioning
 
 
 def test_release_workflow_runs_only_after_verified_production():
@@ -540,7 +541,11 @@ def test_release_workflow_runs_only_after_verified_production():
 
     assert "push:" not in source
     call = workflow["on"]["workflow_call"]
-    assert set(call["inputs"]) == {"release_sha", "release_tag"}
+    assert set(call["inputs"]) == {
+        "release_sha",
+        "release_tag",
+        "release_notes_path",
+    }
     for value in call["inputs"].values():
         assert value["required"] is True
         assert value["type"] == "string"
@@ -548,6 +553,8 @@ def test_release_workflow_runs_only_after_verified_production():
     assert "environment: production" not in source
     assert "python scripts/validate_release.py" in source
     assert '--tag "$RELEASE_TAG"' in source
+    assert '--notes-path "$RELEASE_NOTES_PATH"' in source
+    assert '--rendered-notes "$RUNNER_TEMP/satt-release-notes.md"' in source
     assert 'test "$(git rev-parse HEAD)" = "$RELEASE_SHA"' in source
     assert 'test "$(git rev-list -n 1 "$RELEASE_TAG")" = "$RELEASE_SHA"' in source
     assert 'git merge-base --is-ancestor "$RELEASE_SHA" origin/main' in source

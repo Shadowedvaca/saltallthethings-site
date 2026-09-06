@@ -45,7 +45,7 @@ Do not delete and recreate the issue, create a duplicate, or silently continue.
 | `Backlog` | Accepted work that is not yet ready to begin. |
 | `Ready` | Scoped, ordered where necessary, and ready to begin. |
 | `In progress` | Implementation is actively underway. |
-| `In review` | Technical completion evidence is recorded and approval is pending. |
+| `In review` | A specific human validation, promotion, or scope decision is pending. |
 | `Done` | Approved and complete at the delivery stage required by the issue or slice. |
 | `Not planned` | Declined, duplicate, obsolete, or intentionally not proceeding. |
 
@@ -72,8 +72,9 @@ single delivery slice or release. Use these sections when applicable:
 
 ### Child issues
 
-A child is the unit of implementation and individual completion approval. Use
-these sections when applicable:
+A child is the smallest tracked implementation outcome. Under Parent cadence its
+completion is an automatic technical checkpoint; under Child cadence it is an
+independently releasable delivery context. Use these sections when applicable:
 
 ```markdown
 ## Goal
@@ -113,15 +114,13 @@ parent/children before implementation. Do not infer one from the other.
 `User Validation Timing` controls when a person must validate behavior through
 the user interface. Its values are:
 
-- `Child`: after each applicable child receives Child development complete
-  approval, validate the prepared development artifact before that child's
-  slice can promote to test.
-- `Parent`: after every selected child receives Child development complete
-  approval, validate the cumulative development artifact before the final
-  applicable Promotion to test. This timing remains the same under either
-  Integration Cadence.
+- `Child`: validate the prepared cumulative development artifact after each
+  applicable child checkpoint.
+- `Parent`: validate the final cumulative development artifact after all
+  selected children are technically complete. This timing remains the same
+  under either Integration Cadence.
 - `Release`: after Promotion to test, validate the immutable test candidate
-  before Promotion to production.
+  before the combined production gate.
 
 This control applies only to manual human UI validation. Automated browser
 tests, API checks, database checks, health checks, scripts, and other
@@ -133,13 +132,15 @@ not applicable rather than manufacturing a gate.
 
 `Integration Cadence` controls how selected children form releasable slices:
 
-- `Parent` (default): all selected children share one cumulative branch and
-  draft pull request. Each child is completed and approved individually, but
-  the slice merges and promotes to test only after the final selected child and
-  all manual validation required before that stage. Do not create a PR per
-  child.
+- `Parent` (default): all selected children share one delivery context, branch,
+  worktree, cumulative pull request, and pending release record. Each child ends
+  in an automatic technical checkpoint, and AI continues immediately to the
+  next ordered child unless a documented stop condition or due manual UI gate
+  applies. The slice promotes to test only after the final selected child and
+  all manual validation required before that stage.
 - `Child`: each child is its own releasable slice with its own branch, pull
-  request, merge/test promotion, and exact Mike-selected version.
+  request, pending release record, and test/production promotion. Its version
+  remains unassigned until its combined production gate.
 
 User Validation Timing and Integration Cadence solve different problems and
 must never be conflated.
@@ -150,72 +151,83 @@ must never be conflated.
   will integrate together under the chosen Integration Cadence.
 - Use `codex/<slice-slug>` unless the approved work requires the repository's
   hotfix convention.
+- Use the dedicated branch and worktree assigned to the delivery context. Record
+  the parent or slice, approved baseline, branch, worktree, pull request, and
+  pending release-record path together.
 - Create and maintain a draft pull request as routine reversible work. Marking
   it ready is also routine once the technical evidence is complete; neither is
   a separate approval gate.
 - Keep commits focused enough to review each child independently, while keeping
   one cumulative branch and PR for Parent cadence.
-- Reconcile the cumulative diff, documentation, release note, and evidence
+- Reconcile the cumulative diff, documentation, pending release record, and evidence
   after every child. A failed check remains with the same child until fixed and
   revalidated.
-- Preserve unrelated work and do not relocate work from the supplied checkout
-  merely because the worktree is dirty. Follow `reference/ai-context.md` for
-  workspace guardrails.
+- Preserve unrelated work and follow `reference/ai-context.md` for worktree
+  ownership and startup guardrails.
 
-## Authorization and approval gates
+## Automatic checkpoints, routine authority, and stop conditions
+
+Under Parent cadence, each child ends with a development-complete checkpoint
+containing its focused commit, applicable tests, documentation, deployment when
+needed, cumulative release-record reconciliation, and structured evidence. This
+is not an approval gate. Keep the context `In progress` and continue to the next
+ordered child unless a stop condition applies.
 
 Routine authorized work proceeds without repeated permission requests. Within
 the selected scope this includes repository inspection, implementation,
 automated tests, formatting, linting, builds, API/health/database checks,
-documentation, cumulative release-note maintenance, branch updates,
-development artifacts, draft PR preparation, and other reversible technical
-work.
+documentation, pending release-record maintenance, branch commits and pushes,
+development deployment and safe verification, draft PR preparation and
+maintenance, and other reversible non-production technical work.
 
-There are four happy-path gate types. Their chronological position is
-conditional only for manual UI validation:
+Stop for a genuine unanswered question or material scope/product decision;
+conflicting instructions or evidence; ambiguous context ownership; unexpected
+material risk; missing authority; destructive, security-sensitive,
+infrastructure, secret, or production work not already authorized; an
+uncorrectable required test or deployment failure; manual UI validation at its
+configured timing; Promotion to test; or the combined production gate. Do not
+stop merely to approve an automatic child checkpoint or a routine action above.
 
-1. **Child development complete.** Implementation, automated checks,
-   documentation, cumulative release-note reconciliation, and technical
-   evidence are complete. Summarize the result and wait for approval of that
-   child before asking a person to perform UI validation.
-2. **Manual human UI validation.** Stop only when User Validation Timing makes
-   it due. For `Child` or `Parent`, this gate follows the applicable
-   development-complete approval and uses the prepared development artifact
-   before Promotion to test. For `Release`, it follows Promotion to test and
-   uses the immutable test candidate before Promotion to production. Provide a
-   concise UI checklist and wait for the user's results.
-3. **Promotion to test.** The applicable delivery slice is complete, all human
+## Human gates
+
+There are three happy-path human gate types:
+
+1. **Manual human UI validation.** Stop only when User Validation Timing makes
+   it due. `Child` and `Parent` timing use the prepared cumulative development
+   artifact before Promotion to test. `Release` timing uses the immutable test
+   candidate after Promotion to test. Provide a concise checklist and wait for
+   the user's results.
+2. **Promotion to test.** The applicable delivery slice is complete, all human
    validation required before test has passed, and the PR is ready to merge.
    One approval authorizes merging that PR to `main` and allowing the resulting
    test CI/CD promotion. Do not create separate approval gates for opening the
    PR, marking it ready, merging, and allowing test CI/CD to run. Validation
    explicitly scheduled for `Release` occurs after this promotion and does not
    block the promotion that creates its test candidate.
-4. **Promotion to production.** Test evidence, release reconciliation, and any
-   Release-timed UI validation are complete. One approval authorizes creation
-   of the exact Mike-selected production tag and allows production CI/CD to
-   run.
+3. **Combined production version and promotion.** After exact-SHA test evidence,
+   release-record reconciliation, and any Release-timed UI validation are
+   complete, report the current deployed production tag and SHA, newest valid
+   repository tag if different, exact tested candidate and PR, test result,
+   pending release-record identity, rollback readiness, and material risk. Ask
+   in one question for Mike's exact new production tag and approval to create
+   it and allow the resulting deployment. Do not propose a version.
 
-Outside these gates, stop only for a genuine question, material scope decision,
-unexpected risk, missing authority, destructive or irreversible action not
-already covered by a gate, security concern, or blocker. Approval is scoped to
-the stated gate; child completion never silently authorizes integration or
-production.
+Approval is scoped to the stated gate; an automatic checkpoint never authorizes
+integration or production.
 
 ## Evidence and closure
 
-Before requesting child-completion approval, record:
+At every child checkpoint, record:
 
 - implemented behavior and important files changed;
 - automated tests and quality checks, including results;
 - CI and development artifact/deployment results when applicable;
-- documentation and cumulative release-note changes;
+- documentation and cumulative pending-release-record changes;
 - whether manual UI validation is applicable and when it will be due. Record
-  results only after the development-complete approval and scheduled manual
-  gate occur;
+  results only after the scheduled manual gate occurs;
 - risks, limitations, deviations, and focused follow-up work; and
 - relevant commit, branch, PR, deployment, and workflow links or identifiers.
 
-Move a child to `Done` only after its required approval and delivery stage are
+Move a child to `Done` only after its required delivery stage and human gates are
 complete. Close a parent only when its current definition of done is satisfied.
 Clearly identify later work that remains under a durable parent.

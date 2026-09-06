@@ -87,7 +87,7 @@ names:
    already exists;
 6. builds the shared image and starts only the `satt-test` services;
 7. waits for Compose health and verifies local/public metadata report `test`,
-   the exact `VERSION` value, and the exact commit;
+   version `unassigned`, and the exact commit;
 8. verifies Alembic revision `0009`;
 9. runs ephemeral registration, login/reload, protected export, public-route,
    and unauthenticated-rejection checks and removes the temporary identity; and
@@ -117,10 +117,10 @@ integration smoke checks as AI-executable technical validation of the exact
 
 When User Validation Timing is `Release`, perform the manual human UI checklist
 only after Promotion to test has created this immutable candidate and before
-Promotion to production:
+the combined production gate:
 
-1. Verify `/api/health` reports status `ok`, environment `test`, the exact
-   `VERSION` value, and the exact merge commit.
+1. Verify `/api/health` reports status `ok`, environment `test`, version
+   `unassigned`, and the exact merge commit.
 2. Verify migration revision `0009` and both Compose services are healthy.
 3. Verify public pages and public API routes.
 4. Sign in with a test-only account and verify protected pages, persistence,

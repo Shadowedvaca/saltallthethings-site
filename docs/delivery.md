@@ -11,9 +11,9 @@ consistent with them.
 
 | Environment | Source | Trigger | Authorization |
 |---|---|---|---|
-| Development | Selected `codex/<slice-slug>` branch commit | Manual `deploy-dev.yml` dispatch with an explicit branch | Routine technical work within the selected scope |
-| Test | Approved exact commit on `main` | `deploy-test.yml` after the applicable PR is merged | Single Promotion to test gate |
-| Production | Exact tested `main` commit tagged `prod-vX.Y.Z` | Tag-gated production workflow | Single Promotion to production gate for Mike's exact selected tag |
+| Development | Selected `codex/<slice-slug>` branch commit | Manual `deploy-dev.yml` dispatch with an explicit branch | Routine technical work; version is `unassigned` |
+| Test | Approved exact commit on `main` | `deploy-test.yml` after the applicable PR is merged | Single Promotion to test gate; version is `unassigned` |
+| Production | Exact tested `main` commit tagged `prod-vX.Y.Z` | Tag-gated production workflow | Combined gate supplies Mike's exact tag and deployment approval |
 
 Production never deploys from an ordinary branch push or merge. Tags are
 immutable and must not be reused or force-pushed. Static frontend and FastAPI
@@ -34,7 +34,7 @@ directory. It may not prune shared Docker state or operate on test or
 production.
 
 The public and local health checks must both report environment `development`,
-the exact `VERSION` value, and the exact resolved commit. One-time server, DNS,
+version `unassigned`, and the exact resolved commit. One-time server, DNS,
 TLS, GitHub environment, and secret provisioning requires explicit
 authorization. The detailed bootstrap, validation, cleanup, and rollback
 procedure is in `docs/development-environment.md`.
@@ -62,8 +62,9 @@ production-promotion gate is approved.
 
 ## Production cutover implementation
 
-`deploy-prod.yml` runs only for `prod-v*`, validates the authoritative version,
-curated notes, exact tag target, and `main` ancestry, then fails closed unless
+`deploy-prod.yml` runs only for `prod-v*`, derives the production version from
+the tag, validates its selected pending record, exact target, and `main`
+ancestry, then fails closed unless
 GitHub Actions reports a completed successful `deploy-test.yml` push run on
 `main` whose `head_sha` exactly matches the tag commit. Only then may the
 protected `production` job configure SSH or deploy the frontend and backend
@@ -90,19 +91,18 @@ by committing that procedure.
 GitHub issues and the Solo Development project are the work-status source of
 truth. Parent/child hierarchy, controlled child expansion, Integration Cadence,
 User Validation Timing, shared delivery slices, routine-work authorization, and
-the four happy-path approval gates are defined only in
+the three happy-path human gates are defined only in
 `reference/work-management.md`. Historical Foundation issue and branch details
 remain in their GitHub records and release notes rather than in the active
 process contract.
 
-The chronological gate sequence is: complete AI-executable child work, receive
-Child development complete approval, then perform Child- or Parent-timed manual
-UI validation on the prepared cumulative development artifact when due. After
-all pre-test validation passes, Promotion to test creates the immutable test
-candidate. Release-timed manual UI validation occurs on that candidate before
-the final Promotion to production. Integration Cadence independently controls
-whether Parent uses one cumulative PR/test promotion or each Child uses its own
-releasable PR, promotion, and Mike-selected version.
+Under Parent cadence AI records automatic child checkpoints and continues
+through the selected children. Child- or Parent-timed manual UI validation runs
+on the prepared development artifact when due. Promotion to test creates the
+immutable candidate. Release-timed validation runs there, after which one
+combined gate asks for Mike's exact tag and production approval. Integration
+Cadence independently controls whether Parent uses one cumulative context or
+each Child uses its own releasable context.
 
 ## Standard GitHub names
 
@@ -127,8 +127,8 @@ credentials, databases, API origins, or Drive resources.
 - `development`: manual branch deployments; no production resources; branch
   policy restricted to approved Foundation or later feature branches.
 - `test`: deployments only from the approved `main` integration commit.
-- `production`: deployments only from validated `prod-v*` tags after the final
-  Promotion to production approval and exact-SHA test-promotion proof.
+- `production`: deployments only from validated annotated `prod-v*` tags after
+  the combined production gate and exact-SHA test-promotion proof.
 
 Changing GitHub environments, protection rules, repository secrets, servers,
 or DNS requires authority for the exact action under the exception rules in
@@ -183,20 +183,15 @@ external AI, OAuth, or Drive credentials.
 
 ## Version and release record
 
-`VERSION` is the authoritative semantic version. Release notes live at
-`docs/releases/X.Y.Z.md` and must use the matching
-`# Salt All The Things X.Y.Z` heading. The running application, validation
-tools, production tag, and GitHub Release must report the same version and
-commit.
+`VERSION` contains `unassigned` and is the non-production fallback. Each
+delivery context owns a uniquely named record under `docs/releases/pending/`.
+Mike alone supplies the exact immutable production tag after test succeeds; AI
+never proposes or derives it. Production injects the tag-derived version into
+the unchanged tested commit, and the tag selects the pending record it publishes.
 
-Mike alone selects the exact version. AI may apply that supplied value and
-verify consistency but must never invent, infer, calculate, increment, or
-replace it. Cumulative note timing and reconciliation are defined in
-`reference/development-and-release.md`.
-
-`scripts/validate_release.py` enforces the version, tag, filename, heading,
-required-section, placeholder, and credential-safety contract in pull-request
-validation without publishing. An approved `prod-vX.Y.Z` tag invokes
+`scripts/validate_release.py` enforces historical and pending record structure,
+tag format, selected-record boundaries, placeholders, and credential safety.
+An approved annotated `prod-vX.Y.Z` tag invokes
 `deploy-prod.yml`, which also proves exact-SHA test promotion before any
 production connection. Only after production deployment and public verification
 succeed does a separate least-privilege job call `publish-release.yml` to

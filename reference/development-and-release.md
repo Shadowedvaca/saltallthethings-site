@@ -14,8 +14,8 @@ description; linked runbooks contain exact operator mechanics.
 2. Work on the branch and pull request defined by Integration Cadence. Move
    only the active child to `In progress`.
 3. Implement the selected scope and maintain its tests, documentation, and
-   cumulative release note. Do not change `VERSION` without Mike's exact
-   selection.
+   context-owned pending release record. Record `Version: Unassigned`; do not
+   reserve or propose a production version.
 4. Run focused checks while iterating, then the complete applicable local and
    CI-equivalent validation. For application changes this includes release
    validation, Python compilation/tests, migration checks, JavaScript syntax
@@ -26,12 +26,13 @@ description; linked runbooks contain exact operator mechanics.
 6. Reconcile the entire cumulative diff and record the AI-executable technical
    evidence. State whether manual human UI validation is applicable and when it
    will be due, but do not perform it yet.
-7. Stop at the Child development complete gate. Continue only after the child
-   receives the required approval.
-8. After approval, perform manual human UI validation only when User Validation
-   Timing makes it due: `Child` after each applicable child approval, `Parent`
-   after every selected child approval, or `Release` after test promotion. A
-   failed manual check returns the affected scope to implementation and renewed
+7. Record the child development-complete checkpoint. Under Parent cadence,
+   continue immediately to the next ordered child unless a documented stop
+   condition or Child-timed manual UI gate applies.
+8. Perform manual human UI validation only when User Validation Timing makes it
+   due: `Child` after each applicable child checkpoint, `Parent` after every
+   selected child is technically complete, or `Release` after test promotion.
+   A failed manual check returns affected scope to implementation and renewed
    technical completion before promotion.
 
 Documentation-only changes do not manufacture application, deployment, or
@@ -46,9 +47,9 @@ Local commands and the precise validation matrix live in `docs/delivery.md`,
 
 | Environment | Source and trigger | Role |
 |---|---|---|
-| Development | Explicit `codex/*` branch manually dispatched to `deploy-dev.yml` | Isolated branch artifact and pre-integration validation. |
-| Test | Exact commit pushed to `main`, which triggers `deploy-test.yml` | Integration and release-candidate evidence. |
-| Production | Exact tested `main` commit tagged `prod-vX.Y.Z`, which triggers `deploy-prod.yml` | Live immutable release; successful verification then publishes the GitHub Release. |
+| Development | Explicit `codex/*` branch manually dispatched to `deploy-dev.yml` | Isolated branch artifact reporting version `unassigned`. |
+| Test | Exact commit pushed to `main`, which triggers `deploy-test.yml` | Immutable candidate evidence reporting version `unassigned`. |
+| Production | Exact tested `main` commit tagged with Mike's late-bound `prod-vX.Y.Z` | Live release reporting the tag-derived version; successful verification publishes the selected pending release record. |
 
 Frontend and backend always promote from the same commit. Development, test,
 and production use separate runtime identity, configuration, database storage,
@@ -56,17 +57,19 @@ credentials, and GitHub environments.
 Ordinary branch pushes and merges cannot deploy production.
 
 For Parent Integration Cadence, merge/test promotion occurs once for the
-cumulative selected slice. For Child cadence, each child has its own
-merge/test promotion and Mike-selected version. Follow User Validation Timing
-independently. Child- and Parent-timed validation use prepared development
-artifacts after the required child approvals and before their applicable test
-promotion. Release-timed validation uses the immutable test candidate after
-test promotion and before production.
+cumulative selected slice and automatic child checkpoints do not interrupt the
+ordered work. For Child cadence, each child has its own merge/test and
+production promotion. Follow User Validation Timing independently. Child- and
+Parent-timed validation use prepared development artifacts before their
+applicable test promotion. Release-timed validation uses the immutable test
+candidate after test promotion and before production.
 
 At the Promotion to test gate, one approval authorizes the ready PR merge and
-the resulting automatic test deployment. At the Promotion to production gate,
-one approval authorizes creation of the exact selected tag and the resulting
-production workflow. Do not split either into extra approval prompts.
+the resulting automatic test deployment. After test succeeds, one combined
+production gate asks for Mike's exact new tag and authorization to create it and
+run production. Do not split version selection, tag creation, deployment, and
+bounded verification into extra approval prompts when the approved candidate
+and evidence remain unchanged.
 
 Exact environment inventory and operator procedures:
 
@@ -78,36 +81,40 @@ Exact environment inventory and operator procedures:
   continuity verification, cutover, rollback, and observation window; and
 - `reference/git-cicd-workflow.md` — operational Git and CI/CD commands.
 
-## Mike-only version authority
+## Late-bound Mike-only version authority
 
-Mike is the sole authority for selecting the exact version. AI must never
-invent, infer, calculate, increment, or replace a version based on GitHub state,
-issue wording, existing tags, package metadata, semantic-version convention, or
-any other signal. If an exact version has not been supplied, report that the
-version-dependent step is pending; do not choose one.
+Every delivery context records `Version: Unassigned` through successful test
+validation. The checked-in `VERSION` fallback and non-production deployments
+likewise report `unassigned`; package or draft metadata is not production
+authority.
 
-After Mike supplies the exact version, AI may apply it to repository-defined
-sources, verify consistency, and report mismatches. SATT's authoritative source
-is `VERSION`. FastAPI metadata, health responses, validation, the release-note
-filename and heading, the production tag, workflow metadata, and the GitHub
-Release must agree with it. See `docs/versioning-and-releases.md` and
+Mike alone selects the exact production tag. AI must never invent, infer,
+calculate, increment, recommend as an implied default, or substitute a version
+based on repository state, issue wording, metadata, milestones, semantic-version
+convention, or prior tags.
+
+Production derives the runtime version from Mike's immutable `prod-vX.Y.Z` tag
+without changing the tested commit. FastAPI metadata, health responses,
+deployment verification, and the GitHub Release must report that tag-derived
+version. See `docs/versioning-and-releases.md` and
 `scripts/validate_release.py`.
 
-## Cumulative release notes
+## Context-owned pending release records
 
-Release notes use `docs/releases/X.Y.Z.md` and the required structure in
-`docs/releases/TEMPLATE.md`.
+Each delivery context maintains one uniquely named Markdown record under
+`docs/releases/pending/` using `docs/releases/TEMPLATE.md`. The filename uses a
+stable context slug, not a guessed version. Concurrent contexts must not share a
+pending record.
 
-- Once Mike has selected the exact version, the first approved child in a
-  delivery slice creates the matching note when absent or updates it when the
-  slice is continuing an existing release.
-- Every later child reconciles that same note against the actual cumulative
-  diff and recorded evidence. Remove stale promises; do not describe intended
-  behavior as shipped behavior.
+- Reconcile the record after every child against the actual cumulative diff and
+  evidence. Remove stale promises and never describe intended behavior as
+  shipped.
 - Before test promotion, reconcile the complete PR diff, checks, migrations,
   deployment impact, rollback, limitations, and user-visible changes.
-- Before production promotion, reconcile the note again with exact test
-  evidence and the selected tag. `python scripts/validate_release.py` must pass.
+- Before the combined production gate, reconcile it with exact test evidence.
+- The approved annotated production tag identifies the exact pending record with
+  one `Release-Record: docs/releases/pending/<context>.md` trailer. The workflow
+  validates and publishes that record under the tag-derived version.
 - Never put secrets, credentials, connection values, private operational data,
   template instructions, or placeholders in release notes.
 
@@ -142,25 +149,36 @@ generic database or recovery procedure.
 
 ## Integration, production, and rollback
 
-After all children in the applicable slice are approved and required pre-test
-human validation has passed, reconcile the cumulative PR and request Promotion
-to test approval. Merge through the PR; the resulting `main` push deploys that
-exact commit to test. Record workflow, migration, health, integration, and any
-required manual UI evidence.
+After all children in the applicable slice are technically complete and required
+pre-test human validation has passed, reconcile the cumulative PR and request
+Promotion to test approval. Merge through the PR; the resulting `main` push
+deploys that exact commit to test. Record workflow, migration, health,
+integration, and any required manual UI evidence.
 
 Production remains blocked unless the exact candidate commit has a completed,
 successful `deploy-test.yml` push run for `main`. `deploy-prod.yml` queries the
 GitHub Actions API and fails closed unless that run's `head_sha` exactly equals
 the production tag commit. Main ancestry alone is insufficient.
 
-After exact-SHA test evidence, release reconciliation, and Release-timed
-validation are complete, request Promotion to production approval. Create only
-the exact Mike-selected `prod-vX.Y.Z` tag on the exact tested `main` commit. The
-tag is immutable: never move, reuse, delete/recreate, or force-push it. The
-production workflow validates the version, tag, notes, target, main ancestry,
-exact-SHA test-promotion success, backups, migrations, continuity, and health
-before the least-privilege publisher creates or updates the matching GitHub
-Release.
+After exact-SHA test evidence, pending-record reconciliation, and Release-timed
+validation are complete, inspect deployed production identity, repository tags
+and releases, candidate SHA and PR, test results, record identity, rollback, and
+risks. Report them, then ask in one question what exact new production tag Mike
+wants and whether he approves creating it and deploying now. Do not include a
+proposed version.
+
+An answer supplying the exact tag and clear approval authorizes validation that
+the tag is new and well formed, creation and push of one annotated tag on the
+exact tested `main` SHA with the approved `Release-Record` trailer, the resulting
+production deployment, bounded verification, and GitHub Release publication.
+The tag is immutable: never move, reuse, delete/recreate, or force-push it. Ask
+again only if the tag, candidate SHA, release record, evidence, deployment
+mechanism, or required mutation changes after approval.
+
+The production workflow validates the tag-derived version, selected record,
+target, main ancestry, exact-SHA test-promotion success, backups, migrations,
+continuity, and health before the least-privilege publisher creates or updates
+the matching GitHub Release.
 
 Hotfixes retain the same evidence and authority model. They do not silently
 authorize a test bypass. Any proposed emergency exception is governed by
@@ -168,7 +186,7 @@ authorize a test bypass. Any proposed emergency exception is governed by
 commit, bounded minimum evidence, rollback, expiry, and a reconciliation issue.
 The exact-SHA isolated-test requirement for production remains fail closed
 unless a separately approved workflow change explicitly changes that invariant.
-Mike still selects the exact version.
+Mike still selects the exact production tag.
 
 Rollback follows the environment-specific runbook. Prefer a compatible,
 previously validated application artifact. Database restore, migration
@@ -180,11 +198,11 @@ an approved gate and implemented workflow.
 
 For each promotion, record the applicable:
 
-- selected version, tag, commit, branch, and pull request;
+- selected tag and tag-derived version, commit, branch, and pull request;
 - local and CI validation results;
 - development/test/production workflow run and environment health metadata;
 - migration heads, backup verification, and continuity evidence;
 - manual human UI checklist/results or `not applicable` rationale;
-- cumulative release-note reconciliation;
+- cumulative pending-release-record reconciliation;
 - rollback readiness, limitations, deviations, and follow-up work; and
 - GitHub Release result after successful production verification.

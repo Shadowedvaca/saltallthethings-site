@@ -1,26 +1,37 @@
-# Versioning and GitHub Releases
+# Late-Bound Versions and GitHub Releases
 
-`VERSION` is the single authoritative application version. It contains one
-canonical semantic version in `X.Y.Z` form. FastAPI metadata, `/api/health`,
-delivery workflows, release validation, the production tag, curated notes, and
-the GitHub Release must all use that value.
+Delivery contexts use `Version: Unassigned` through development, merge, and
+successful test validation. The checked-in `VERSION` file contains
+`unassigned`, which is also the default runtime identity outside production.
 
-## Version changes
+## Production version authority
 
-- Mike is the sole authority for the exact version. AI must never invent,
-  infer, calculate, increment, or replace it from GitHub state, issue wording,
-  existing tags, metadata, or semantic-version convention.
-- After Mike supplies the exact value, AI may write it to `VERSION`, update the
-  matching release note, verify all repository-defined consumers, and report
-  mismatches.
-- Hotfix and rollback version decisions remain Mike's. Tags are immutable; a
-  rollback may redeploy a compatible validated artifact, while changed code or
-  migrations require another exact Mike-selected version.
+- Mike alone selects the exact production tag. AI never invents, infers,
+  calculates, increments, or recommends it from repository state, issues,
+  metadata, semantic-version convention, or prior tags.
+- The immutable `prod-vX.Y.Z` tag is the production-version authority.
+- Production derives `X.Y.Z` from that tag and supplies it as `SATT_VERSION` to
+  the unchanged exact tested commit.
+- FastAPI metadata, `/api/health`, deployment verification, and the GitHub
+  Release must report the tag-derived version.
+- Hotfix and rollback version decisions remain Mike's. Tags are immutable; code
+  or migration changes require another tested commit and new Mike-selected tag.
 
-Once Mike has selected the exact version, the first approved child in a release
-slice creates the matching `docs/releases/X.Y.Z.md` from the template when it
-does not exist, or updates the existing cumulative note. Later children
-reconcile that same note against the actual cumulative diff and evidence.
+## Pending release records
+
+Each delivery context creates one uniquely named
+`docs/releases/pending/<context>.md` from `docs/releases/TEMPLATE.md`. The name
+identifies the context rather than reserving a version. Concurrent contexts must
+not edit the same pending record.
+
+The record is cumulative for its Parent or Child delivery slice and is
+reconciled after every child, before Promotion to test, and after exact-SHA test
+validation. It describes shipped behavior, operational impact, migrations,
+validation, rollback, and limitations without secrets or internal connection
+details.
+
+Historical `docs/releases/X.Y.Z.md` files remain immutable records of releases
+created under the earlier source-versioned process.
 
 ## Validation
 
@@ -30,44 +41,36 @@ Run:
 python scripts/validate_release.py
 ```
 
-Pull-request validation runs the same command with read-only repository
-permissions. It does not publish a release. Validation rejects:
+Development validation requires `VERSION` to remain `unassigned` and validates
+the template, every historical versioned note, and every pending record. A
+production selection additionally requires a canonical tag and a safe existing
+path directly under `docs/releases/pending/`.
 
-- a non-canonical semantic version;
-- a missing or mismatched release-note filename or heading;
-- a missing, duplicate, empty, or reordered required section;
-- template instructions or placeholder markers;
-- credential-shaped values, private keys, credential-bearing URLs, or database
-  URLs; and
-- a production tag that does not exactly equal `prod-v` plus `VERSION`.
+## Combined production gate
 
-Release notes must describe user-visible behavior, operational impact,
-migrations, validation, rollback, and limitations without secret values or
-internal connection details.
+After the exact `main` candidate passes isolated test and any Release-timed
+manual validation, AI verifies and reports current deployed production, valid
+repository tags, the candidate SHA and PR, test evidence, selected pending
+record, rollback readiness, and material risk. It then asks Mike for the exact
+new production tag and approval to create it and deploy now in one question.
 
-## Production tag and GitHub Release
-
-After the exact `main` commit has passed isolated test, any Release-timed manual
-UI validation has passed on that immutable candidate, and Promotion to
-production approval is recorded, create the immutable tag:
+The approved tag is annotated with exactly one release-record trailer:
 
 ```bash
-git tag prod-vX.Y.Z <tested-main-commit>
+git tag -a prod-vX.Y.Z <tested-main-commit> \
+  -m "Salt All The Things X.Y.Z" \
+  -m "Release-Record: docs/releases/pending/<context>.md"
 git push origin prod-vX.Y.Z
 ```
 
-The production workflow checks out the exact tag commit, confirms that it is
-contained in `main`, validates the version/tag/notes contract, and queries the
-GitHub Actions API for a completed successful `deploy-test.yml` push run on
-`main` with the same exact SHA. It fails before SSH when that proof is absent.
-It deploys and verifies that exact commit and only then invokes the separate
-GitHub Release publisher. The reusable publisher receives only the verified
-tag and commit, uses a job-scoped contents token, publishes only
-`docs/releases/X.Y.Z.md`, and cannot read deployment secrets or run application
-deployment commands. A failed or unapproved production deployment cannot
-create or update the Release.
+The production workflow checks out the exact tag commit, confirms main ancestry
+and successful `deploy-test.yml` evidence for that same SHA, derives the runtime
+version from the tag, and validates the selected pending record. It passes the
+tag-derived version to production without changing the commit. Only after
+deployment and public verification succeed does the least-privilege publisher
+render the selected record with the release version and publish the GitHub
+Release.
 
-Tags are permanent: never force-push, delete and recreate, or point an existing
-release tag at a different commit. A workflow rerun may update the GitHub
-Release record from the same validated tag and curated notes; it may not change
-the tag target.
+Never move, reuse, force-push, delete, or recreate a production tag. Ask for a
+new approval if the tag, candidate SHA, selected record, evidence, deployment
+mechanism, or required mutation changes after approval.

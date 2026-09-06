@@ -36,9 +36,16 @@ bounded manual evidence, risk, owner, and follow-up issue. Convenience or time
 pressure is not an exception.
 
 Parent-cadence work validates both the active child and the cumulative branch.
-Later children must preserve earlier regression evidence. Automated browser
-evidence is technical completion evidence; it does not substitute for a human
-UI approval required by the selected User Validation Timing.
+Each child ends in an automatic technical checkpoint and later children must
+preserve earlier regression evidence. Automated browser evidence is technical
+completion evidence; it does not substitute for a human UI approval required by
+the selected User Validation Timing.
+
+Every manual checklist and result identifies the environment and exact deployed
+SHA. If checklist-relevant code, configuration, migrations, dependencies, or
+generated assets change afterward, mark affected evidence stale and repeat the
+necessary deployment and validation. Repeat the complete checklist when impact
+cannot be bounded.
 
 ## Coverage ratchets
 

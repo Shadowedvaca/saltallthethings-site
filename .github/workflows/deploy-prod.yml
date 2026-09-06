@@ -23,6 +23,7 @@ jobs:
     outputs:
       release_sha: ${{ steps.release.outputs.sha }}
       release_tag: ${{ steps.release.outputs.tag }}
+      release_notes_path: ${{ steps.release.outputs.notes_path }}
     env:
       PROD_HOST: ${{ secrets.PROD_HOST }}
 
@@ -39,8 +40,12 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF_TYPE" = "tag"
+          test "$(git cat-file -t "$GITHUB_REF_NAME")" = "tag"
+          tag_message="$(git for-each-ref --format='%(contents)' "refs/tags/$GITHUB_REF_NAME")"
+          notes_path="$(printf '%s' "$tag_message" | python -c 'import sys; values=[line.removeprefix("Release-Record: ").strip() for line in sys.stdin.read().splitlines() if line.startswith("Release-Record: ")]; sys.exit("production tag must contain exactly one Release-Record trailer") if len(values) != 1 else print(values[0])')"
           python scripts/validate_release.py \
             --tag "$GITHUB_REF_NAME" \
+            --notes-path "$notes_path" \
             --github-output "$GITHUB_OUTPUT"
           sha="$(git rev-parse HEAD)"
           tag_sha="$(git rev-list -n 1 "$GITHUB_REF_NAME")"
@@ -211,3 +216,4 @@ jobs:
     with:
       release_sha: ${{ needs.deploy.outputs.release_sha }}
       release_tag: ${{ needs.deploy.outputs.release_tag }}
+      release_notes_path: ${{ needs.deploy.outputs.release_notes_path }}

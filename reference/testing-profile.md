@@ -31,9 +31,10 @@ repository. Run commands from the repository root.
 ## Gate mapping
 
 - **Child development:** focused tests while iterating, followed by every
-  applicable local/CI-equivalent layer, cumulative release-note reconciliation,
-  and an exact development artifact when the child needs one. This evidence
-  supports **Child development complete** approval.
+  applicable local/CI-equivalent layer, pending-release-record reconciliation,
+  and an exact development artifact when the child needs one. This evidence is
+  recorded as an automatic checkpoint. Under Parent cadence AI continues to the
+  next ordered child unless a stop condition or due manual UI gate applies.
 - **PR integration:** `.github/workflows/pull-request-validation.yml` runs the
   full isolated database suite and coverage, static contracts, Playwright
   journeys, production-image inspection, migrations, backup restore, and
@@ -44,15 +45,15 @@ repository. Run commands from the repository root.
 - **Test promotion:** after **Promotion to test** approval, `deploy-test.yml`
   deploys the exact merged `main` SHA and runs isolated test smoke, health,
   migration, and environment-boundary checks from `docs/test-environment.md`.
-- **Production-safe smoke:** after separately approved **Promotion to
-  production**, `deploy-prod.yml` first proves the exact SHA's successful test
-  deployment, then performs backup/migration/continuity/health checks from
-  `docs/production-cutover.md`. No child or emergency prose grants this gate.
+- **Production-safe smoke:** after the combined production gate supplies Mike's
+  exact tag and approval, `deploy-prod.yml` derives the runtime version from the
+  immutable tag, proves the exact SHA's successful test deployment, validates
+  the selected pending release record, then performs backup, migration,
+  continuity, and health checks from `docs/production-cutover.md`.
 
-These are the four named happy-path approval types: **Child development
-complete**, **Manual human UI validation**, **Promotion to test**, and
-**Promotion to production**. Testing evidence supports them but does not
-collapse or implicitly authorize them.
+The three human gates are **Manual human UI validation**, **Promotion to test**,
+and the **Combined production version and promotion** gate. Child
+development-complete checkpoints are technical evidence, not human gates.
 
 Local database-backed validation is authorized only when
 `TEST_DATABASE_URL` is explicitly configured for a disposable isolated test

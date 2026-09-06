@@ -1,13 +1,17 @@
-"""Release metadata validation and publication contract tests."""
+"""Late-bound release metadata validation contract tests."""
 
 from pathlib import Path
 
 import pytest
 
-from scripts.validate_release import ReleaseValidationError, validate_release
+from scripts.validate_release import (
+    ReleaseValidationError,
+    render_release_notes,
+    validate_release,
+)
 
 
-REQUIRED_NOTES = """# Salt All The Things {version}
+PENDING_NOTES = """# Salt All The Things — Pending Release
 
 ## Highlights
 
@@ -34,7 +38,11 @@ REQUIRED_NOTES = """# Salt All The Things {version}
 - One documented limitation remains.
 """
 
-TEMPLATE = """# Salt All The Things X.Y.Z
+HISTORICAL_NOTES = PENDING_NOTES.replace(
+    "# Salt All The Things — Pending Release", "# Salt All The Things 1.2.2"
+)
+
+TEMPLATE = """# Salt All The Things — Pending Release
 
 ## Highlights
 
@@ -50,77 +58,83 @@ TEMPLATE = """# Salt All The Things X.Y.Z
 """
 
 
-def _release_repository(tmp_path: Path, version: str = "1.2.3") -> Path:
+def _release_repository(tmp_path: Path) -> Path:
     releases = tmp_path / "docs" / "releases"
-    releases.mkdir(parents=True)
-    (tmp_path / "VERSION").write_text(f"{version}\n", encoding="utf-8")
+    pending = releases / "pending"
+    pending.mkdir(parents=True)
+    (tmp_path / "VERSION").write_text("unassigned\n", encoding="utf-8")
     (releases / "TEMPLATE.md").write_text(TEMPLATE, encoding="utf-8")
-    (releases / f"{version}.md").write_text(
-        REQUIRED_NOTES.format(version=version),
-        encoding="utf-8",
-    )
+    (releases / "1.2.2.md").write_text(HISTORICAL_NOTES, encoding="utf-8")
+    (pending / "example-context.md").write_text(PENDING_NOTES, encoding="utf-8")
     return tmp_path
 
 
-def test_repository_release_contract_is_valid():
-    repository_root = Path(__file__).resolve().parents[3]
-
-    release = validate_release(repository_root)
-
-    assert release.version == "0.0.7"
-    assert release.tag == "prod-v0.0.7"
-    assert release.notes_path.name == "0.0.7.md"
+def test_repository_release_contract_is_unassigned_and_valid():
+    release = validate_release(Path(__file__).resolve().parents[3])
+    assert release.version == "unassigned"
+    assert release.tag is None
+    assert release.notes_path is None
 
 
-def test_matching_production_tag_is_valid(tmp_path):
+def test_production_tag_selects_pending_record_and_renders_version(tmp_path):
     repository_root = _release_repository(tmp_path)
+    release = validate_release(
+        repository_root,
+        "prod-v1.2.3",
+        "docs/releases/pending/example-context.md",
+    )
+    rendered = tmp_path / "rendered.md"
+    render_release_notes(release, rendered)
 
-    release = validate_release(repository_root, "prod-v1.2.3")
-
+    assert release.version == "1.2.3"
     assert release.tag == "prod-v1.2.3"
+    assert release.notes_path.name == "example-context.md"
+    assert rendered.read_text(encoding="utf-8").startswith(
+        "# Salt All The Things 1.2.3\n"
+    )
+
+
+@pytest.mark.parametrize("tag", ("v1.2.3", "prod-v01.2.3", "prod-v1.2"))
+def test_malformed_production_tag_fails(tmp_path, tag):
+    repository_root = _release_repository(tmp_path)
+    with pytest.raises(ReleaseValidationError, match="production tag"):
+        validate_release(
+            repository_root,
+            tag,
+            "docs/releases/pending/example-context.md",
+        )
 
 
 @pytest.mark.parametrize(
-    ("version", "tag"),
+    "path",
     (
-        ("1.2.3", "v1.2.3"),
-        ("1.2.3", "prod-v1.2.4"),
-        ("01.2.3", "prod-v01.2.3"),
+        "docs/releases/1.2.2.md",
+        "docs/releases/pending/../example-context.md",
+        "/tmp/example-context.md",
     ),
 )
-def test_malformed_or_mismatched_version_tag_fails(tmp_path, version, tag):
-    repository_root = _release_repository(tmp_path, version)
-
-    with pytest.raises(ReleaseValidationError):
-        validate_release(repository_root, tag)
-
-
-def test_mismatched_release_heading_fails(tmp_path):
+def test_selected_record_must_be_safe_pending_path(tmp_path, path):
     repository_root = _release_repository(tmp_path)
-    notes = repository_root / "docs" / "releases" / "1.2.3.md"
-    notes.write_text(
-        notes.read_text(encoding="utf-8").replace(
-            "# Salt All The Things 1.2.3",
-            "# Salt All The Things 1.2.4",
-        ),
-        encoding="utf-8",
-    )
+    with pytest.raises(ReleaseValidationError, match="release record"):
+        validate_release(repository_root, "prod-v1.2.3", path)
 
-    with pytest.raises(ReleaseValidationError, match="first heading"):
+
+def test_source_version_must_remain_unassigned(tmp_path):
+    repository_root = _release_repository(tmp_path)
+    (repository_root / "VERSION").write_text("1.2.3\n", encoding="utf-8")
+    with pytest.raises(ReleaseValidationError, match="must remain 'unassigned'"):
         validate_release(repository_root)
 
 
 def test_missing_required_section_fails(tmp_path):
     repository_root = _release_repository(tmp_path)
-    notes = repository_root / "docs" / "releases" / "1.2.3.md"
+    notes = repository_root / "docs/releases/pending/example-context.md"
     notes.write_text(
         notes.read_text(encoding="utf-8").replace(
-            "## Rollback\n\n- Redeploy the previously validated tag.\n\n",
-            "",
+            "## Rollback\n\n- Redeploy the previously validated tag.\n\n", ""
         ),
         encoding="utf-8",
     )
-
     with pytest.raises(ReleaseValidationError, match="Rollback"):
         validate_release(repository_root)
 
@@ -134,16 +148,14 @@ def test_missing_required_section_fails(tmp_path):
         "-----BEGIN PRIVATE KEY-----",
     ),
 )
-def test_placeholder_or_secret_bearing_notes_fail(tmp_path, unsafe_text):
+def test_placeholder_or_secret_bearing_pending_notes_fail(tmp_path, unsafe_text):
     repository_root = _release_repository(tmp_path)
-    notes = repository_root / "docs" / "releases" / "1.2.3.md"
+    notes = repository_root / "docs/releases/pending/example-context.md"
     notes.write_text(
         notes.read_text(encoding="utf-8").replace(
-            "A concrete release outcome.",
-            unsafe_text,
+            "A concrete release outcome.", unsafe_text
         ),
         encoding="utf-8",
     )
-
     with pytest.raises(ReleaseValidationError):
         validate_release(repository_root)

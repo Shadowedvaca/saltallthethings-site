@@ -15,6 +15,7 @@ volume_name="satt-production-postgres"
 cron_file="/etc/cron.d/satt-backup"
 current_runtime=""
 previous_image=""
+previous_version=""
 cutover_started="false"
 static_swapped="false"
 asset_container=""
@@ -29,7 +30,6 @@ printf '%s\n' "$deploy_tag" | grep -Eq '^prod-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\
 test "$deploy_tag" = "prod-v$expected_version"
 test "$PWD" = "$repository"
 test "$(git rev-parse HEAD)" = "$deploy_sha"
-test "$(tr -d '\r\n' < VERSION)" = "$expected_version"
 test -f "$environment_file"
 test "$(stat -c '%a' "$environment_file")" = "600"
 for command in curl docker flock git pg_dump pg_restore python3 systemctl; do
@@ -51,8 +51,10 @@ test -z "${DATABASE_URL:-}"
 compose_with_image() {
   local commit="$1"
   local image="$2"
-  shift 2
+  local version="$3"
+  shift 3
   COMMIT_SHA="$commit" \
+    SATT_VERSION="$version" \
     SATT_IMAGE="$image" \
     docker compose \
       --env-file "$environment_file" \
@@ -61,7 +63,7 @@ compose_with_image() {
 }
 
 compose() {
-  compose_with_image "$deploy_sha" "satt:production-$deploy_sha" "$@"
+  compose_with_image "$deploy_sha" "satt:production-$deploy_sha" "$expected_version" "$@"
 }
 
 compose config --quiet
@@ -83,6 +85,10 @@ elif docker ps --format '{{.Names}}' | grep -qx satt-production-app \
   current_runtime="container"
   previous_image="$(docker inspect --format '{{.Config.Image}}' satt-production-app)"
   printf '%s\n' "$previous_image" | grep -Eq '^satt:production-[0-9a-f]{40}$'
+  test -f "$state_dir/current-tag"
+  previous_tag="$(cat "$state_dir/current-tag")"
+  printf '%s\n' "$previous_tag" | grep -Eq '^prod-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+  previous_version="${previous_tag#prod-v}"
   docker volume inspect "$volume_name" >/dev/null
 else
   echo "ERROR: no recognized complete SATT production runtime is active"
@@ -192,7 +198,7 @@ recover() {
       git checkout --detach "$previous_sha" || true
       systemctl start "$systemd_service" || true
     elif test -n "$previous_image"; then
-      compose_with_image "${previous_image#satt:production-}" "$previous_image" \
+      compose_with_image "${previous_image#satt:production-}" "$previous_image" "$previous_version" \
         up -d --wait --no-build database app || true
     fi
   else

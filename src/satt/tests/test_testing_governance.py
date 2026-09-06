@@ -33,9 +33,12 @@ def test_ai_entry_points_are_identical_and_require_testing_context():
         "reference/testing-and-validation.md"
     ) < text.index("reference/testing-profile.md")
     memory = _words((ROOT / "MEMORY.md").read_text(encoding="utf-8"))
-    assert "never in a substitute clone or temporary project directory" in memory
+    assert "one dedicated worktree" in memory
+    assert "automatic technical checkpoint" in memory
+    assert "Version: Unassigned" in memory
     assert "Do not record active issue status" in memory
     assert "Never store secrets" in memory
+    assert ".worktrees/" in (ROOT / ".gitignore").read_text(encoding="utf-8")
 
 
 def test_coverage_baselines_and_changed_line_parser_are_enforced():
@@ -88,9 +91,9 @@ def test_testing_policy_keeps_automation_and_human_approval_separate():
     ):
         assert f"| {layer} |" in profile
     for gate in (
-        "Child development complete",
         "Manual human UI validation",
         "Promotion to test",
-        "Promotion to production",
+        "Combined production version and promotion",
     ):
         assert gate in profile
+    assert "not human gates" in profile

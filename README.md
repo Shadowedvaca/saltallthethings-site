@@ -29,12 +29,13 @@ The post-Foundation contract promotes one immutable frontend/backend commit:
 1. Manually deploy the shared feature branch to isolated development.
 2. After explicit merge approval, deploy the approved `main` commit to isolated
    test.
-3. After separate production approval, deploy only the matching immutable
-   `prod-vX.Y.Z` tag.
+3. After test succeeds, report current production and candidate evidence, then
+   ask for Mike's exact new `prod-vX.Y.Z` tag and production approval together.
 
-Before opening a production connection, the tag workflow fails closed unless
-the exact tag SHA has a completed successful SATT test-deployment run from
-`main`; ancestry alone is insufficient.
+Before opening a production connection, the tag workflow derives the runtime
+version from that immutable tag, validates its selected pending release record,
+and fails closed unless the exact tag SHA has a completed successful SATT
+test-deployment run from `main`; ancestry alone is insufficient.
 
 The standard GitHub configuration names are `DEV_HOST`, `TEST_HOST`,
 `PROD_HOST`, and `DEPLOY_SSH_KEY`. Values remain in GitHub/server-side

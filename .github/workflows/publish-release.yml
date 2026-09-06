@@ -11,6 +11,10 @@ name: Publish curated GitHub Release
         description: Exact production-verified tag
         required: true
         type: string
+      release_notes_path:
+        description: Context-owned pending release record selected by the tag
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -52,10 +56,13 @@ jobs:
         shell: bash
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_NOTES_PATH: ${{ inputs.release_notes_path }}
         run: |
           set -euo pipefail
           python scripts/validate_release.py \
             --tag "$RELEASE_TAG" \
+            --notes-path "$RELEASE_NOTES_PATH" \
+            --rendered-notes "$RUNNER_TEMP/satt-release-notes.md" \
             --github-output "$GITHUB_OUTPUT"
 
       - name: Create or update the matching GitHub Release
@@ -64,7 +71,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
-          RELEASE_NOTES: ${{ steps.release.outputs.notes_path }}
+          RELEASE_NOTES: ${{ runner.temp }}/satt-release-notes.md
         run: |
           set -euo pipefail
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then

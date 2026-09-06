@@ -35,6 +35,7 @@ __pycache__/
 .coverage
 coverage.json
 .test-tmp-*/
+.worktrees/
 
 # Node/browser validation artifacts
 node_modules/

@@ -25,6 +25,9 @@ def main() -> int:
     positions = [entry.find(f"`{path}`") for path in REQUIRED]
     if any(position < 0 for position in positions) or positions != sorted(positions):
         raise SystemExit("repository entry point does not contain the canonical reading order")
+    memory_position = entry.find("`MEMORY.md`")
+    if memory_position < positions[-1]:
+        raise SystemExit("repository entry point must read MEMORY.md after canonical references")
 
     for relative in (*REQUIRED, "MEMORY.md"):
         if not (ROOT / relative).is_file():

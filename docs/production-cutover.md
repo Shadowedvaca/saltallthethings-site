@@ -71,10 +71,9 @@ Immediately before a production tag is approved:
    the explicitly approved recovery gate after re-verifying live systemd
    health plus the preflight and final backup inventories. Never remove a
    volume selected by a pattern, substitution, or unresolved variable.
-7. Confirm `prod-v0.0.1` and `prod-v0.0.2` remain unchanged and have no GitHub
-   Releases. Confirm
-   the intended new tag matches `VERSION`, release-note filename and heading,
-   exact tested main commit, and protected production policy.
+7. Confirm existing production tags remain unchanged. Confirm the intended new
+   tag is unused and canonical, targets the exact tested main commit, and has
+   exactly one approved `Release-Record` trailer naming a safe pending record.
 8. Confirm the latest pull-request, fresh-database, isolated restore,
    development, and test checks passed for the exact intended commit. Confirm
    GitHub Actions records a completed successful `deploy-test.yml` push run on
@@ -110,13 +109,13 @@ environment is intentionally unavailable.
 ## Approved first-cutover sequence
 
 After corrected development integration, the approved Promotion to test,
-isolated test validation, and the approved Promotion to production, create the
-exact Mike-selected immutable tag on the exact tested main commit. The tag
+isolated test validation, and Mike's combined exact-tag and production approval,
+create the annotated immutable tag on the exact tested main commit. The tag
 workflow performs:
 
-1. Validate tag/version/notes, exact tag target, main ancestry, and a completed
-   successful exact-SHA `deploy-test.yml` push run for `main`. Stop before SSH
-   if test-promotion proof is absent.
+1. Derive the runtime version from the tag; validate its selected pending
+   record, exact target, main ancestry, and a completed successful exact-SHA
+   `deploy-test.yml` push run for `main`. Stop before SSH if proof is absent.
 2. Establish strict SSH trust through the protected production environment.
 3. Capture the prior checkout and switch to the exact immutable tag.
 4. Validate tools, configuration mode and configured status, production tiers,
@@ -133,9 +132,9 @@ workflow performs:
 9. Start only the fresh SATT database service, restore the final dump into its
    empty named volume, and compare the restored pre-migration fingerprint to the
    stopped source.
-10. Start the exact tagged application image. Its entrypoint validates tier
-    ownership and runs `alembic upgrade head`; verify all migration heads and
-    compare the post-migration fingerprint.
+10. Start the exact tagged application image with tag-derived `SATT_VERSION`.
+    Its entrypoint validates tier ownership and runs `alembic upgrade head`;
+    verify all migration heads and compare the post-migration fingerprint.
 11. Verify local health reports `production`, the expected version, and exact
     commit.
 12. Atomically move the prior static directory into the protected asset history

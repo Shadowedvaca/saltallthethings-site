@@ -1,4 +1,4 @@
-# Salt All The Things X.Y.Z
+# Salt All The Things — Pending Release
 
 Replace every instructional bullet below. Curated notes must pass
 `python scripts/validate_release.py` and must not contain placeholders, secrets,

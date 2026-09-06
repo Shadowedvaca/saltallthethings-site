@@ -12,6 +12,7 @@ test "$(id -u)" = "0"
 test -f "$environment_file"
 test "$(stat -c '%a' "$environment_file")" = "600"
 test -f "$state_dir/current-commit"
+test -f "$state_dir/current-tag"
 
 set -a
 . "$environment_file"
@@ -26,7 +27,10 @@ docker ps --format '{{.Names}}' | grep -qx satt-production-database
 test -z "${DATABASE_URL:-}"
 
 commit="$(cat "$state_dir/current-commit")"
+tag="$(cat "$state_dir/current-tag")"
 printf '%s\n' "$commit" | grep -Eq '^[0-9a-f]{40}$'
+printf '%s\n' "$tag" | grep -Eq '^prod-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+version="${tag#prod-v}"
 image="satt:production-$commit"
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 backup_path="$backup_dir/satt-production-$timestamp.dump"
@@ -34,7 +38,7 @@ backup_path="$backup_dir/satt-production-$timestamp.dump"
 install -d -m 0700 "$backup_dir"
 test ! -e "$backup_path"
 umask 077
-if ! COMMIT_SHA="$commit" SATT_IMAGE="$image" \
+if ! COMMIT_SHA="$commit" SATT_VERSION="$version" SATT_IMAGE="$image" \
   docker compose \
     --env-file "$environment_file" \
     -f compose.production.yaml \
