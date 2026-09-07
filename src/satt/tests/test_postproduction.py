@@ -10,15 +10,21 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from satt.config import get_settings
-from satt.crud import set_asset_inventory, set_production_file_key
+from satt.crud import (
+    claim_transcription_job,
+    queue_transcription_job,
+    set_asset_inventory,
+    set_production_file_key,
+    set_transcription_job,
+)
 
 
-def _headers() -> dict:
+def _headers(*, is_admin: bool = False) -> dict:
     settings = get_settings()
     payload = {
         "user_id": 1,
         "username": "testuser",
-        "is_admin": False,
+        "is_admin": is_admin,
         "exp": datetime.now(timezone.utc) + timedelta(hours=1),
         "iat": datetime.now(timezone.utc),
     }
@@ -357,3 +363,236 @@ async def test_put_key_requires_auth(db_client: AsyncClient):
         json={"productionFileKey": "EP001_Test"},
     )
     assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Safe, targeted transcription recovery
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_queue_is_idempotent_and_claim_is_atomic(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await db_client.put(
+        "/api/data/showSlots", json=[PAST_SLOT_1], headers=_headers()
+    )
+    await set_production_file_key(db_session, PAST_SLOT_1["id"], "EP001_Test")
+
+    first = await db_client.post(
+        f"/api/postproduction/{PAST_SLOT_1['id']}/transcribe", headers=_headers()
+    )
+    second = await db_client.post(
+        f"/api/postproduction/{PAST_SLOT_1['id']}/transcribe", headers=_headers()
+    )
+    assert first.status_code == second.status_code == 200
+    assert first.json()["transcriptionJob"]["jobId"] == second.json()["transcriptionJob"]["jobId"]
+
+    claim = await db_client.post(
+        f"/api/postproduction/{PAST_SLOT_1['id']}/transcribe-claim",
+        json={"workerId": "watcher-one"},
+        headers=_headers(is_admin=True),
+    )
+    assert claim.status_code == 200
+    assert claim.json()["claimToken"]
+
+    competing = await db_client.post(
+        f"/api/postproduction/{PAST_SLOT_1['id']}/transcribe-claim",
+        json={"workerId": "watcher-two"},
+        headers=_headers(is_admin=True),
+    )
+    assert competing.status_code == 409
+    assert "active watcher lease" in competing.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_claim_token_is_required_and_hidden_from_browser_queue(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await db_client.put(
+        "/api/data/showSlots", json=[PAST_SLOT_1], headers=_headers()
+    )
+    await set_production_file_key(db_session, PAST_SLOT_1["id"], "EP001_Test")
+    await queue_transcription_job(db_session, PAST_SLOT_1["id"])
+    claim = await claim_transcription_job(
+        db_session, PAST_SLOT_1["id"], "watcher-one"
+    )
+
+    queue = await db_client.get("/api/postproduction", headers=_headers())
+    visible = queue.json()[0]["transcriptionJob"]
+    assert visible["status"] == "in_progress"
+    assert "claimToken" not in visible
+
+    wrong_owner = await db_client.put(
+        f"/api/postproduction/{PAST_SLOT_1['id']}/transcribe-status",
+        json={"status": "done", "claimToken": "wrong-token"},
+        headers=_headers(is_admin=True),
+    )
+    assert wrong_owner.status_code == 409
+
+    completed = await db_client.put(
+        f"/api/postproduction/{PAST_SLOT_1['id']}/transcribe-status",
+        json={"status": "done", "claimToken": claim["claimToken"]},
+        headers=_headers(is_admin=True),
+    )
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "done"
+    assert "claimToken" not in completed.json()
+
+
+@pytest.mark.asyncio
+async def test_manual_reset_is_admin_only_and_rejects_active_job(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await db_client.put(
+        "/api/data/showSlots", json=[PAST_SLOT_1], headers=_headers()
+    )
+    await set_production_file_key(db_session, PAST_SLOT_1["id"], "EP001_Test")
+    await queue_transcription_job(db_session, PAST_SLOT_1["id"])
+    await claim_transcription_job(db_session, PAST_SLOT_1["id"], "watcher-one")
+
+    forbidden = await db_client.post(
+        f"/api/postproduction/{PAST_SLOT_1['id']}/transcribe-reset",
+        headers=_headers(),
+    )
+    assert forbidden.status_code == 403
+
+    active = await db_client.post(
+        f"/api/postproduction/{PAST_SLOT_1['id']}/transcribe-reset",
+        headers=_headers(is_admin=True),
+    )
+    assert active.status_code == 409
+    assert "active watcher lease" in active.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_watcher_endpoints_require_admin(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await db_client.put(
+        "/api/data/showSlots", json=[PAST_SLOT_1], headers=_headers()
+    )
+    await set_production_file_key(db_session, PAST_SLOT_1["id"], "EP001_Test")
+    await queue_transcription_job(db_session, PAST_SLOT_1["id"])
+    listed = await db_client.get(
+        "/api/postproduction/transcription-jobs", headers=_headers()
+    )
+    claimed = await db_client.post(
+        f"/api/postproduction/{PAST_SLOT_1['id']}/transcribe-claim",
+        json={"workerId": "watcher-one"},
+        headers=_headers(),
+    )
+    updated = await db_client.put(
+        f"/api/postproduction/{PAST_SLOT_1['id']}/transcribe-status",
+        json={"status": "done", "claimToken": "not-owned"},
+        headers=_headers(),
+    )
+    assert listed.status_code == claimed.status_code == updated.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_targeted_reset_changes_only_selected_stale_job(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await db_client.put(
+        "/api/data/showSlots", json=[PAST_SLOT_1, PAST_SLOT_2], headers=_headers()
+    )
+    old = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+    future = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+    await set_transcription_job(
+        db_session,
+        PAST_SLOT_1["id"],
+        {
+            "jobId": "job-one",
+            "status": "in_progress",
+            "claimToken": "old-claim",
+            "leaseExpiresAt": old,
+        },
+    )
+    await set_transcription_job(
+        db_session,
+        PAST_SLOT_2["id"],
+        {
+            "jobId": "job-two",
+            "status": "in_progress",
+            "claimToken": "active-claim",
+            "leaseExpiresAt": future,
+        },
+    )
+
+    reset = await db_client.post(
+        f"/api/postproduction/{PAST_SLOT_1['id']}/transcribe-reset",
+        headers=_headers(is_admin=True),
+    )
+    assert reset.status_code == 200
+    assert reset.json()["transcriptionJob"]["status"] == "pending"
+    assert reset.json()["transcriptionJob"]["resetBy"] == "testuser"
+
+    queue = await db_client.get("/api/postproduction", headers=_headers())
+    jobs = {row["slotId"]: row["transcriptionJob"] for row in queue.json()}
+    assert jobs[PAST_SLOT_1["id"]]["status"] == "pending"
+    assert jobs[PAST_SLOT_2["id"]]["status"] == "in_progress"
+    assert jobs[PAST_SLOT_2["id"]]["isStale"] is False
+
+
+@pytest.mark.asyncio
+async def test_watcher_poll_and_claim_recover_only_stale_job(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await db_client.put(
+        "/api/data/showSlots", json=[PAST_SLOT_1, PAST_SLOT_2], headers=_headers()
+    )
+    await set_production_file_key(db_session, PAST_SLOT_1["id"], "EP001_Test")
+    await set_production_file_key(db_session, PAST_SLOT_2["id"], "EP002_Test")
+    old = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+    future = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+    await set_transcription_job(
+        db_session,
+        PAST_SLOT_1["id"],
+        {
+            "jobId": "stale-job",
+            "status": "in_progress",
+            "claimToken": "expired-claim",
+            "leaseExpiresAt": old,
+            "recoveryCount": 0,
+        },
+    )
+    await set_transcription_job(
+        db_session,
+        PAST_SLOT_2["id"],
+        {
+            "jobId": "active-job",
+            "status": "in_progress",
+            "claimToken": "active-claim",
+            "leaseExpiresAt": future,
+        },
+    )
+
+    poll = await db_client.get(
+        "/api/postproduction/transcription-jobs",
+        headers=_headers(is_admin=True),
+    )
+    assert poll.status_code == 200
+    assert poll.json() == [
+        {
+            "slotId": PAST_SLOT_1["id"],
+            "productionFileKey": "EP001_Test",
+        }
+    ]
+
+    recovered = await db_client.post(
+        f"/api/postproduction/{PAST_SLOT_1['id']}/transcribe-claim",
+        json={"workerId": "replacement-watcher"},
+        headers=_headers(is_admin=True),
+    )
+    assert recovered.status_code == 200
+    assert recovered.json()["status"] == "in_progress"
+    assert recovered.json()["recoveryCount"] == 1
+    assert recovered.json()["claimToken"] != "expired-claim"
+
+    active = await db_client.post(
+        f"/api/postproduction/{PAST_SLOT_2['id']}/transcribe-claim",
+        json={"workerId": "replacement-watcher"},
+        headers=_headers(is_admin=True),
+    )
+    assert active.status_code == 409

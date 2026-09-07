@@ -1478,6 +1478,13 @@ async function main() {
   assert.doesNotMatch(reconciliationBody, /renderScheduleBoard\(\)/);
   assert.match(songBankScript, /Storage\.subscribe\(renderSongs\)/);
   assert.match(guestBankScript, /Storage\.subscribe\(renderGuests\)/);
+  const postproductionScript = fs.readFileSync("js/postproduction.js", "utf8");
+  assert.match(postproductionScript, /job\.isStale/);
+  assert.match(postproductionScript, /Auth\.isAdmin\(\)/);
+  assert.match(postproductionScript, /transcribe-reset/);
+  assert.match(postproductionScript, /Reset selected job/);
+  assert.match(postproductionScript, /await this\.loadQueue\(\)/);
+  assert.match(fs.readFileSync("js/auth.js", "utf8"), /isAdmin\(\)/);
   assert.match(showManagement, /async function updateReleaseDate/);
   assert.match(showManagement, /await ShowEngine\.setReleaseDate/);
   assert.match(showManagement, /latest server state is displayed/);

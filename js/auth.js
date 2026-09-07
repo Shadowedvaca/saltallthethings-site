@@ -39,6 +39,11 @@ const Auth = {
     return data ? data.token : null;
   },
 
+  isAdmin() {
+    var data = this._getSession();
+    return !!(data && data.isAdmin);
+  },
+
   logout() {
     localStorage.removeItem(this._storageKey);
     location.href = 'login.html';

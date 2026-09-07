@@ -37,6 +37,78 @@ test("Show Management rejects an unauthenticated browser locally", async ({ page
   await expect(page.getByText("Crew Access", { exact: true })).toBeVisible();
 });
 
+test("Post-Production resets only the selected stale transcription and reloads canonical state", async ({ page }) => {
+  await isolateNetwork(page);
+  await page.addInitScript(() => {
+    const payload = btoa(JSON.stringify({ exp: 4102444800, is_admin: true }));
+    localStorage.setItem("satt_jwt", JSON.stringify({
+      token: `test.${payload}.signature`,
+      isAdmin: true,
+    }));
+  });
+  await page.route("**/api/export", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        config: {}, ideas: [], jokes: [], songs: [], guests: [],
+        guestAssignments: [], showSlots: [], assignments: {}, revision: 0,
+      }),
+    });
+  });
+
+  let selectedJob = {
+    jobId: "selected-job",
+    status: "in_progress",
+    isStale: true,
+    leaseExpiresAt: "2026-09-07T17:00:00+00:00",
+  };
+  const row = () => ({
+    slotId: "slot-selected",
+    episodeNumber: "EP055",
+    episodeNum: 55,
+    recordDate: "2026-09-01",
+    releaseDate: "2026-09-08",
+    productionFileKey: "EP055_Selected",
+    ideaId: "idea-selected",
+    selectedTitle: "Selected stale job",
+    ideaStatus: "scheduled",
+    imageFileId: null,
+    assetInventory: {
+      raw_audio: { present: true, modified: "2026-09-01T18:00:00Z" },
+      transcript_txt: { present: false },
+    },
+    transcriptionJob: selectedJob,
+    nextStep: "transcribe",
+  });
+  let resetRequests = 0;
+  const handlePostproduction = async (route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === "/api/postproduction/slot-selected/transcribe-reset") {
+      expect(request.method()).toBe("POST");
+      resetRequests += 1;
+      selectedJob = {
+        jobId: "selected-job", status: "pending", isStale: false,
+        resetAt: "2026-09-07T18:00:00+00:00", resetBy: "admin", resetCount: 1,
+      };
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(row()) });
+    }
+    expect(pathname).toBe("/api/postproduction");
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([row()]) });
+  };
+  await page.route("**/api/postproduction", handlePostproduction);
+  await page.route("**/api/postproduction/**", handlePostproduction);
+
+  await page.goto("/postproduction.html");
+  const selectedRow = page.locator('tr[data-slot="slot-selected"]');
+  await expect(selectedRow.getByText("Transcription lease expired.")).toBeVisible();
+  await selectedRow.getByRole("button", { name: "Reset selected job" }).click();
+  await expect(selectedRow.getByText("Queued…")).toBeVisible();
+  await expect(page.getByText("Selected stale transcription reset and queued again.")).toBeVisible();
+  expect(resetRequests).toBe(1);
+});
+
 test("Schedule Board opens to the current local month and resets on reload", async ({ page }) => {
   await isolateNetwork(page);
   await page.clock.install({ time: new Date("2026-12-31T12:00:00") });

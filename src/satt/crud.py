@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+import uuid
+
 import pytz
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -18,6 +20,12 @@ from satt.episode_numbers import (
 from satt.joke_contract import validate_banked_jokes
 from satt.models import Assignment, Config, DataRevision, Idea, Joke, ShowSlot, Song
 from satt.serializers import serialize_idea, serialize_joke, serialize_postprod_row, serialize_show_slot
+from satt.transcription import (
+    TRANSCRIPTION_LEASE_SECONDS,
+    is_transcription_job_stale,
+    iso_utc,
+    utc_now,
+)
 
 _PST = pytz.timezone("America/Los_Angeles")
 _JOKE_LIFECYCLE_LOCK_ID = 0x53415454
@@ -35,6 +43,18 @@ class DataConflictError(RuntimeError):
     def __init__(self, current_revision: int):
         super().__init__("The server data changed after this page loaded.")
         self.current_revision = current_revision
+
+
+class TranscriptionJobError(RuntimeError):
+    """Raised when an atomic transcription-job transition is not allowed."""
+
+
+class TranscriptionJobNotFoundError(TranscriptionJobError):
+    """Raised when the selected show slot does not exist."""
+
+
+class TranscriptionJobConflictError(TranscriptionJobError):
+    """Raised when another actor owns or already completed the job."""
 
 
 async def get_data_revision(db: AsyncSession) -> int:
@@ -656,14 +676,181 @@ async def set_transcription_job(db: AsyncSession, slot_id: str, job: dict | None
     await bump_data_revision(db)
 
 
-async def get_pending_transcription_jobs(db: AsyncSession) -> list[dict]:
-    """Return slots with transcription_job.status = 'pending'."""
+async def _locked_transcription_slot(db: AsyncSession, slot_id: str) -> ShowSlot:
     result = await db.execute(
-        select(ShowSlot.id, ShowSlot.production_file_key)
-        .where(ShowSlot.transcription_job["status"].astext == "pending")
-        .where(ShowSlot.production_file_key.is_not(None))
+        select(ShowSlot).where(ShowSlot.id == slot_id).with_for_update()
     )
-    return [{"slotId": row.id, "productionFileKey": row.production_file_key} for row in result]
+    slot = result.scalar_one_or_none()
+    if slot is None:
+        raise TranscriptionJobNotFoundError("Slot not found")
+    return slot
+
+
+async def queue_transcription_job(
+    db: AsyncSession, slot_id: str, *, now: datetime | None = None
+) -> dict:
+    """Queue one slot, idempotently preserving an existing pending job."""
+    slot = await _locked_transcription_slot(db, slot_id)
+    if not slot.production_file_key:
+        raise TranscriptionJobConflictError(
+            "Production file key not set — set it before transcribing"
+        )
+    existing = dict(slot.transcription_job or {})
+    if existing.get("status") == "pending":
+        return existing
+    if existing.get("status") == "in_progress":
+        state = "stale" if is_transcription_job_stale(existing, now=now) else "active"
+        raise TranscriptionJobConflictError(
+            f"Transcription is already {state}; reset a stale job before re-queuing"
+        )
+
+    timestamp = now or utc_now()
+    job = {
+        "jobId": uuid.uuid4().hex,
+        "status": "pending",
+        "requestedAt": iso_utc(timestamp),
+        "attemptCount": int(existing.get("attemptCount", 0)),
+        "resetCount": int(existing.get("resetCount", 0)),
+        "recoveryCount": int(existing.get("recoveryCount", 0)),
+    }
+    slot.transcription_job = job
+    await db.flush()
+    await bump_data_revision(db)
+    return job
+
+
+async def get_claimable_transcription_jobs(
+    db: AsyncSession, *, now: datetime | None = None
+) -> list[dict]:
+    """Return minimal pending or stale job identifiers for watcher polling."""
+    result = await db.execute(
+        select(ShowSlot.id, ShowSlot.production_file_key, ShowSlot.transcription_job)
+        .where(ShowSlot.transcription_job["status"].astext.in_(("pending", "in_progress")))
+        .where(ShowSlot.production_file_key.is_not(None))
+        .order_by(ShowSlot.id)
+    )
+    timestamp = now or utc_now()
+    return [
+        {"slotId": row.id, "productionFileKey": row.production_file_key}
+        for row in result
+        if row.transcription_job.get("status") == "pending"
+        or is_transcription_job_stale(row.transcription_job, now=timestamp)
+    ]
+
+
+async def claim_transcription_job(
+    db: AsyncSession,
+    slot_id: str,
+    worker_id: str,
+    *,
+    now: datetime | None = None,
+) -> dict:
+    """Atomically claim one pending or stale job and issue a bounded lease."""
+    slot = await _locked_transcription_slot(db, slot_id)
+    job = dict(slot.transcription_job or {})
+    timestamp = now or utc_now()
+    status = job.get("status")
+    recovering = status == "in_progress" and is_transcription_job_stale(
+        job, now=timestamp
+    )
+    if status != "pending" and not recovering:
+        if status == "in_progress":
+            raise TranscriptionJobConflictError(
+                "Transcription job has an active watcher lease"
+            )
+        raise TranscriptionJobConflictError("Transcription job is not claimable")
+
+    if recovering:
+        job["recoveryCount"] = int(job.get("recoveryCount", 0)) + 1
+        job["recoveredAt"] = iso_utc(timestamp)
+    job.update(
+        {
+            "status": "in_progress",
+            "claimedBy": worker_id,
+            "claimToken": uuid.uuid4().hex,
+            "claimedAt": iso_utc(timestamp),
+            "updatedAt": iso_utc(timestamp),
+            "leaseExpiresAt": iso_utc(
+                timestamp + timedelta(seconds=TRANSCRIPTION_LEASE_SECONDS)
+            ),
+            "attemptCount": int(job.get("attemptCount", 0)) + 1,
+        }
+    )
+    job.pop("error", None)
+    slot.transcription_job = job
+    await db.flush()
+    await bump_data_revision(db)
+    return job
+
+
+async def update_transcription_claim(
+    db: AsyncSession,
+    slot_id: str,
+    claim_token: str,
+    status: str,
+    *,
+    error: str | None = None,
+    now: datetime | None = None,
+) -> dict:
+    """Renew or finish the currently owned claim."""
+    slot = await _locked_transcription_slot(db, slot_id)
+    job = dict(slot.transcription_job or {})
+    if job.get("status") != "in_progress" or job.get("claimToken") != claim_token:
+        raise TranscriptionJobConflictError(
+            "Transcription claim is no longer active for this watcher"
+        )
+    timestamp = now or utc_now()
+    job["updatedAt"] = iso_utc(timestamp)
+    if status == "in_progress":
+        job["leaseExpiresAt"] = iso_utc(
+            timestamp + timedelta(seconds=TRANSCRIPTION_LEASE_SECONDS)
+        )
+    else:
+        job["status"] = status
+        job["finishedAt"] = iso_utc(timestamp)
+        job.pop("claimToken", None)
+        job.pop("leaseExpiresAt", None)
+        if error:
+            job["error"] = error
+        else:
+            job.pop("error", None)
+    slot.transcription_job = job
+    await db.flush()
+    await bump_data_revision(db)
+    return job
+
+
+async def reset_stale_transcription_job(
+    db: AsyncSession,
+    slot_id: str,
+    reset_by: str,
+    *,
+    now: datetime | None = None,
+) -> dict:
+    """Atomically reset only the selected job after its watcher lease expires."""
+    slot = await _locked_transcription_slot(db, slot_id)
+    job = dict(slot.transcription_job or {})
+    timestamp = now or utc_now()
+    if job.get("status") != "in_progress":
+        raise TranscriptionJobConflictError("Selected transcription job is not in progress")
+    if not is_transcription_job_stale(job, now=timestamp):
+        raise TranscriptionJobConflictError(
+            "Selected transcription job still has an active watcher lease"
+        )
+    job.update(
+        {
+            "status": "pending",
+            "resetAt": iso_utc(timestamp),
+            "resetBy": reset_by,
+            "resetCount": int(job.get("resetCount", 0)) + 1,
+        }
+    )
+    for key in ("claimToken", "claimedBy", "claimedAt", "leaseExpiresAt", "error"):
+        job.pop(key, None)
+    slot.transcription_job = job
+    await db.flush()
+    await bump_data_revision(db)
+    return job
 
 
 async def get_slots_for_scan(db: AsyncSession) -> list[dict]:

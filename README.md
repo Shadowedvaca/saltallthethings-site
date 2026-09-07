@@ -157,6 +157,10 @@ and managed through the Config page.
 
 ## Server management
 
+The recording-PC transcription watcher uses atomic job claims and renewable
+leases. See [docs/transcription-recovery.md](docs/transcription-recovery.md) for
+the stale-job rule, authorization boundary, operator recovery, and rollback.
+
 ```bash
 # Service status / logs
 sudo systemctl status satt

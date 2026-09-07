@@ -26,6 +26,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import uuid
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
@@ -113,6 +114,8 @@ def schedule_transcription(audio_path, delay=SYNC_SETTLE_SECONDS):
 SATT_API = "https://saltallthethings.com/api"
 POLL_INTERVAL = 30  # seconds between job polls
 TOKEN_REFRESH_INTERVAL = 4 * 3600  # re-login every 4 hours
+LEASE_HEARTBEAT_INTERVAL = 30
+WORKER_ID = "watcher-" + uuid.uuid4().hex
 
 
 def _load_credentials():
@@ -166,6 +169,24 @@ def _api_put(url: str, token: str, body: dict):
         log.exception("API PUT %s failed", url)
 
 
+def _api_post(url: str, token: str, body: dict):
+    data = json.dumps(body).encode()
+    req = urllib.request.Request(
+        url, method="POST", data=data,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        if e.code == 409:
+            log.info("Transcription claim was already taken: %s", url)
+        else:
+            log.error("API POST %s failed: HTTP %s", url, e.code)
+    except Exception:
+        log.exception("API POST %s failed", url)
+
+
 def _find_audio_for_key(key: str) -> str | None:
     """Return the best audio file path for a production key, or None."""
     episode_dir = os.path.join(SHARED_ROOT, key)
@@ -178,40 +199,101 @@ def _find_audio_for_key(key: str) -> str | None:
     return None
 
 
-def _run_transcription_job(slot_id: str, key: str, token: str) -> None:
-    """Claim a pending transcription job, run it, and update its status."""
-    # Mark in-progress
+def _heartbeat_claim(
+    slot_id: str,
+    claim_token: str,
+    token: str,
+    stop: threading.Event,
+    lost_claim: threading.Event,
+) -> None:
+    """Renew one lease; stop local work if ownership cannot be preserved."""
+    while not stop.wait(LEASE_HEARTBEAT_INTERVAL):
+        result = _api_put(
+            f"{SATT_API}/postproduction/{slot_id}/transcribe-status",
+            token,
+            {"status": "in_progress", "claimToken": claim_token},
+        )
+        if result is None:
+            log.error(
+                "Transcription job %s: lease heartbeat failed; stopping local work",
+                slot_id,
+            )
+            lost_claim.set()
+            return
+
+
+def _finish_claim(
+    slot_id: str,
+    claim_token: str,
+    token: str,
+    status: str,
+    error: str | None = None,
+) -> None:
+    body = {"status": status, "claimToken": claim_token}
+    if error:
+        body["error"] = error[:500]
     _api_put(
-        f"{SATT_API}/postproduction/{slot_id}/transcribe-status",
-        token, {"status": "in_progress"},
+        f"{SATT_API}/postproduction/{slot_id}/transcribe-status", token, body
     )
+
+
+def _run_transcription_job(slot_id: str, key: str, token: str) -> None:
+    """Atomically claim one job, maintain its lease, and record its result."""
+    claim = _api_post(
+        f"{SATT_API}/postproduction/{slot_id}/transcribe-claim",
+        token,
+        {"workerId": WORKER_ID},
+    )
+    if not claim:
+        return
+    claim_token = claim["claimToken"]
 
     audio_path = _find_audio_for_key(key)
     if not audio_path:
         msg = f"No audio file found in {SHARED_ROOT}/{key}/"
         log.error("Transcription job %s: %s", slot_id, msg)
-        _api_put(
-            f"{SATT_API}/postproduction/{slot_id}/transcribe-status",
-            token, {"status": "failed", "error": msg},
-        )
+        _finish_claim(slot_id, claim_token, token, "failed", msg)
         return
 
     log.info("Transcription job %s: starting on %s", slot_id, os.path.basename(audio_path))
     cmd = [sys.executable, TRANSCRIBE_SCRIPT, audio_path, "--notify-server"]
-    result = subprocess.run(cmd)
-    if result.returncode != 0:
-        msg = f"transcribe-auto.py exited with code {result.returncode}"
-        log.error("Transcription job %s: %s", slot_id, msg)
-        _api_put(
-            f"{SATT_API}/postproduction/{slot_id}/transcribe-status",
-            token, {"status": "failed", "error": msg},
-        )
-    else:
-        log.info("Transcription job %s: done", slot_id)
-        _api_put(
-            f"{SATT_API}/postproduction/{slot_id}/transcribe-status",
-            token, {"status": "done"},
-        )
+    stop = threading.Event()
+    lost_claim = threading.Event()
+    heartbeat = threading.Thread(
+        target=_heartbeat_claim,
+        args=(slot_id, claim_token, token, stop, lost_claim),
+        daemon=True,
+        name=f"lease-{slot_id}",
+    )
+    heartbeat.start()
+    process = None
+    try:
+        try:
+            process = subprocess.Popen(cmd)
+        except OSError as exc:
+            msg = f"Could not start transcribe-auto.py: {exc}"
+            log.error("Transcription job %s: %s", slot_id, msg)
+            _finish_claim(slot_id, claim_token, token, "failed", msg)
+            return
+        while process.poll() is None:
+            if lost_claim.wait(1):
+                process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+                return
+        if process.returncode != 0:
+            msg = f"transcribe-auto.py exited with code {process.returncode}"
+            log.error("Transcription job %s: %s", slot_id, msg)
+            _finish_claim(slot_id, claim_token, token, "failed", msg)
+        else:
+            log.info("Transcription job %s: done", slot_id)
+            _finish_claim(slot_id, claim_token, token, "done")
+    finally:
+        stop.set()
+        heartbeat.join(timeout=5)
 
 
 def poll_transcription_jobs() -> None:

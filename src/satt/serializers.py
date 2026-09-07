@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
+from satt.transcription import public_transcription_job
+
 from satt.episode_numbers import effective_episode_number
 
 
@@ -196,6 +198,6 @@ def serialize_postprod_row(slot: Any, idea: Any) -> dict:
         "ideaStatus": idea.status if idea else None,
         "imageFileId": idea.image_file_id if idea else None,
         "assetInventory": slot.asset_inventory,
-        "transcriptionJob": slot.transcription_job,
+        "transcriptionJob": public_transcription_job(slot.transcription_job),
         "nextStep": _compute_next_step(slot),
     }
