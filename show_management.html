@@ -463,6 +463,7 @@
   <script src="js/auth.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/sync.js"></script>
+  <script src="js/sync-view.js"></script>
   <script src="js/ai-service.js"></script>
   <script src="js/show-engine.js"></script>
   <script src="js/show-song.js"></script>
@@ -484,6 +485,22 @@
     const editingIdeas = new Set();
     const expandedIdeas = new Set();
     let pastSectionOpen = false;
+    const syncView = SyncView({
+      document: document,
+      sync: Sync,
+      discard: function() {
+        document.getElementById('ideaNotes').value = '';
+        editingIdeas.clear();
+        renderIdeasList();
+      }
+    });
+    document.getElementById('ideaNotes').addEventListener('input', function(event) {
+      syncView.setDirty('idea-composer', Boolean(event.target.value.trim()));
+    });
+    document.getElementById('ideasList').addEventListener('input', function(event) {
+      var ideaId = event.target.dataset.syncScheduleIdea;
+      if (ideaId) syncView.setDirty('schedule-meta-' + ideaId, true);
+    });
 
     // ============================================
     // HTML Escaping
@@ -733,6 +750,8 @@
     function renderViewMode(idea, jokeHtml, songHtml, guestHtml) {
       var html = '';
 
+      html += renderScheduleMetadataControls(idea);
+
 
       // Title options
       html += '<div class="mb-md">'
@@ -801,6 +820,24 @@
       return html;
     }
 
+    function renderScheduleMetadataControls(idea) {
+      var slot = getScheduleInfoForIdea(idea.id);
+      if (!slot) return '';
+      var effectiveRelease = ShowEngine.getEffectiveReleaseDate(slot);
+      var isOverridden = !!slot.releaseDateOverride;
+      var episodeOverride = slot.episodeNumberOverride;
+      return '<div class="mb-md" onclick="event.stopPropagation()" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">'
+        + '<label class="text-xs text-muted" style="text-transform:uppercase; letter-spacing:0.5px; font-weight:600;">Release Date:</label>'
+        + '<input type="date" data-sync-schedule-idea="' + idea.id + '" value="' + effectiveRelease + '" onblur="if(this.value && /^\\d{4}-\\d{2}-\\d{2}$/.test(this.value)) updateReleaseDate(\'' + slot.id + '\', \'' + idea.id + '\', this.value)" '
+        + 'style="background:var(--bg-card); color:var(--text-primary); border:1px solid var(--border-default); border-radius:4px; padding:4px 8px; font-size:0.8rem;">'
+        + (isOverridden ? '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); resetReleaseDate(\'' + slot.id + '\', \'' + idea.id + '\')" title="Reset to calculated default">↩ Reset</button>' : '')
+        + '<label class="text-xs text-muted" for="episode-number-' + slot.id + '" style="margin-left:8px; text-transform:uppercase; letter-spacing:0.5px; font-weight:600;">Episode Number:</label>'
+        + '<input id="episode-number-' + slot.id + '" type="number" min="1" max="2147483647" step="1" inputmode="numeric" class="edit-field edit-field-sm" data-edit-episode-number data-sync-schedule-idea="' + idea.id + '" value="' + (episodeOverride == null ? '' : episodeOverride) + '" placeholder="' + slot.episodeNum + '" aria-label="Episode number override" style="width:120px;">'
+        + '<button type="button" class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); updateEpisodeNumberOverride(\'' + slot.id + '\', \'' + idea.id + '\')">Save Number</button>'
+        + (episodeOverride == null ? '' : '<button type="button" class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); resetEpisodeNumberOverride(\'' + slot.id + '\', \'' + idea.id + '\')">Use Automatic</button>')
+        + '</div>';
+    }
+
     function renderEditMode(idea, jokeHtml, songHtml, guestHtml) {
       var html = '';
 
@@ -817,24 +854,19 @@
       if (editSlot) {
         var effectiveRelease = ShowEngine.getEffectiveReleaseDate(editSlot);
         var isOverridden = !!editSlot.releaseDateOverride;
-        html += '<div class="mb-md" onclick="event.stopPropagation()" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">'
-          + '<label class="text-xs text-muted" style="text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Release Date:</label>'
-          + '<input type="date" value="' + effectiveRelease + '" onblur="if(this.value && /^\\d{4}-\\d{2}-\\d{2}$/.test(this.value)) updateReleaseDate(\'' + editSlot.id + '\', this.value)" '
-          + 'style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-default); border-radius: 4px; padding: 4px 8px; font-size: 0.8rem;">'
-          + (isOverridden ? '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); resetReleaseDate(\'' + editSlot.id + '\')" title="Reset to calculated default">↩ Reset</button>' : '')
-          + (isOverridden ? '<span class="text-xs" style="color: var(--gold-bright);">✎ Custom date</span>' : '<span class="text-xs text-muted">(default: record + 7 days)</span>')
+        html += '<div class="mb-md text-sm" onclick="event.stopPropagation()">'
+          + '<strong>Release date:</strong> ' + esc(effectiveRelease)
+          + (isOverridden ? ' <span style="color: var(--gold-bright);">✎ Custom date</span>' : ' <span class="text-muted">(default)</span>')
+          + '<span class="text-muted"> — save or cancel content edits before changing schedule metadata.</span>'
           + '</div>';
       }
 
       // Episode number override (only scheduled shows have a number)
       if (editSlot) {
         var episodeOverride = editSlot.episodeNumberOverride;
-        html += '<div class="mb-md" onclick="event.stopPropagation()" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">'
-          + '<label class="text-xs text-muted" for="episode-number-' + editSlot.id + '" style="text-transform:uppercase; letter-spacing:0.5px; font-weight:600;">Episode Number:</label>'
-          + '<input id="episode-number-' + editSlot.id + '" type="number" min="1" max="2147483647" step="1" inputmode="numeric" class="edit-field edit-field-sm" data-edit-episode-number value="' + (episodeOverride == null ? '' : episodeOverride) + '" placeholder="' + editSlot.episodeNum + '" aria-label="Episode number override" style="width:120px;">'
-          + '<button type="button" class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); updateEpisodeNumberOverride(\'' + editSlot.id + '\', \'' + idea.id + '\')">Save Number</button>'
-          + (episodeOverride == null ? '' : '<button type="button" class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); resetEpisodeNumberOverride(\'' + editSlot.id + '\', \'' + idea.id + '\')">Use Automatic</button>')
-          + '<span class="text-xs text-muted">Automatic: ' + editSlot.episodeNumber + '; showing: ' + ShowEngine.getEffectiveEpisodeNumber(editSlot) + '</span>'
+        html += '<div class="mb-md text-sm" data-edit-episode-number onclick="event.stopPropagation()">'
+          + '<strong>Episode number:</strong> ' + ShowEngine.getEffectiveEpisodeNumber(editSlot)
+          + (episodeOverride == null ? ' <span class="text-muted">(automatic)</span>' : ' <span style="color: var(--gold-bright);">✎ Override</span>')
           + '</div>';
       }
 
@@ -851,21 +883,11 @@
       html += '<button class="add-tp-btn" onclick="addEditTitle(\'' + idea.id + '\')">+ Add Title</button>'
         + '</div>';
 
-      // Joke picker (same as view mode)
-      var assignedJoke = Storage.getJokeForIdea(idea.id);
-      html += '<div class="mb-md">'
-        + '<label class="text-xs text-muted" style="display:block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Opening Salt Joke ' + (assignedJoke ? '✓' : '(click to assign)') + '</label>'
-        + jokeHtml + '</div>';
-
-      html += '<div class="mb-md">'
-        + '<label class="text-xs text-muted" style="display:block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Episode Song</label>'
-        + songHtml + '</div>';
-
-      html += '<div class="mb-md">'
-        + '<label class="text-xs text-muted" style="display:block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Episode Guests</label>'
-        + guestHtml + '</div>';
-
-      html += Top3EpisodePlanning.render(idea.id);
+      // Assignment controls save independently and can rebuild this card. Keep them
+      // out of content-edit mode so they cannot discard unsaved text fields.
+      html += '<p class="text-sm text-muted mb-md" data-edit-assignment-guidance>'
+        + 'Save or cancel these content edits before changing jokes, songs, guests, or Top 3 planning.'
+        + '</p>';
 
       // Editable summary
       html += '<div class="mb-md" onclick="event.stopPropagation()">'
@@ -954,12 +976,14 @@
     // ============================================
     function enterEditMode(ideaId) {
       editingIdeas.add(ideaId);
+      syncView.setDirty('idea-edit-' + ideaId, true);
       expandedIdeas.add(ideaId);
       renderIdeasList();
     }
 
     function cancelEdit(ideaId) {
       editingIdeas.delete(ideaId);
+      syncView.setDirty('idea-edit-' + ideaId, false);
       expandedIdeas.add(ideaId);
       renderIdeasList();
     }
@@ -1017,9 +1041,10 @@
         rawNotes: rawNotes,
         imageFileId: imageFileId || null
       });
-      if (!saved) return;
+      if (!saved) { syncView.showConflict(); return; }
 
       editingIdeas.delete(ideaId);
+      syncView.setDirty('idea-edit-' + ideaId, false);
       rerenderIdeasPreservingExpansion(ideaId);
       Toast.success('Changes saved!');
     }
@@ -1204,8 +1229,9 @@
           createdAt: new Date().toISOString(),
           imageFileId: null
         };
-        if (!await Storage.addIdea(idea)) return;
+        if (!await Storage.addIdea(idea)) { syncView.showConflict(); return; }
         document.getElementById('ideaNotes').value = '';
+        syncView.setDirty('idea-composer', false);
         renderIdeasList();
         Toast.success('Idea processed and saved.');
       } catch (err) { console.error('Process error:', err); Toast.error('AI processing failed: ' + err.message); }
@@ -1221,8 +1247,9 @@
         createdAt: new Date().toISOString(),
         imageFileId: null
       });
-      if (!saved) return;
+      if (!saved) { syncView.showConflict(); return; }
       document.getElementById('ideaNotes').value = '';
+      syncView.setDirty('idea-composer', false);
       renderIdeasList();
       Toast.success('Draft saved!');
     }
@@ -1255,6 +1282,7 @@
       if (!confirm('Delete this idea?')) return;
       if (!await Storage.deleteIdea(ideaId)) return;
       editingIdeas.delete(ideaId);
+      syncView.setDirty('idea-edit-' + ideaId, false);
       expandedIdeas.delete(ideaId);
       renderIdeasList();
       Toast.info('Idea deleted.');
@@ -1559,25 +1587,25 @@
       renderScheduleBoard(); renderIdeasList(); Toast.info('Show unassigned.');
     }
 
-    async function updateReleaseDate(slotId, newDate) {
+    async function updateReleaseDate(slotId, ideaId, newDate) {
       if (!await ShowEngine.setReleaseDate(slotId, newDate)) {
-        renderIdeasList();
-        renderCalendar();
-        Toast.error('Release date was not saved. The latest server state is displayed; review and retry.');
+        syncView.showConflict();
+        Toast.error('Release date was not saved. Your input is preserved; discard and load latest or review and retry.');
         return;
       }
+      syncView.setDirty('schedule-meta-' + ideaId, false);
       renderIdeasList();
       renderCalendar();
       Toast.show('Release date updated', 'success');
     }
 
-    async function resetReleaseDate(slotId) {
+    async function resetReleaseDate(slotId, ideaId) {
       if (!await ShowEngine.resetReleaseDate(slotId)) {
-        renderIdeasList();
-        renderCalendar();
-        Toast.error('Release date reset was not saved. The latest server state is displayed; review and retry.');
+        syncView.showConflict();
+        Toast.error('Release date reset was not saved. Your current input is preserved.');
         return;
       }
+      syncView.setDirty('schedule-meta-' + ideaId, false);
       renderIdeasList();
       renderCalendar();
       Toast.show('Release date reset to default', 'info');
@@ -1592,10 +1620,10 @@
         return;
       }
       if (!await Storage.setEpisodeNumberOverride(slotId, episodeNumber)) {
-        renderIdeasList();
-        renderCalendar();
+        syncView.showConflict();
         return;
       }
+      syncView.setDirty('schedule-meta-' + ideaId, false);
       rerenderIdeasPreservingExpansion(ideaId);
       renderCalendar();
       Toast.success('Episode number updated.');
@@ -1603,10 +1631,10 @@
 
     async function resetEpisodeNumberOverride(slotId, ideaId) {
       if (!await Storage.clearEpisodeNumberOverride(slotId)) {
-        renderIdeasList();
-        renderCalendar();
+        syncView.showConflict();
         return;
       }
+      syncView.setDirty('schedule-meta-' + ideaId, false);
       rerenderIdeasPreservingExpansion(ideaId);
       renderCalendar();
       Toast.info('Episode number returned to automatic calculation.');
@@ -1623,6 +1651,7 @@
     // Init — called by Auth after Storage.init()
     // ============================================
     function reconcileVisibleStorageState() {
+      if (syncView.hasUnsavedWork()) return;
       renderIdeasList();
       if (document.getElementById('tab-schedule').classList.contains('active')) {
         renderIdeaBank();

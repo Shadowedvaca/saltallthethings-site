@@ -171,6 +171,73 @@ test("independent authenticated pages converge from a minimal revision signal", 
   await Promise.all(contexts.map((context) => context.close()));
 });
 
+test("a newer revision never overwrites a Song Bank draft before explicit acceptance", async ({ browser }) => {
+  const contexts = await Promise.all([browser.newContext(), browser.newContext()]);
+  const [editingPage, savingPage] = await Promise.all(contexts.map((context) => context.newPage()));
+  let revision = 1;
+  let songs = [];
+  let releaseSignal;
+  const signalReady = new Promise((resolve) => { releaseSignal = resolve; });
+
+  async function prepare(page) {
+    await isolateNetwork(page);
+    await page.addInitScript(() => {
+      const payload = btoa(JSON.stringify({ exp: 4102444800, is_admin: false }));
+      localStorage.setItem("satt_jwt", JSON.stringify({ token: `test.${payload}.signature` }));
+    });
+    await page.route("**/api/export", async (route) => {
+      await route.fulfill({
+        status: 200, contentType: "application/json",
+        body: JSON.stringify({
+          config: {}, ideas: [], jokes: [], songs, guests: [], guestAssignments: [],
+          showSlots: [], assignments: {}, revision,
+        }),
+      });
+    });
+    await page.route("**/api/sync/revisions**", async (route) => {
+      const after = Number(new URL(route.request().url()).searchParams.get("after"));
+      if (after >= 2) return new Promise(() => {});
+      await signalReady;
+      await route.fulfill({
+        status: 200, contentType: "text/event-stream",
+        body: 'event: revision\ndata: {"resource":"canonical-state","revision":2}\n\n',
+      });
+    });
+    await page.route("**/api/data/songs", async (route) => {
+      songs = JSON.parse(route.request().postData());
+      revision = 2;
+      releaseSignal();
+      await route.fulfill({
+        status: 200, contentType: "application/json",
+        body: JSON.stringify({
+          config: {}, ideas: [], jokes: [], songs, guests: [], guestAssignments: [],
+          showSlots: [], assignments: {}, revision,
+        }),
+      });
+    });
+  }
+
+  await Promise.all([prepare(editingPage), prepare(savingPage)]);
+  await Promise.all([editingPage.goto("/songs.html"), savingPage.goto("/songs.html")]);
+  await editingPage.locator("#songArtist").fill("Unsaved Local Artist");
+  await savingPage.locator("#songArtist").fill("Remote Artist");
+  await savingPage.locator("#songTitle").fill("Canonical Song");
+  await savingPage.locator("#songYoutubeUrl").fill("https://youtu.be/abcdef1");
+  await savingPage.getByRole("button", { name: "Add Song" }).click();
+
+  await expect(editingPage.locator(".sync-notice")).toContainText("unsaved work has been kept");
+  await expect(editingPage.locator("#songArtist")).toHaveValue("Unsaved Local Artist");
+  await expect(editingPage.locator("#songsList")).not.toContainText("Canonical Song");
+  await editingPage.getByRole("button", { name: "Continue editing" }).click();
+  await expect(editingPage.locator("#songArtist")).toHaveValue("Unsaved Local Artist");
+
+  await editingPage.getByRole("button", { name: "Discard & load latest" }).click();
+  await expect(editingPage.locator("#songArtist")).toHaveValue("");
+  await expect(editingPage.getByRole("heading", { name: /Canonical Song/ })).toBeVisible();
+  await expect(editingPage.locator(".sync-notice")).toHaveClass(/hidden/);
+  await Promise.all(contexts.map((context) => context.close()));
+});
+
 test("Schedule Board opens to the current local month and resets on reload", async ({ page }) => {
   await isolateNetwork(page);
   await page.clock.install({ time: new Date("2026-12-31T12:00:00") });
@@ -503,8 +570,7 @@ test("episode number override persists across management, view, schedule, and re
     releaseDate: Storage.getShowSlots()[0].releaseDate,
     releaseDateOverride: Storage.getShowSlots()[0].releaseDateOverride,
   }));
-  await card.getByRole("button", { name: "Edit show" }).click();
-
+  await card.click();
   const numberInput = card.getByRole("spinbutton", { name: "Episode number override" });
   await numberInput.fill("");
   await card.getByRole("button", { name: "Save Number" }).click();
@@ -532,7 +598,7 @@ test("episode number override persists across management, view, schedule, and re
   await page.reload();
   card = page.locator("#idea-override-edit");
   await expect(card).toContainText("EP040");
-  await card.getByRole("button", { name: "Edit show" }).click();
+  await card.click();
   await expect(card.getByRole("spinbutton", { name: "Episode number override" })).toHaveValue("40");
   await card.getByRole("button", { name: "Use Automatic" }).click();
   await expect(card).toContainText("EP041");
@@ -618,9 +684,14 @@ test("Show Management reconciles successful and conflicted mutations without a p
 
   await page.locator("#ideaNotes").fill("Client stale draft");
   await page.getByRole("button", { name: "Save as Draft" }).click();
-  await expect(page.locator("#ideasList")).toContainText("Server canonical concurrent draft");
+  await expect(page.locator("#ideaNotes")).toHaveValue("Client stale draft");
+  await expect(page.locator("#ideasList")).not.toContainText("Server canonical concurrent draft");
   await expect(page.locator("#ideasList")).not.toContainText("Client stale draft");
   await expect(page.locator("#save-status")).toContainText("Newer server data loaded");
+  await expect(page.locator(".sync-notice")).toContainText("unsaved work has been kept");
+  await page.getByRole("button", { name: "Discard & load latest" }).click();
+  await expect(page.locator("#ideasList")).toContainText("Server canonical concurrent draft");
+  await expect(page.locator("#ideaNotes")).toHaveValue("");
   await expect(page.locator(".idea-list-card")).toHaveCount(3);
   expect(exportCount).toBe(2);
   expect(mutationCount).toBe(2);

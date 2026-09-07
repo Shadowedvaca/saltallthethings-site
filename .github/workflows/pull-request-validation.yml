@@ -77,6 +77,7 @@ jobs:
         run: |
           node scripts/test_frontend_contract.js
           node scripts/test_sync_coordinator.js
+          node scripts/test_sync_view.js
           node scripts/test_guest_bank_frontend.js
 
       - name: Set up Node for browser automation

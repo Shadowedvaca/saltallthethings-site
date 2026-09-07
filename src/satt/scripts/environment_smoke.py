@@ -1177,6 +1177,7 @@ async def run_smoke(
                 "/js/episode-overview.js",
                 "/js/songs.js",
                 "/js/guests.js",
+                "/js/sync-view.js",
                 "/js/top3-bank.js",
                 "/js/top3-episode.js",
                 "/public/homepage",
@@ -1237,6 +1238,13 @@ async def run_smoke(
                         and "validateGuestInput" in response.text
                         and "appearanceHistory" in response.text,
                         "deployed Guest Bank script is incomplete",
+                    )
+                elif path == "/js/sync-view.js":
+                    _require(
+                        "Discard & load latest" in response.text
+                        and "Continue editing" in response.text
+                        and "hasUnsavedWork" in response.text,
+                        "deployed reconciliation view script is incomplete",
                     )
                 elif path == "/js/show-song.js":
                     _require(

@@ -93,10 +93,50 @@ transport. The status state is one of:
   visible.
 
 The shared coordinator never silently reloads a dirty view. Returning a view to
-clean triggers one pending catch-up. Page-specific dirty detection, visible
-messages, and keep/reload actions are added in #58; the coordinator contract is
-already deterministic and transport-independent so those adapters do not own
-connection or retry logic.
+clean triggers one pending catch-up. If the stream disconnects after reporting
+a newer revision, the pending edit conflict remains the primary visible state
+while transport reconnection continues; a connectivity message cannot hide the
+decision that protects the draft.
+
+## Eligible views and reconciliation decisions
+
+Show Management, Config, Joke Bank, Song Bank, and Guest Bank use the shared
+`js/sync-view.js` adapter. Their canonical lists, counts, assignments, schedule,
+cards, and availability controls continue to repaint through their existing
+Storage subscriptions when the page is clean. Every adapter blocks that repaint
+while it owns an unsaved scope:
+
+- Config tracks field changes, prompt/segment resets, additions, removals, and
+  segment reordering. A full Configuration save returns the page to clean.
+- Joke Bank tracks the manual/generation draft and each open joke edit.
+- Song Bank and Guest Bank track both add-form input and explicit record-edit
+  sessions, including private notes.
+- Show Management tracks the new-idea composer, each content-edit session, and
+  unsaved schedule metadata. Assignment and Top 3 controls are unavailable
+  during a content-edit session because those independently saved actions would
+  rebuild the card and could otherwise discard its text fields. Schedule
+  metadata remains editable from the expanded clean view.
+
+When a newer canonical revision arrives during any scope, an accessible notice
+says that the unsaved work was kept. **Continue editing** retains every local
+field and leaves catch-up pending. **Discard & load latest** invokes the page's
+explicit discard routine, repaints from canonical Storage, and performs any
+pending canonical catch-up. Save conflicts use the same decision instead of
+silently rebuilding the form. A disconnected clean client can use **Retry now**;
+ordinary exponential reconnect remains active.
+
+Top 3 Bank and the Top 3 episode domain are intentionally excluded from this
+page adapter. Their records, participant submissions, and reveal state use a
+separate viewer-scoped API and revision contract rather than `/api/export`.
+The canonical-state signal contains no domain identity or record data, and no
+Top 3 content is inferred, fetched, or revealed from it. Post-Production is also
+excluded because its job queue has its own bounded polling and lease lifecycle.
+
+Accepting a refresh is equivalent to discarding the local scope and loading the
+same authenticated canonical state used by a full page reload. A declined
+refresh deliberately leaves counts and controls at the last acknowledged view
+until the user saves, cancels, or accepts newer data; this is the visible cost
+of preserving unsaved work rather than mixing revisions.
 
 ## Operations and rollback
 

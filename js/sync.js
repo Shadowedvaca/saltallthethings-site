@@ -263,10 +263,17 @@ SyncCoordinator.prototype._onDisconnect = function(generation, error) {
   }
   var delay = Math.min(30000, 1000 * Math.pow(2, this.retryAttempt));
   this.retryAttempt += 1;
-  this._setStatus('disconnected', 'transport-failed', {
-    retryInMs: delay,
-    canRetry: true
-  });
+  if (this.editing && this.conflicted) {
+    this._setStatus('conflicted', 'newer-canonical-revision', {
+      transportDisconnected: true,
+      retryInMs: delay
+    });
+  } else {
+    this._setStatus('disconnected', 'transport-failed', {
+      retryInMs: delay,
+      canRetry: true
+    });
+  }
   var coordinator = this;
   this.retryTimer = this.clock.setTimeout(function() {
     coordinator.retryTimer = null;

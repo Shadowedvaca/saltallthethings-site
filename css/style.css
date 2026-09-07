@@ -769,3 +769,36 @@ select {
   cursor: pointer;
 }
 .save-status button:disabled { opacity: 0.5; cursor: wait; }
+
+/* Authenticated canonical-state reconciliation notice. */
+.sync-notice {
+  position: fixed;
+  right: var(--space-md);
+  bottom: var(--space-md);
+  z-index: 100001;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  max-width: min(560px, calc(100vw - 2 * var(--space-md)));
+  padding: 12px 14px;
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  font-size: 0.85rem;
+}
+.sync-notice.hidden { display: none; }
+.sync-notice.conflicted { border-color: #c75b5b; }
+.sync-notice.refreshing { border-color: var(--gold); }
+.sync-notice.disconnected { border-color: var(--border-default); }
+.sync-notice-actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
+.sync-notice button {
+  padding: 4px 9px;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}

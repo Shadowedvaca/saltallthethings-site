@@ -119,10 +119,13 @@ def test_deployment_smoke_exercises_song_lifecycle_without_external_services():
     assert '"/js/episode-overview.js"' in source
     assert '"/js/songs.js"' in source
     assert '"/js/guests.js"' in source
+    assert '"/js/sync-view.js"' in source
     assert '"/js/top3-bank.js"' in source
     assert '"/js/top3-episode.js"' in source
     assert '"validateSongInput" in response.text' in source
     assert '"validateGuestInput" in response.text' in source
+    assert '"Discard & load latest" in response.text' in source
+    assert '"hasUnsavedWork" in response.text' in source
     assert '"renderPreparation" in response.text' in source
     assert '"GuestPreparation" in response.text' in source
     assert '"js/show-guests.js" in response.text' in source

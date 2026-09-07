@@ -180,6 +180,9 @@ async function testDirtyConflictAndExplicitCatchUp() {
   test.connections[0].options.onSignal({ resource: "canonical-state", revision: 6 });
   assert.equal(test.statuses.at(-1).state, "conflicted");
   assert.equal(test.loads.length, 0);
+  test.connections[0].pending.resolve();
+  await settle();
+  assert.equal(test.statuses.at(-1).state, "conflicted", "disconnect must not hide a pending edit conflict");
   test.setCanonicalRevision(6);
   test.coordinator.setViewState("clean");
   await settle();

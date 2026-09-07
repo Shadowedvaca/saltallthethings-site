@@ -8,7 +8,9 @@
       confirm: root.confirm.bind(root),
       Auth: Auth,
       Storage: Storage,
-      Toast: Toast
+      Toast: Toast,
+      Sync: typeof Sync !== 'undefined' ? Sync : null,
+      SyncView: typeof SyncView !== 'undefined' ? SyncView : null
     });
     root.GuestBankPage = api;
     root.onStorageReady = api.onStorageReady;
@@ -20,6 +22,7 @@
   var currentFilter = 'all';
   var currentQuery = '';
   var editingGuestId = null;
+  var syncView = null;
 
   function escapeHtml(value) {
     if (value == null) return '';
@@ -152,6 +155,7 @@
     root.document.getElementById('saveGuestButton').textContent = 'Add Guest';
     root.document.getElementById('cancelGuestEditButton').classList.add('hidden');
     clearErrors();
+    if (syncView) syncView.setDirty('guest-form', false);
   }
 
   function editGuest(guestId) {
@@ -162,6 +166,7 @@
       return;
     }
     editingGuestId = guest.id;
+    if (syncView) syncView.setDirty('guest-form', true);
     root.document.getElementById('guestDisplayName').value = guest.displayName;
     root.document.getElementById('guestPrivateNotes').value = guest.privateNotes || '';
     root.document.getElementById('guestFormHeading').textContent = 'Edit Guest';
@@ -205,8 +210,8 @@
       }, values));
     button.disabled = false;
     if (!success) {
-      announce('Save failed or conflicted. The latest server data is shown; review your change and try again.');
-      renderGuests();
+      if (syncView) syncView.showConflict();
+      announce('Save failed or conflicted. Your input is preserved; review it, or discard it and load the latest data.');
       return;
     }
     var wasEditing = Boolean(existing);
@@ -283,12 +288,22 @@
   }
 
   function onStorageReady() {
-    if (typeof root.Storage.subscribe === 'function') root.Storage.subscribe(renderGuests);
+    if (typeof root.Storage.subscribe === 'function') root.Storage.subscribe(function() {
+      if (!syncView || !syncView.hasUnsavedWork()) renderGuests();
+    });
     renderGuests();
     announce('Guest Bank loaded.');
   }
 
   function start() {
+    if (root.Sync && root.SyncView) {
+      syncView = root.SyncView({
+        document: root.document,
+        sync: root.Sync,
+        discard: function() { resetForm(); renderGuests(); }
+      });
+      syncView.bindInputs(root.document.getElementById('guestForm'), 'guest-form');
+    }
     bindEvents();
     root.Auth.init();
   }
