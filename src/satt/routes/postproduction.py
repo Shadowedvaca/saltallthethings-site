@@ -7,19 +7,24 @@ from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from satt.auth import require_auth
 from satt.config import get_settings
 from satt.crud import (
+    TranscriptionJobConflictError,
+    TranscriptionJobNotFoundError,
+    claim_transcription_job,
     get_config,
-    get_pending_transcription_jobs,
+    get_claimable_transcription_jobs,
     get_postproduction_queue,
     get_slots_for_scan,
+    queue_transcription_job,
+    reset_stale_transcription_job,
     set_asset_inventory,
     set_production_file_key,
-    set_transcription_job,
+    update_transcription_claim,
 )
 from satt.database import get_db
 from satt.gdrive import (
@@ -204,15 +209,14 @@ async def request_transcription(
     if not row.get("productionFileKey"):
         raise HTTPException(status_code=400, detail="Production file key not set — set it before transcribing")
 
-    job = {"status": "pending", "requestedAt": datetime.now(timezone.utc).isoformat()}
-    await set_transcription_job(db, slot_id, job)
+    try:
+        await queue_transcription_job(db, slot_id)
+    except TranscriptionJobConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     # Return the updated row
     queue = await get_postproduction_queue(db)
-    for r in queue:
-        if r["slotId"] == slot_id:
-            return r
-    raise HTTPException(status_code=404, detail="Slot not found after update")
+    return next(r for r in queue if r["slotId"] == slot_id)
 
 
 @router.get("/postproduction/transcription-jobs")
@@ -220,13 +224,38 @@ async def get_transcription_jobs(
     _user: dict = Depends(require_auth),
     db: AsyncSession = Depends(get_db),
 ) -> list:
-    """Return pending transcription jobs. Polled by the local watcher."""
-    return await get_pending_transcription_jobs(db)
+    """Return minimal pending or stale jobs. Polled by an authenticated watcher."""
+    if not _user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return await get_claimable_transcription_jobs(db)
+
+
+class TranscriptionClaimRequest(BaseModel):
+    workerId: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9._-]+$")
+
+
+@router.post("/postproduction/{slot_id}/transcribe-claim")
+async def claim_transcription(
+    slot_id: str,
+    body: TranscriptionClaimRequest,
+    _user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Atomically claim one pending or stale transcription job."""
+    if not _user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    try:
+        return await claim_transcription_job(db, slot_id, body.workerId)
+    except TranscriptionJobNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except TranscriptionJobConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 class TranscriptionStatusRequest(BaseModel):
     status: str  # 'in_progress' | 'done' | 'failed'
-    error: str | None = None
+    claimToken: str = Field(min_length=1, max_length=64)
+    error: str | None = Field(default=None, max_length=500)
 
 
 @router.put("/postproduction/{slot_id}/transcribe-status")
@@ -237,15 +266,46 @@ async def update_transcription_status(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Update a transcription job's status. Called by the local watcher."""
+    if not _user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
     allowed = {"in_progress", "done", "failed"}
     if body.status not in allowed:
         raise HTTPException(status_code=400, detail=f"status must be one of: {', '.join(allowed)}")
 
-    job: dict = {"status": body.status, "updatedAt": datetime.now(timezone.utc).isoformat()}
-    if body.error:
-        job["error"] = body.error
-    await set_transcription_job(db, slot_id, job)
-    return job
+    try:
+        return await update_transcription_claim(
+            db,
+            slot_id,
+            body.claimToken,
+            body.status,
+            error=body.error,
+        )
+    except TranscriptionJobNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except TranscriptionJobConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/postproduction/{slot_id}/transcribe-reset")
+async def reset_transcription(
+    slot_id: str,
+    current_user: dict = Depends(require_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Admin-only targeted recovery for a job whose watcher lease expired."""
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    try:
+        await reset_stale_transcription_job(
+            db, slot_id, str(current_user.get("username") or "administrator")
+        )
+    except TranscriptionJobNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except TranscriptionJobConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    queue = await get_postproduction_queue(db)
+    return next(row for row in queue if row["slotId"] == slot_id)
 
 
 def _build_scan_config(settings, db_config: dict) -> dict:

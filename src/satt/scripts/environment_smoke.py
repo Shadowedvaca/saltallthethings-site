@@ -157,6 +157,38 @@ async def _latest_state(client: httpx.AsyncClient, token: str) -> dict:
     return state
 
 
+async def _exercise_revision_stream(
+    client: httpx.AsyncClient, token: str, revision: int
+) -> None:
+    """Verify the deployed stream's auth, privacy, and immediate catch-up contract."""
+    _require(revision > 0, "revision stream smoke requires an advanced revision")
+    unknown = await client.get(
+        "/api/sync/revisions?resource=top3-picks&after=0",
+        headers=_headers(token),
+    )
+    _expect_status(unknown, 404, "unknown revision stream resource")
+
+    lines: list[str] = []
+    async with client.stream(
+        "GET",
+        f"/api/sync/revisions?resource=canonical-state&after={revision - 1}",
+        headers=_headers(token),
+    ) as response:
+        _expect_status(response, 200, "authenticated revision stream")
+        async for line in response.aiter_lines():
+            if not line:
+                break
+            lines.append(line)
+    event = "\n".join(lines)
+    expected_data = (
+        f'data: {{"resource":"canonical-state","revision":{revision}}}'
+    )
+    _require("event: revision" in event, "revision stream returned no event")
+    _require(expected_data in event, "revision stream returned the wrong revision")
+    for forbidden in ("top3", "pick", "proposal", "password", "database"):
+        _require(forbidden not in event.lower(), "revision stream exposed protected detail")
+
+
 async def _exercise_guest_bank(client: httpx.AsyncClient, token: str) -> None:
     """Exercise reusable guest links, lifecycle, privacy, and cleanup."""
     suffix = secrets.token_hex(8)
@@ -1177,6 +1209,7 @@ async def run_smoke(
                 "/js/episode-overview.js",
                 "/js/songs.js",
                 "/js/guests.js",
+                "/js/sync-view.js",
                 "/js/top3-bank.js",
                 "/js/top3-episode.js",
                 "/public/homepage",
@@ -1238,6 +1271,13 @@ async def run_smoke(
                         and "appearanceHistory" in response.text,
                         "deployed Guest Bank script is incomplete",
                     )
+                elif path == "/js/sync-view.js":
+                    _require(
+                        "Discard & load latest" in response.text
+                        and "Continue editing" in response.text
+                        and "hasUnsavedWork" in response.text,
+                        "deployed reconciliation view script is incomplete",
+                    )
                 elif path == "/js/show-song.js":
                     _require(
                         "renderPreparation" in response.text,
@@ -1260,6 +1300,12 @@ async def run_smoke(
 
             unauthorized = await client.get("/api/export")
             _expect_status(unauthorized, 401, "unauthenticated export")
+            unauthorized_stream = await client.get(
+                "/api/sync/revisions?resource=canonical-state&after=0"
+            )
+            _expect_status(
+                unauthorized_stream, 401, "unauthenticated revision stream"
+            )
 
             registration = await client.post(
                 "/api/auth/register",
@@ -1298,6 +1344,8 @@ async def run_smoke(
             await _exercise_guest_bank(client, token)
             await _exercise_episode_number_override(client, token)
             await _exercise_top3(client, token, viewer_token)
+            latest = await _latest_state(client, token)
+            await _exercise_revision_stream(client, token, latest["revision"])
 
             for attempt in (1, 2):
                 login = await client.post(

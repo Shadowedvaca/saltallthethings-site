@@ -157,6 +157,15 @@ and managed through the Config page.
 
 ## Server management
 
+Authenticated collaboration clients can subscribe to minimal committed
+canonical-revision hints; the transport, privacy boundary, lifetime, and
+rollback contract are documented in
+[docs/realtime-collaboration.md](docs/realtime-collaboration.md).
+
+The recording-PC transcription watcher uses atomic job claims and renewable
+leases. See [docs/transcription-recovery.md](docs/transcription-recovery.md) for
+the stale-job rule, authorization boundary, operator recovery, and rollback.
+
 ```bash
 # Service status / logs
 sudo systemctl status satt

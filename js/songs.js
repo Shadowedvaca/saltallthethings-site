@@ -8,7 +8,9 @@
       confirm: root.confirm.bind(root),
       Auth: Auth,
       Storage: Storage,
-      Toast: Toast
+      Toast: Toast,
+      Sync: typeof Sync !== 'undefined' ? Sync : null,
+      SyncView: typeof SyncView !== 'undefined' ? SyncView : null
     });
     root.SongBankPage = api;
     root.onStorageReady = api.onStorageReady;
@@ -20,6 +22,7 @@
   var currentFilter = 'all';
   var currentQuery = '';
   var editingSongId = null;
+  var syncView = null;
   var youtubeHosts = new Set([
     'youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com',
     'youtu.be', 'www.youtu.be'
@@ -186,6 +189,7 @@
     root.document.getElementById('saveSongButton').textContent = 'Add Song';
     root.document.getElementById('cancelEditButton').classList.add('hidden');
     clearFieldErrors();
+    if (syncView) syncView.setDirty('song-form', false);
   }
 
   function editSong(songId) {
@@ -196,6 +200,7 @@
       return;
     }
     editingSongId = song.id;
+    if (syncView) syncView.setDirty('song-form', true);
     root.document.getElementById('songArtist').value = song.artist;
     root.document.getElementById('songTitle').value = song.title;
     root.document.getElementById('songYoutubeUrl').value = song.youtubeUrl;
@@ -240,8 +245,8 @@
     }
     button.disabled = false;
     if (!success) {
-      announce('Save failed. The latest server data was restored; review the message and try again.');
-      renderSongs();
+      if (syncView) syncView.showConflict();
+      announce('Save failed or conflicted. Your input is preserved; review it, or discard it and load the latest data.');
       return;
     }
     var wasEditing = Boolean(editingSongId);
@@ -310,12 +315,22 @@
   }
 
   function onStorageReady() {
-    if (typeof root.Storage.subscribe === 'function') root.Storage.subscribe(renderSongs);
+    if (typeof root.Storage.subscribe === 'function') root.Storage.subscribe(function() {
+      if (!syncView || !syncView.hasUnsavedWork()) renderSongs();
+    });
     renderSongs();
     announce('Song Bank loaded.');
   }
 
   function start() {
+    if (root.Sync && root.SyncView) {
+      syncView = root.SyncView({
+        document: root.document,
+        sync: root.Sync,
+        discard: function() { resetForm(); renderSongs(); }
+      });
+      syncView.bindInputs(root.document.getElementById('songForm'), 'song-form');
+    }
     bindEvents();
     root.Auth.init();
   }

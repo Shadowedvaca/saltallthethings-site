@@ -151,6 +151,12 @@ const PostProd = {
         return '<span class="pp-job-pending">Queued\u2026</span>';
       }
       if (job && job.status === 'in_progress') {
+        if (job.isStale) {
+          var resetControl = Auth.isAdmin()
+            ? ' <button class="btn btn-link btn-sm pp-reset-btn" onclick="PostProd.resetTranscription(\'' + escHtml(row.slotId) + '\')">Reset selected job</button>'
+            : ' <span class="pp-job-recovery">Ask an administrator to reset it.</span>';
+          return '<span class="pp-job-stale">Transcription lease expired.</span>' + resetControl;
+        }
         return '<span class="pp-job-inprogress">'
           + '<svg viewBox="0 0 50 50" style="width:11px;height:11px;display:inline-block;vertical-align:middle;margin-right:4px;">'
           + '<circle cx="25" cy="25" r="20" fill="none" stroke="currentColor" stroke-width="5" stroke-dasharray="80 40" stroke-linecap="round">'
@@ -191,6 +197,24 @@ const PostProd = {
       Toast.success('Transcription queued \u2014 watcher will pick it up within 30s.');
     } catch (err) {
       Toast.error('Failed to queue transcription: ' + err.message);
+    }
+  },
+
+  async resetTranscription(slotId) {
+    try {
+      const resp = await fetch(this._apiBase + '/postproduction/' + slotId + '/transcribe-reset', {
+        method: 'POST',
+        headers: this._headers()
+      });
+      const result = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(result.detail || ('API error: ' + resp.status));
+      const idx = this._queue.findIndex(r => r.slotId === slotId);
+      if (idx !== -1) this._queue[idx] = result;
+      this.renderTable();
+      await this.loadQueue();
+      Toast.success('Selected stale transcription reset and queued again.');
+    } catch (err) {
+      Toast.error('Failed to reset selected transcription: ' + err.message);
     }
   },
 

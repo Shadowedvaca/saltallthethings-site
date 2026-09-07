@@ -39,7 +39,13 @@ const Auth = {
     return data ? data.token : null;
   },
 
+  isAdmin() {
+    var data = this._getSession();
+    return !!(data && data.isAdmin);
+  },
+
   logout() {
+    if (typeof Sync !== 'undefined') Sync.stop('logout');
     localStorage.removeItem(this._storageKey);
     location.href = 'login.html';
   },
@@ -49,6 +55,7 @@ const Auth = {
     if (loading) loading.style.display = 'flex';
     try {
       await Storage.init();
+      if (typeof Sync !== 'undefined') Sync.start();
       if (typeof onStorageReady === 'function') onStorageReady();
     } catch(e) {
       console.error('Storage init failed:', e);

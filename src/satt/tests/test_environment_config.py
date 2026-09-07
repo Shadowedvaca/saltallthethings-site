@@ -27,6 +27,7 @@ ENVIRONMENT_SENSITIVE_BROWSER_FILES = (
     "js/top3-bank.js",
     "js/top3-episode.js",
     "js/storage.js",
+    "js/sync-view.js",
 )
 PRODUCTION_API_MARKERS = (
     "https://saltallthethings.com/api",

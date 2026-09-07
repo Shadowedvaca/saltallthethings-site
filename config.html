@@ -258,10 +258,27 @@
 
   <script src="js/auth.js"></script>
   <script src="js/storage.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/sync-view.js"></script>
   <script src="js/toast.js"></script>
   <script>
     // Init auth
     Auth.init();
+
+    const syncView = SyncView({
+      document: document,
+      sync: Sync,
+      discard: loadConfig
+    });
+    [
+      'aiModel', 'claudeApiKey', 'claudeModelId', 'openaiApiKey', 'openaiModelId',
+      'titleCount', 'jokeCount', 'youtubeVideo1', 'youtubeVideo2', 'youtubeVideo3',
+      'gdriveFolderShowRecordings', 'referenceImageFileIds', 'imageGenerationPrefix',
+      'referenceStyleDescription', 'showContext', 'jokeContext'
+    ].forEach(function(id) {
+      syncView.bindInputs(document.getElementById(id), 'configuration');
+    });
+    syncView.bindInputs(document.getElementById('segmentsList'), 'configuration');
 
     function loadConfig() {
       const config = Storage.getConfig();
@@ -320,7 +337,9 @@
         jokeContext: document.getElementById('jokeContext').value,
         segments: getSegmentsFromDOM()
       });
-      if (!await Storage.saveConfig(config)) return;
+      if (!await Storage.saveConfig(config)) { syncView.showConflict(); return; }
+      syncView.clear();
+      loadConfig();
       Toast.success('Configuration saved!');
       document.getElementById('saveStatus').textContent = 'Saved ' + new Date().toLocaleTimeString();
     }
@@ -407,7 +426,7 @@
         row.addEventListener('drop', (e) => {
           e.preventDefault(); row.style.borderColor = 'var(--border-subtle)';
           const fromIdx = parseInt(e.dataTransfer.getData('text/plain'));
-          if (fromIdx !== idx) { const segs = getSegmentsFromDOM(); const [moved] = segs.splice(fromIdx, 1); segs.splice(idx, 0, moved); renderSegments(segs); }
+          if (fromIdx !== idx) { const segs = getSegmentsFromDOM(); const [moved] = segs.splice(fromIdx, 1); segs.splice(idx, 0, moved); renderSegments(segs); markConfigDirty(); }
         });
         container.appendChild(row);
       });
@@ -425,11 +444,12 @@
       return segments;
     }
 
-    function addSegment() { const segs = getSegmentsFromDOM(); segs.push({ id: 'segment_' + Storage.generateId(), name: '', description: '' }); renderSegments(segs); }
-    function removeSegment(idx) { const segs = getSegmentsFromDOM(); segs.splice(idx, 1); renderSegments(segs); }
-    function resetSegments() { if (confirm('Reset segments to defaults?')) { renderSegments(Storage._defaultSegments()); Toast.info('Segments reset (save to apply)'); } }
-    function resetShowContext() { if (confirm('Reset show context prompt to defaults?')) { document.getElementById('showContext').value = Storage._defaultShowContext(); Toast.info('Context reset (save to apply)'); } }
-    function resetJokeContext() { if (confirm('Reset joke context prompt to defaults?')) { document.getElementById('jokeContext').value = Storage._defaultJokeContext(); Toast.info('Joke context reset (save to apply)'); } }
+    function markConfigDirty() { syncView.setDirty('configuration', true); }
+    function addSegment() { const segs = getSegmentsFromDOM(); segs.push({ id: 'segment_' + Storage.generateId(), name: '', description: '' }); renderSegments(segs); markConfigDirty(); }
+    function removeSegment(idx) { const segs = getSegmentsFromDOM(); segs.splice(idx, 1); renderSegments(segs); markConfigDirty(); }
+    function resetSegments() { if (confirm('Reset segments to defaults?')) { renderSegments(Storage._defaultSegments()); markConfigDirty(); Toast.info('Segments reset (save to apply)'); } }
+    function resetShowContext() { if (confirm('Reset show context prompt to defaults?')) { document.getElementById('showContext').value = Storage._defaultShowContext(); markConfigDirty(); Toast.info('Context reset (save to apply)'); } }
+    function resetJokeContext() { if (confirm('Reset joke context prompt to defaults?')) { document.getElementById('jokeContext').value = Storage._defaultJokeContext(); markConfigDirty(); Toast.info('Joke context reset (save to apply)'); } }
 
     function exportData() {
       const data = Storage.exportAll();
@@ -616,7 +636,9 @@
 
     // Called by Auth after Storage.init() completes
     function onStorageReady() {
-      Storage.subscribe(loadConfig);
+      Storage.subscribe(function(event) {
+        if (!syncView.hasUnsavedWork()) loadConfig(event);
+      });
       loadConfig();
       var session = Auth._getSession();
       if (session && session.isAdmin) {

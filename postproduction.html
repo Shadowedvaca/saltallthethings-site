@@ -104,6 +104,9 @@
     .pp-transcribe-btn:hover { color: var(--gold); }
     .pp-job-pending { color: var(--text-muted); font-size: 0.82rem; font-style: italic; }
     .pp-job-inprogress { color: var(--accent); font-size: 0.82rem; display: flex; align-items: center; gap: 4px; }
+    .pp-job-stale { color: #e0a84f; font-size: 0.82rem; }
+    .pp-job-recovery { color: var(--text-muted); font-size: 0.74rem; }
+    .pp-reset-btn { color: #e0a84f; margin-left: 4px; }
     .pp-job-done { color: #50c878; font-size: 0.82rem; }
     .pp-job-error { color: #e05c5c; font-size: 0.74rem; margin-top: 2px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -295,6 +298,7 @@
 
   <script src="js/auth.js"></script>
   <script src="js/storage.js"></script>
+  <script src="js/sync.js"></script>
   <script src="js/toast.js"></script>
   <script src="js/postproduction.js"></script>
   <script>

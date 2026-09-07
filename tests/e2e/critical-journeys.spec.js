@@ -37,6 +37,290 @@ test("Show Management rejects an unauthenticated browser locally", async ({ page
   await expect(page.getByText("Crew Access", { exact: true })).toBeVisible();
 });
 
+test("Post-Production resets only the selected stale transcription and reloads canonical state", async ({ page }) => {
+  await isolateNetwork(page);
+  await page.addInitScript(() => {
+    const payload = btoa(JSON.stringify({ exp: 4102444800, is_admin: true }));
+    localStorage.setItem("satt_jwt", JSON.stringify({
+      token: `test.${payload}.signature`,
+      isAdmin: true,
+    }));
+  });
+  await page.route("**/api/export", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        config: {}, ideas: [], jokes: [], songs: [], guests: [],
+        guestAssignments: [], showSlots: [], assignments: {}, revision: 0,
+      }),
+    });
+  });
+
+  let selectedJob = {
+    jobId: "selected-job",
+    status: "in_progress",
+    isStale: true,
+    leaseExpiresAt: "2026-09-07T17:00:00+00:00",
+  };
+  const row = () => ({
+    slotId: "slot-selected",
+    episodeNumber: "EP055",
+    episodeNum: 55,
+    recordDate: "2026-09-01",
+    releaseDate: "2026-09-08",
+    productionFileKey: "EP055_Selected",
+    ideaId: "idea-selected",
+    selectedTitle: "Selected stale job",
+    ideaStatus: "scheduled",
+    imageFileId: null,
+    assetInventory: {
+      raw_audio: { present: true, modified: "2026-09-01T18:00:00Z" },
+      transcript_txt: { present: false },
+    },
+    transcriptionJob: selectedJob,
+    nextStep: "transcribe",
+  });
+  let resetRequests = 0;
+  const handlePostproduction = async (route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === "/api/postproduction/slot-selected/transcribe-reset") {
+      expect(request.method()).toBe("POST");
+      resetRequests += 1;
+      selectedJob = {
+        jobId: "selected-job", status: "pending", isStale: false,
+        resetAt: "2026-09-07T18:00:00+00:00", resetBy: "admin", resetCount: 1,
+      };
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(row()) });
+    }
+    expect(pathname).toBe("/api/postproduction");
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([row()]) });
+  };
+  await page.route("**/api/postproduction", handlePostproduction);
+  await page.route("**/api/postproduction/**", handlePostproduction);
+
+  await page.goto("/postproduction.html");
+  const selectedRow = page.locator('tr[data-slot="slot-selected"]');
+  await expect(selectedRow.getByText("Transcription lease expired.")).toBeVisible();
+  await selectedRow.getByRole("button", { name: "Reset selected job" }).click();
+  await expect(selectedRow.getByText("Queued…")).toBeVisible();
+  await expect(page.getByText("Selected stale transcription reset and queued again.")).toBeVisible();
+  expect(resetRequests).toBe(1);
+});
+
+test("every eligible authenticated workflow converges from a minimal revision signal", async ({ browser }) => {
+  const workflows = [
+    { kind: "config", path: "/config.html" },
+    { kind: "joke", path: "/jokes.html" },
+    { kind: "song", path: "/songs.html" },
+    { kind: "guest", path: "/guests.html" },
+    { kind: "show", path: "/show_management.html" },
+  ];
+  const contexts = await Promise.all(workflows.map(() => browser.newContext()));
+  const pages = await Promise.all(contexts.map((context) => context.newPage()));
+
+  async function prepare(page, kind) {
+    await isolateNetwork(page);
+    await page.addInitScript(() => {
+      const payload = btoa(JSON.stringify({ exp: 4102444800, is_admin: false }));
+      localStorage.setItem("satt_jwt", JSON.stringify({ token: `test.${payload}.signature` }));
+    });
+    let exportCalls = 0;
+    let streamCalls = 0;
+    await page.route("**/api/export", async (route) => {
+      exportCalls += 1;
+      const advanced = exportCalls > 1;
+      const state = {
+        config: {}, ideas: [], jokes: [], songs: [], guests: [],
+        guestAssignments: [], showSlots: [], assignments: {},
+        revision: advanced ? 2 : 1,
+      };
+      if (advanced && kind === "config") state.config = { titleCount: 7 };
+      if (advanced && kind === "joke") {
+        state.jokes = [{
+          id: "joke-remote", text: "Canonical Joke", status: "unused",
+          source: "manual", createdAt: "2026-09-07T12:00:00Z", usedByIdeaId: null,
+        }];
+      }
+      if (advanced && kind === "song") {
+        state.songs = [{
+          id: "song-remote", artist: "Remote Artist", title: "Canonical Song",
+          youtubeUrl: "https://youtu.be/abcdef1", privateNotes: "", status: "unused",
+          assignedIdeaId: null,
+        }];
+      }
+      if (advanced && kind === "guest") {
+        state.guests = [{
+          id: "guest-remote", displayName: "Canonical Guest", privateNotes: "",
+          status: "active", totalAppearances: 0, appearanceHistory: [],
+        }];
+      }
+      if (advanced && kind === "show") {
+        state.ideas = [{
+          id: "show-remote", rawNotes: "Canonical notes", titles: ["Canonical Show"],
+          selectedTitle: "Canonical Show", summary: "Canonical summary", outline: [],
+          status: "processed", createdAt: "2026-09-07T12:00:00Z",
+          updatedAt: "2026-09-07T12:00:00Z", imageFileId: null,
+        }];
+      }
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(state) });
+    });
+    await page.route("**/api/sync/revisions**", async (route) => {
+      streamCalls += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        headers: { "Cache-Control": "no-cache" },
+        body: 'id: canonical-state:2\nevent: revision\ndata: {"resource":"canonical-state","revision":2}\n\n',
+      });
+    });
+    if (kind === "show") {
+      await page.route("**/api/top3/**", async (route) => {
+        const pathname = new URL(route.request().url()).pathname;
+        const body = pathname === "/api/top3/concepts"
+          ? { revision: 2, concepts: [] }
+          : { revision: 2, assignment: null };
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+      });
+    }
+    return {
+      exportCalls: () => exportCalls,
+      streamCalls: () => streamCalls,
+    };
+  }
+
+  const counters = await Promise.all(workflows.map((workflow, index) => prepare(pages[index], workflow.kind)));
+  await Promise.all(workflows.map((workflow, index) => pages[index].goto(workflow.path)));
+  await expect(pages[0].locator("#titleCount")).toHaveValue("7");
+  await expect(pages[1].locator("#jokesList")).toContainText("Canonical Joke");
+  await expect(pages[2].getByRole("heading", { name: /Canonical Song/ })).toBeVisible();
+  await expect(pages[3].getByRole("heading", { name: "Canonical Guest" })).toBeVisible();
+  await expect(pages[4].locator("#ideasList")).toContainText("Canonical Show");
+  for (const counter of counters) {
+    expect(counter.exportCalls()).toBeGreaterThanOrEqual(2);
+    expect(counter.streamCalls()).toBeGreaterThanOrEqual(1);
+  }
+  await Promise.all(pages.map((page) => page.reload()));
+  await expect(pages[0].locator("#titleCount")).toHaveValue("7");
+  await expect(pages[1].locator("#jokesList")).toContainText("Canonical Joke");
+  await expect(pages[2].getByRole("heading", { name: /Canonical Song/ })).toBeVisible();
+  await expect(pages[3].getByRole("heading", { name: "Canonical Guest" })).toBeVisible();
+  await expect(pages[4].locator("#ideasList")).toContainText("Canonical Show");
+  await Promise.all(contexts.map((context) => context.close()));
+});
+
+test("an interrupted revision stream catches up after the server returns", async ({ page }) => {
+  await isolateNetwork(page);
+  await page.addInitScript(() => {
+    const payload = btoa(JSON.stringify({ exp: 4102444800, is_admin: false }));
+    localStorage.setItem("satt_jwt", JSON.stringify({ token: `test.${payload}.signature` }));
+  });
+  let exportCalls = 0;
+  let streamCalls = 0;
+  await page.route("**/api/export", async (route) => {
+    exportCalls += 1;
+    const advanced = exportCalls > 1;
+    await route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({
+        config: {}, ideas: [], jokes: [],
+        songs: advanced ? [{
+          id: "song-after-restart", artist: "Recovered Artist", title: "Recovered Song",
+          youtubeUrl: "https://youtu.be/abcdef1", privateNotes: "", status: "unused",
+          assignedIdeaId: null,
+        }] : [],
+        guests: [], guestAssignments: [], showSlots: [], assignments: {},
+        revision: advanced ? 2 : 1,
+      }),
+    });
+  });
+  await page.route("**/api/sync/revisions**", async (route) => {
+    streamCalls += 1;
+    if (streamCalls === 1) {
+      await route.fulfill({ status: 503, body: "temporarily unavailable" });
+      return;
+    }
+    await route.fulfill({
+      status: 200, contentType: "text/event-stream",
+      body: 'event: revision\ndata: {"resource":"canonical-state","revision":2}\n\n',
+    });
+  });
+
+  await page.goto("/songs.html");
+  await expect(page.locator(".sync-notice")).toContainText("disconnected");
+  await expect(page.getByRole("heading", { name: /Recovered Song/ })).toBeVisible({ timeout: 5000 });
+  expect(exportCalls).toBeGreaterThanOrEqual(2);
+  expect(streamCalls).toBe(2);
+});
+
+test("a newer revision never overwrites a Song Bank draft before explicit acceptance", async ({ browser }) => {
+  const contexts = await Promise.all([browser.newContext(), browser.newContext()]);
+  const [editingPage, savingPage] = await Promise.all(contexts.map((context) => context.newPage()));
+  let revision = 1;
+  let songs = [];
+  let releaseSignal;
+  const signalReady = new Promise((resolve) => { releaseSignal = resolve; });
+
+  async function prepare(page) {
+    await isolateNetwork(page);
+    await page.addInitScript(() => {
+      const payload = btoa(JSON.stringify({ exp: 4102444800, is_admin: false }));
+      localStorage.setItem("satt_jwt", JSON.stringify({ token: `test.${payload}.signature` }));
+    });
+    await page.route("**/api/export", async (route) => {
+      await route.fulfill({
+        status: 200, contentType: "application/json",
+        body: JSON.stringify({
+          config: {}, ideas: [], jokes: [], songs, guests: [], guestAssignments: [],
+          showSlots: [], assignments: {}, revision,
+        }),
+      });
+    });
+    await page.route("**/api/sync/revisions**", async (route) => {
+      const after = Number(new URL(route.request().url()).searchParams.get("after"));
+      if (after >= 2) return new Promise(() => {});
+      await signalReady;
+      await route.fulfill({
+        status: 200, contentType: "text/event-stream",
+        body: 'event: revision\ndata: {"resource":"canonical-state","revision":2}\n\n',
+      });
+    });
+    await page.route("**/api/data/songs", async (route) => {
+      songs = JSON.parse(route.request().postData());
+      revision = 2;
+      releaseSignal();
+      await route.fulfill({
+        status: 200, contentType: "application/json",
+        body: JSON.stringify({
+          config: {}, ideas: [], jokes: [], songs, guests: [], guestAssignments: [],
+          showSlots: [], assignments: {}, revision,
+        }),
+      });
+    });
+  }
+
+  await Promise.all([prepare(editingPage), prepare(savingPage)]);
+  await Promise.all([editingPage.goto("/songs.html"), savingPage.goto("/songs.html")]);
+  await editingPage.locator("#songArtist").fill("Unsaved Local Artist");
+  await savingPage.locator("#songArtist").fill("Remote Artist");
+  await savingPage.locator("#songTitle").fill("Canonical Song");
+  await savingPage.locator("#songYoutubeUrl").fill("https://youtu.be/abcdef1");
+  await savingPage.getByRole("button", { name: "Add Song" }).click();
+
+  await expect(editingPage.locator(".sync-notice")).toContainText("unsaved work has been kept");
+  await expect(editingPage.locator("#songArtist")).toHaveValue("Unsaved Local Artist");
+  await expect(editingPage.locator("#songsList")).not.toContainText("Canonical Song");
+  await editingPage.getByRole("button", { name: "Continue editing" }).click();
+  await expect(editingPage.locator("#songArtist")).toHaveValue("Unsaved Local Artist");
+
+  await editingPage.getByRole("button", { name: "Discard & load latest" }).click();
+  await expect(editingPage.locator("#songArtist")).toHaveValue("");
+  await expect(editingPage.getByRole("heading", { name: /Canonical Song/ })).toBeVisible();
+  await expect(editingPage.locator(".sync-notice")).toHaveClass(/hidden/);
+  await Promise.all(contexts.map((context) => context.close()));
+});
+
 test("Schedule Board opens to the current local month and resets on reload", async ({ page }) => {
   await isolateNetwork(page);
   await page.clock.install({ time: new Date("2026-12-31T12:00:00") });
@@ -369,8 +653,7 @@ test("episode number override persists across management, view, schedule, and re
     releaseDate: Storage.getShowSlots()[0].releaseDate,
     releaseDateOverride: Storage.getShowSlots()[0].releaseDateOverride,
   }));
-  await card.getByRole("button", { name: "Edit show" }).click();
-
+  await card.click();
   const numberInput = card.getByRole("spinbutton", { name: "Episode number override" });
   await numberInput.fill("");
   await card.getByRole("button", { name: "Save Number" }).click();
@@ -398,7 +681,7 @@ test("episode number override persists across management, view, schedule, and re
   await page.reload();
   card = page.locator("#idea-override-edit");
   await expect(card).toContainText("EP040");
-  await card.getByRole("button", { name: "Edit show" }).click();
+  await card.click();
   await expect(card.getByRole("spinbutton", { name: "Episode number override" })).toHaveValue("40");
   await card.getByRole("button", { name: "Use Automatic" }).click();
   await expect(card).toContainText("EP041");
@@ -484,9 +767,14 @@ test("Show Management reconciles successful and conflicted mutations without a p
 
   await page.locator("#ideaNotes").fill("Client stale draft");
   await page.getByRole("button", { name: "Save as Draft" }).click();
-  await expect(page.locator("#ideasList")).toContainText("Server canonical concurrent draft");
+  await expect(page.locator("#ideaNotes")).toHaveValue("Client stale draft");
+  await expect(page.locator("#ideasList")).not.toContainText("Server canonical concurrent draft");
   await expect(page.locator("#ideasList")).not.toContainText("Client stale draft");
   await expect(page.locator("#save-status")).toContainText("Newer server data loaded");
+  await expect(page.locator(".sync-notice")).toContainText("unsaved work has been kept");
+  await page.getByRole("button", { name: "Discard & load latest" }).click();
+  await expect(page.locator("#ideasList")).toContainText("Server canonical concurrent draft");
+  await expect(page.locator("#ideaNotes")).toHaveValue("");
   await expect(page.locator(".idea-list-card")).toHaveCount(3);
   expect(exportCount).toBe(2);
   expect(mutationCount).toBe(2);

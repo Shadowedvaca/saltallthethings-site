@@ -142,10 +142,33 @@
 
   <script src="js/auth.js"></script>
   <script src="js/storage.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/sync-view.js"></script>
   <script src="js/ai-service.js"></script>
   <script src="js/toast.js"></script>
   <script>
     Auth.init();
+
+    const syncView = SyncView({
+      document: document,
+      sync: Sync,
+      discard: function() {
+        document.getElementById('manualJoke').value = '';
+        document.getElementById('jokeTheme').value = '';
+        document.getElementById('jokeSuggestions').classList.add('hidden');
+        renderJokes();
+      }
+    });
+
+    function updateJokeComposerDirty() {
+      const dirty = Boolean(
+        document.getElementById('manualJoke').value.trim() ||
+        document.getElementById('jokeTheme').value.trim()
+      );
+      syncView.setDirty('joke-composer', dirty);
+    }
+    document.getElementById('manualJoke').addEventListener('input', updateJokeComposerDirty);
+    document.getElementById('jokeTheme').addEventListener('input', updateJokeComposerDirty);
 
     let currentFilter = 'all';
 
@@ -275,11 +298,13 @@
         createdAt: new Date().toISOString()
       })) return;
       document.getElementById('manualJoke').value = '';
+      updateJokeComposerDirty();
       renderJokes();
       Toast.success('Joke added!');
     }
 
     function startJokeEdit(id) {
+      syncView.setDirty('joke-edit-' + id, true);
       document.getElementById('joke-text-' + id).classList.add('hidden');
       document.getElementById('joke-actions-' + id).classList.add('hidden');
       var ta = document.getElementById('joke-edit-' + id);
@@ -290,6 +315,7 @@
     }
 
     function cancelJokeEdit(id) {
+      syncView.setDirty('joke-edit-' + id, false);
       var joke = Storage.getJokes().find(function(j) { return j.id === id; });
       if (joke) document.getElementById('joke-edit-' + id).value = joke.text;
       document.getElementById('joke-text-' + id).classList.remove('hidden');
@@ -301,7 +327,8 @@
     async function saveJokeEdit(id) {
       var newText = document.getElementById('joke-edit-' + id).value.trim();
       if (!newText) { Toast.error('Joke text cannot be empty.'); return; }
-      if (!await Storage.updateJoke(id, { text: newText })) return;
+      if (!await Storage.updateJoke(id, { text: newText })) { syncView.showConflict(); return; }
+      syncView.setDirty('joke-edit-' + id, false);
       renderJokes();
       Toast.success('Joke updated.');
     }
@@ -328,7 +355,12 @@
     }
 
     // Called by Auth after Storage.init() completes
-    function onStorageReady() { Storage.subscribe(renderJokes); renderJokes(); }
+    function onStorageReady() {
+      Storage.subscribe(function() {
+        if (!syncView.hasUnsavedWork()) renderJokes();
+      });
+      renderJokes();
+    }
   </script>
 </body>
 </html>

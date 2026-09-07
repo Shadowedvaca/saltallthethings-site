@@ -87,7 +87,9 @@ uses `ssh-keyscan` to trust a key observed during deployment.
    `satt-development` services;
 7. waits for Compose health and verifies local and public health report
    `development`, version `unassigned`, and the exact resolved commit; and
-8. prints at most 100 lines of SATT app/database logs on failure.
+8. runs synthetic authenticated integration smoke, including minimal revision
+   catch-up, unauthenticated rejection, and Top 3 resource isolation; and
+9. prints at most 100 lines of SATT app/database logs on failure.
 
 Manual dispatch:
 
@@ -101,6 +103,9 @@ gh workflow run deploy-dev.yml \
 The deployment workflow performs health, migration, public-route, and
 authenticated environment-smoke checks as AI-executable technical validation.
 These results belong in the automatic child development-complete checkpoint.
+The smoke runs inside the application container against loopback, uses only the
+development API/database and synthetic identities, keeps external-service
+access disabled, and removes its temporary records and identities.
 
 Only when User Validation Timing is `Child` or `Parent`, use the prepared
 cumulative development artifact at the configured checkpoint for manual human
