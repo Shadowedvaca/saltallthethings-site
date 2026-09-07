@@ -1485,6 +1485,17 @@ async function main() {
   assert.match(postproductionScript, /Reset selected job/);
   assert.match(postproductionScript, /await this\.loadQueue\(\)/);
   assert.match(fs.readFileSync("js/auth.js", "utf8"), /isAdmin\(\)/);
+  const syncScript = fs.readFileSync("js/sync.js", "utf8");
+  assert.match(syncScript, /canonical-state/);
+  assert.match(syncScript, /reconnect-catch-up/);
+  assert.match(syncScript, /setViewState/);
+  assert.match(syncScript, /controller\.abort\(\)/);
+  assert.match(fs.readFileSync("js/storage.js", "utf8"), /getRevision\(\)/);
+  assert.match(fs.readFileSync("js/auth.js", "utf8"), /Sync\.start\(\)/);
+  assert.match(fs.readFileSync("js/auth.js", "utf8"), /Sync\.stop\('logout'\)/);
+  ["config.html", "jokes.html", "songs.html", "guests.html", "show_management.html", "postproduction.html", "top3.html"].forEach(function(page) {
+    assert.match(fs.readFileSync(page, "utf8"), /<script src="js\/sync\.js"><\/script>/);
+  });
   assert.match(showManagement, /async function updateReleaseDate/);
   assert.match(showManagement, /await ShowEngine\.setReleaseDate/);
   assert.match(showManagement, /latest server state is displayed/);

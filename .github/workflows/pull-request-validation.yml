@@ -73,9 +73,10 @@ jobs:
             node --check "$file"
           done
 
-      - name: Test browser storage, Guest Bank, and credential-status contracts
+      - name: Test browser storage, sync, Guest Bank, and credential-status contracts
         run: |
           node scripts/test_frontend_contract.js
+          node scripts/test_sync_coordinator.js
           node scripts/test_guest_bank_frontend.js
 
       - name: Set up Node for browser automation

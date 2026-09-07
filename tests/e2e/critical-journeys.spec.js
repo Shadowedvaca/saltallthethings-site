@@ -109,6 +109,68 @@ test("Post-Production resets only the selected stale transcription and reloads c
   expect(resetRequests).toBe(1);
 });
 
+test("independent authenticated pages converge from a minimal revision signal", async ({ browser }) => {
+  const contexts = await Promise.all([browser.newContext(), browser.newContext()]);
+  const pages = await Promise.all(contexts.map((context) => context.newPage()));
+
+  async function prepare(page, kind) {
+    await isolateNetwork(page);
+    await page.addInitScript(() => {
+      const payload = btoa(JSON.stringify({ exp: 4102444800, is_admin: false }));
+      localStorage.setItem("satt_jwt", JSON.stringify({ token: `test.${payload}.signature` }));
+    });
+    let exportCalls = 0;
+    let streamCalls = 0;
+    await page.route("**/api/export", async (route) => {
+      exportCalls += 1;
+      const advanced = exportCalls > 1;
+      const state = {
+        config: {}, ideas: [], jokes: [], songs: [], guests: [],
+        guestAssignments: [], showSlots: [], assignments: {},
+        revision: advanced ? 2 : 1,
+      };
+      if (advanced && kind === "song") {
+        state.songs = [{
+          id: "song-remote", artist: "Remote Artist", title: "Canonical Song",
+          youtubeUrl: "https://youtu.be/abcdef1", privateNotes: "", status: "unused",
+          assignedIdeaId: null,
+        }];
+      }
+      if (advanced && kind === "guest") {
+        state.guests = [{
+          id: "guest-remote", displayName: "Canonical Guest", privateNotes: "",
+          status: "active", totalAppearances: 0, appearanceHistory: [],
+        }];
+      }
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(state) });
+    });
+    await page.route("**/api/sync/revisions**", async (route) => {
+      streamCalls += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        headers: { "Cache-Control": "no-cache" },
+        body: 'id: canonical-state:2\nevent: revision\ndata: {"resource":"canonical-state","revision":2}\n\n',
+      });
+    });
+    return {
+      exportCalls: () => exportCalls,
+      streamCalls: () => streamCalls,
+    };
+  }
+
+  const song = await prepare(pages[0], "song");
+  const guest = await prepare(pages[1], "guest");
+  await Promise.all([pages[0].goto("/songs.html"), pages[1].goto("/guests.html")]);
+  await expect(pages[0].getByRole("heading", { name: /Canonical Song/ })).toBeVisible();
+  await expect(pages[1].getByRole("heading", { name: "Canonical Guest" })).toBeVisible();
+  expect(song.exportCalls()).toBeGreaterThanOrEqual(2);
+  expect(guest.exportCalls()).toBeGreaterThanOrEqual(2);
+  expect(song.streamCalls()).toBeGreaterThanOrEqual(1);
+  expect(guest.streamCalls()).toBeGreaterThanOrEqual(1);
+  await Promise.all(contexts.map((context) => context.close()));
+});
+
 test("Schedule Board opens to the current local month and resets on reload", async ({ page }) => {
   await isolateNetwork(page);
   await page.clock.install({ time: new Date("2026-12-31T12:00:00") });

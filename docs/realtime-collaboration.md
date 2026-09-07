@@ -59,8 +59,44 @@ database already enforced for development, test, and production.
   generator. The implementation creates no background task, handle, or
   in-memory subscription and closes every short-lived database session.
 - Reconnect, backoff, duplicate suppression, canonical reload coordination, and
-  dirty-edit behavior are implemented by the later client children in #57 and
-  #58.
+  dirty-edit behavior use the shared browser coordinator described below.
+
+## Browser coordinator contract
+
+Every authenticated management page loads `js/sync.js`. Authentication starts
+one coordinator only after `Storage.init()` has loaded canonical state. Logout,
+page navigation, and repeated initialization abort the prior fetch stream and
+clear its retry timer.
+
+The coordinator owns the latest observed and acknowledged revisions for
+`canonical-state`. It ignores malformed, duplicate, delayed, out-of-order, and
+wrong-resource events. When a signal is already reflected in Storage's current
+revision, it is treated as a self-originated acknowledgement and does not cause
+another reload or mutation. Otherwise one in-flight canonical `/api/export`
+reload is shared by all signals; the stream never writes records.
+
+After transport loss, the last acknowledged state remains visible. Adapters
+receive `disconnected` with an actionable retry indication, and reconnect uses
+a capped exponential delay from one to 30 seconds. Before opening the next
+stream, a clean client reloads canonical state, so it converges even if signals
+were missed. A `401` or missing local token ends retry rather than creating an
+unauthorized loop.
+
+Views register `onSyncStatus(status)` adapters instead of being mutated by the
+transport. The status state is one of:
+
+- `clean`: local view matches its acknowledged canonical revision;
+- `dirty`: the view has an unsaved local edit;
+- `refreshing`: canonical reload is in progress;
+- `conflicted`: a newer revision arrived while a view was dirty;
+- `disconnected`: transport or refresh failed and acknowledged state remains
+  visible.
+
+The shared coordinator never silently reloads a dirty view. Returning a view to
+clean triggers one pending catch-up. Page-specific dirty detection, visible
+messages, and keep/reload actions are added in #58; the coordinator contract is
+already deterministic and transport-independent so those adapters do not own
+connection or retry logic.
 
 ## Operations and rollback
 
@@ -70,7 +106,8 @@ disabled for this response. Bounded application access logs can diagnose
 authorization or response failures without logging token values or signal
 payloads.
 
-A code rollback removes the subscription endpoint while leaving canonical
-mutation and `If-Match` behavior unchanged. Clients must already tolerate a
-missing or disconnected notification stream and continue to use canonical
-reload and ordinary conflict recovery. No database rollback is needed.
+A code rollback removes the shared coordinator and subscription endpoint while
+leaving canonical mutation and `If-Match` behavior unchanged. A missing or
+disconnected notification stream leaves the last acknowledged state visible;
+ordinary page reload and conflict recovery remain available. No database
+rollback is needed.

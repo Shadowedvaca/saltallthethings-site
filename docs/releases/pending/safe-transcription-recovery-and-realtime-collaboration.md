@@ -11,12 +11,14 @@
 - The Post-Production page identifies an expired lease and gives administrators a targeted reset for that selected row.
 - Claim authority stays server-side and watcher-only endpoints require an administrator session.
 - A resource-bounded SSE endpoint reports only the canonical-state revision, rechecks account authorization, and closes without retaining background subscriptions.
+- A reusable browser coordinator coalesces newer revisions into canonical reloads, ignores duplicate/out-of-order/self-originated signals, catches up after reconnect, and tears down streams and retry timers with the authentication/page lifecycle.
 
 ## Validation
 
 - Focused transcription contract, watcher, CRUD, route, authorization, and targeted-recovery tests pass against a disposable isolated PostgreSQL container (34 passed).
 - Focused notification tests pass for authentication, resource authorization, commit/rollback visibility, payload minimization, heartbeat behavior, revocation, expiry, and disconnect cleanup (8 passed).
-- The cumulative migration-backed Python suite passes (378 passed) with 67.33% overall and 100.00% changed-line coverage, and all critical Playwright journeys pass in the pinned runner (8 passed), including selected-row stale-job recovery.
+- Deterministic client tests use a fake transport, clock, canonical loader, and abort controller to cover retry/backoff, missed-event catch-up, coalescing, ordering, self-originated signals, dirty/conflicted states, auth termination, SSE parsing, and teardown.
+- The cumulative migration-backed Python suite passes (378 passed) with 67.33% overall and 100.00% changed-line coverage, and all critical Playwright journeys pass in the pinned runner (9 passed), including selected-row stale-job recovery and independent Song/Guest page convergence from one minimal signal per context.
 - Python compilation, JavaScript syntax, frontend contracts, release validation, repository documentation validation, and the CI application-image build pass.
 - Manual UI validation is scheduled once on the final cumulative development artifact under Parent timing.
 
@@ -33,4 +35,4 @@
 ## Known Limitations
 
 - Recovery depends on the recording watcher renewing its three-minute lease every 30 seconds; a job with no valid legacy timestamp is intentionally not declared stale automatically.
-- Notification is a reload hint rather than a data channel; reconnect and page-level refresh behavior are completed by the later collaboration children.
+- Notification is a reload hint rather than a data channel; page-specific dirty-form messaging and reconciliation controls are completed by the later collaboration child.

@@ -123,6 +123,10 @@ const Storage = {
     return this._cache[key] !== undefined ? this._cache[key] : null;
   },
 
+  getRevision() {
+    return this._revision;
+  },
+
   async set(key, value) {
     this._cache[key] = value;
     try {
