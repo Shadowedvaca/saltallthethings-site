@@ -12,8 +12,8 @@
 
 ## Validation
 
-- Focused transcription contract, watcher, CRUD, route, authorization, and targeted-recovery tests pass against a disposable isolated PostgreSQL container (30 passed).
-- The complete migration-backed Python suite passes (365 passed), and all critical Playwright journeys pass in the pinned runner (8 passed), including selected-row stale-job recovery.
+- Focused transcription contract, watcher, CRUD, route, authorization, and targeted-recovery tests pass against a disposable isolated PostgreSQL container (34 passed).
+- The complete migration-backed Python suite passes (370 passed) with 66.68% overall and 100.00% changed-line coverage, and all critical Playwright journeys pass in the pinned runner (8 passed), including selected-row stale-job recovery.
 - Python compilation, JavaScript syntax, frontend contracts, release validation, repository documentation validation, and the CI application-image build pass.
 - Manual UI validation is scheduled once on the final cumulative development artifact under Parent timing.
 

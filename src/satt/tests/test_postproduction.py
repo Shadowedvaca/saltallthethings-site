@@ -6,16 +6,23 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 import pytest
+from fastapi import HTTPException
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import satt.routes.postproduction as postproduction_routes
 from satt.config import get_settings
 from satt.crud import (
+    TranscriptionJobConflictError,
+    TranscriptionJobNotFoundError,
     claim_transcription_job,
+    get_claimable_transcription_jobs,
     queue_transcription_job,
+    reset_stale_transcription_job,
     set_asset_inventory,
     set_production_file_key,
     set_transcription_job,
+    update_transcription_claim,
 )
 
 
@@ -596,3 +603,236 @@ async def test_watcher_poll_and_claim_recover_only_stale_job(
         headers=_headers(is_admin=True),
     )
     assert active.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_atomic_job_helpers_reject_invalid_states(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await db_client.put(
+        "/api/data/showSlots", json=[PAST_SLOT_1], headers=_headers()
+    )
+
+    with pytest.raises(TranscriptionJobNotFoundError, match="Slot not found"):
+        await queue_transcription_job(db_session, "missing-slot")
+    with pytest.raises(TranscriptionJobConflictError, match="Production file key"):
+        await queue_transcription_job(db_session, PAST_SLOT_1["id"])
+
+    await set_production_file_key(db_session, PAST_SLOT_1["id"], "EP001_Test")
+    pending = await queue_transcription_job(db_session, PAST_SLOT_1["id"])
+    assert await queue_transcription_job(db_session, PAST_SLOT_1["id"]) == pending
+
+    claim = await claim_transcription_job(
+        db_session, PAST_SLOT_1["id"], "watcher-one"
+    )
+    with pytest.raises(TranscriptionJobConflictError, match="active watcher lease"):
+        await claim_transcription_job(db_session, PAST_SLOT_1["id"], "watcher-two")
+    with pytest.raises(TranscriptionJobConflictError, match="already active"):
+        await queue_transcription_job(db_session, PAST_SLOT_1["id"])
+    with pytest.raises(TranscriptionJobConflictError, match="no longer active"):
+        await update_transcription_claim(
+            db_session, PAST_SLOT_1["id"], "wrong-token", "done"
+        )
+    with pytest.raises(TranscriptionJobConflictError, match="active watcher lease"):
+        await reset_stale_transcription_job(
+            db_session, PAST_SLOT_1["id"], "testuser"
+        )
+
+    await update_transcription_claim(
+        db_session, PAST_SLOT_1["id"], claim["claimToken"], "done"
+    )
+    with pytest.raises(TranscriptionJobConflictError, match="not claimable"):
+        await claim_transcription_job(db_session, PAST_SLOT_1["id"], "watcher-two")
+    with pytest.raises(TranscriptionJobConflictError, match="not in progress"):
+        await reset_stale_transcription_job(
+            db_session, PAST_SLOT_1["id"], "testuser"
+        )
+
+
+@pytest.mark.asyncio
+async def test_atomic_job_helpers_renew_finish_and_recover_with_metadata(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    await db_client.put(
+        "/api/data/showSlots", json=[PAST_SLOT_1, PAST_SLOT_2], headers=_headers()
+    )
+    await set_production_file_key(db_session, PAST_SLOT_1["id"], "EP001_Test")
+    await set_production_file_key(db_session, PAST_SLOT_2["id"], "EP002_Test")
+    await queue_transcription_job(db_session, PAST_SLOT_1["id"])
+    claim = await claim_transcription_job(
+        db_session, PAST_SLOT_1["id"], "watcher-one"
+    )
+    renewed = await update_transcription_claim(
+        db_session, PAST_SLOT_1["id"], claim["claimToken"], "in_progress"
+    )
+    assert renewed["leaseExpiresAt"]
+    failed = await update_transcription_claim(
+        db_session,
+        PAST_SLOT_1["id"],
+        claim["claimToken"],
+        "failed",
+        error="bounded failure",
+    )
+    assert failed["error"] == "bounded failure"
+    assert "claimToken" not in failed
+
+    stale_time = datetime.now(timezone.utc) - timedelta(minutes=10)
+    await set_transcription_job(
+        db_session,
+        PAST_SLOT_2["id"],
+        {
+            "status": "in_progress",
+            "updatedAt": stale_time.isoformat(),
+            "claimToken": "expired",
+            "error": "old failure",
+        },
+    )
+    claimable = await get_claimable_transcription_jobs(db_session)
+    assert claimable == [
+        {"slotId": PAST_SLOT_2["id"], "productionFileKey": "EP002_Test"}
+    ]
+    recovered = await claim_transcription_job(
+        db_session, PAST_SLOT_2["id"], "watcher-two"
+    )
+    assert recovered["recoveryCount"] == 1
+    assert recovered["recoveredAt"]
+    assert "error" not in recovered
+    reset_time = datetime.now(timezone.utc) + timedelta(minutes=10)
+    reset = await reset_stale_transcription_job(
+        db_session, PAST_SLOT_2["id"], "testuser", now=reset_time
+    )
+    assert reset["status"] == "pending"
+    assert reset["resetCount"] == 1
+    assert "claimToken" not in reset
+
+
+@pytest.mark.asyncio
+async def test_watcher_route_not_found_and_queue_conflict_responses(
+    db_client: AsyncClient, db_session: AsyncSession
+):
+    admin = _headers(is_admin=True)
+    missing_claim = await db_client.post(
+        "/api/postproduction/missing/transcribe-claim",
+        json={"workerId": "watcher-one"},
+        headers=admin,
+    )
+    missing_status = await db_client.put(
+        "/api/postproduction/missing/transcribe-status",
+        json={"status": "done", "claimToken": "owned"},
+        headers=admin,
+    )
+    missing_reset = await db_client.post(
+        "/api/postproduction/missing/transcribe-reset", headers=admin
+    )
+    assert missing_claim.status_code == 404
+    assert missing_status.status_code == 404
+    assert missing_reset.status_code == 404
+
+    await db_client.put(
+        "/api/data/showSlots", json=[PAST_SLOT_1], headers=_headers()
+    )
+    await set_production_file_key(db_session, PAST_SLOT_1["id"], "EP001_Test")
+    await queue_transcription_job(db_session, PAST_SLOT_1["id"])
+    claim = await claim_transcription_job(
+        db_session, PAST_SLOT_1["id"], "watcher-one"
+    )
+    queue_conflict = await db_client.post(
+        f"/api/postproduction/{PAST_SLOT_1['id']}/transcribe", headers=_headers()
+    )
+    heartbeat = await db_client.put(
+        f"/api/postproduction/{PAST_SLOT_1['id']}/transcribe-status",
+        json={"status": "in_progress", "claimToken": claim["claimToken"]},
+        headers=admin,
+    )
+    assert queue_conflict.status_code == 409
+    assert heartbeat.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_transcription_route_error_mapping_is_explicit(monkeypatch):
+    async def empty_queue(_db):
+        return []
+
+    monkeypatch.setattr(postproduction_routes, "get_postproduction_queue", empty_queue)
+    with pytest.raises(HTTPException) as missing:
+        await postproduction_routes.request_transcription("missing", {}, object())
+    assert missing.value.status_code == 404
+
+    async def keyless_queue(_db):
+        return [{"slotId": "slot", "productionFileKey": None}]
+
+    monkeypatch.setattr(postproduction_routes, "get_postproduction_queue", keyless_queue)
+    with pytest.raises(HTTPException) as keyless:
+        await postproduction_routes.request_transcription("slot", {}, object())
+    assert keyless.value.status_code == 400
+
+    async def usable_queue(_db):
+        return [{"slotId": "slot", "productionFileKey": "EP001_Test"}]
+
+    async def conflict(*_args, **_kwargs):
+        raise TranscriptionJobConflictError("conflict")
+
+    monkeypatch.setattr(postproduction_routes, "get_postproduction_queue", usable_queue)
+    monkeypatch.setattr(postproduction_routes, "queue_transcription_job", conflict)
+    with pytest.raises(HTTPException) as queue_conflict:
+        await postproduction_routes.request_transcription("slot", {}, object())
+    assert queue_conflict.value.status_code == 409
+
+    async def not_found(*_args, **_kwargs):
+        raise TranscriptionJobNotFoundError("missing")
+
+    monkeypatch.setattr(postproduction_routes, "claim_transcription_job", not_found)
+    with pytest.raises(HTTPException) as claim_missing:
+        await postproduction_routes.claim_transcription(
+            "missing",
+            postproduction_routes.TranscriptionClaimRequest(workerId="watcher"),
+            {"is_admin": True},
+            object(),
+        )
+    assert claim_missing.value.status_code == 404
+    monkeypatch.setattr(postproduction_routes, "claim_transcription_job", conflict)
+    with pytest.raises(HTTPException) as claim_conflict:
+        await postproduction_routes.claim_transcription(
+            "slot",
+            postproduction_routes.TranscriptionClaimRequest(workerId="watcher"),
+            {"is_admin": True},
+            object(),
+        )
+    assert claim_conflict.value.status_code == 409
+
+    invalid_status = postproduction_routes.TranscriptionStatusRequest(
+        status="invalid", claimToken="owned"
+    )
+    with pytest.raises(HTTPException) as invalid:
+        await postproduction_routes.update_transcription_status(
+            "slot", invalid_status, {"is_admin": True}, object()
+        )
+    assert invalid.value.status_code == 400
+    valid_status = postproduction_routes.TranscriptionStatusRequest(
+        status="done", claimToken="owned"
+    )
+    monkeypatch.setattr(postproduction_routes, "update_transcription_claim", not_found)
+    with pytest.raises(HTTPException) as status_missing:
+        await postproduction_routes.update_transcription_status(
+            "missing", valid_status, {"is_admin": True}, object()
+        )
+    assert status_missing.value.status_code == 404
+    monkeypatch.setattr(postproduction_routes, "update_transcription_claim", conflict)
+    with pytest.raises(HTTPException) as status_conflict:
+        await postproduction_routes.update_transcription_status(
+            "slot", valid_status, {"is_admin": True}, object()
+        )
+    assert status_conflict.value.status_code == 409
+
+    monkeypatch.setattr(postproduction_routes, "reset_stale_transcription_job", not_found)
+    with pytest.raises(HTTPException) as reset_missing:
+        await postproduction_routes.reset_transcription(
+            "missing", {"is_admin": True, "username": "admin"}, object()
+        )
+    assert reset_missing.value.status_code == 404
+    monkeypatch.setattr(postproduction_routes, "reset_stale_transcription_job", conflict)
+    with pytest.raises(HTTPException) as reset_conflict:
+        await postproduction_routes.reset_transcription(
+            "slot", {"is_admin": True, "username": "admin"}, object()
+        )
+    assert reset_conflict.value.status_code == 409

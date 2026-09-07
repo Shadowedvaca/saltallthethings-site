@@ -216,10 +216,7 @@ async def request_transcription(
 
     # Return the updated row
     queue = await get_postproduction_queue(db)
-    for r in queue:
-        if r["slotId"] == slot_id:
-            return r
-    raise HTTPException(status_code=404, detail="Slot not found after update")
+    return next(r for r in queue if r["slotId"] == slot_id)
 
 
 @router.get("/postproduction/transcription-jobs")
@@ -308,10 +305,7 @@ async def reset_transcription(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     queue = await get_postproduction_queue(db)
-    for row in queue:
-        if row["slotId"] == slot_id:
-            return row
-    raise HTTPException(status_code=404, detail="Slot not found after reset")
+    return next(row for row in queue if row["slotId"] == slot_id)
 
 
 def _build_scan_config(settings, db_config: dict) -> dict:
