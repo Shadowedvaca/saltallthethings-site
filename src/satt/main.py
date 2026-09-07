@@ -16,6 +16,7 @@ from satt.routes.guests import router as guests_router
 from satt.routes.postproduction import router as postproduction_router
 from satt.routes.public import router as public_router
 from satt.routes.songs import router as songs_router
+from satt.routes.sync import router as sync_router
 from satt.routes.top3 import router as top3_router
 from satt.routes.users import router as users_router
 from satt.version import APP_VERSION
@@ -37,6 +38,7 @@ app.include_router(auth_router, prefix="/api")
 app.include_router(data_router, prefix="/api")
 app.include_router(guests_router, prefix="/api")
 app.include_router(songs_router, prefix="/api")
+app.include_router(sync_router, prefix="/api")
 app.include_router(top3_router, prefix="/api")
 app.include_router(ai_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
