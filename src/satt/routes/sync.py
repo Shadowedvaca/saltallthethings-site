@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 import json
+import logging
 import time
 from typing import Any
 
@@ -19,6 +20,7 @@ from satt.database import get_session_factory
 from satt.models import User
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 CANONICAL_RESOURCE = "canonical-state"
 ELIGIBLE_RESOURCES = frozenset({CANONICAL_RESOURCE})
@@ -75,20 +77,33 @@ async def revision_event_stream(
     """Yield committed revision advances until disconnect or authorization ends."""
     last_revision = after
     next_heartbeat = time.monotonic() + heartbeat_interval
-    while True:
-        if await request.is_disconnected() or _token_is_expired(user):
-            return
-        revision = await _read_authorized_revision(factory, int(user["user_id"]))
-        if revision is None:
-            return
-        if revision > last_revision:
-            last_revision = revision
-            yield _revision_event(resource, revision)
-            next_heartbeat = time.monotonic() + heartbeat_interval
-        elif time.monotonic() >= next_heartbeat:
-            yield ": keep-alive\n\n"
-            next_heartbeat = time.monotonic() + heartbeat_interval
-        await asyncio.sleep(poll_interval)
+    close_reason = "cancelled"
+    try:
+        while True:
+            if await request.is_disconnected():
+                close_reason = "client-disconnected"
+                return
+            if _token_is_expired(user):
+                close_reason = "token-expired"
+                return
+            revision = await _read_authorized_revision(factory, int(user["user_id"]))
+            if revision is None:
+                close_reason = "account-inactive"
+                return
+            if revision > last_revision:
+                last_revision = revision
+                yield _revision_event(resource, revision)
+                next_heartbeat = time.monotonic() + heartbeat_interval
+            elif time.monotonic() >= next_heartbeat:
+                yield ": keep-alive\n\n"
+                next_heartbeat = time.monotonic() + heartbeat_interval
+            await asyncio.sleep(poll_interval)
+    finally:
+        logger.info(
+            "revision_stream_closed resource=%s reason=%s",
+            resource,
+            close_reason,
+        )
 
 
 @router.get("/sync/revisions")
@@ -107,6 +122,8 @@ async def subscribe_to_revisions(
     current = await _read_authorized_revision(factory, int(user["user_id"]))
     if current is None:
         raise HTTPException(status_code=401, detail="Account is not active")
+
+    logger.info("revision_stream_opened resource=%s", resource)
 
     return StreamingResponse(
         revision_event_stream(

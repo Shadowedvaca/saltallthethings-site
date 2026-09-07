@@ -120,6 +120,10 @@ def test_deployment_smoke_exercises_song_lifecycle_without_external_services():
     assert '"/js/songs.js"' in source
     assert '"/js/guests.js"' in source
     assert '"/js/sync-view.js"' in source
+    assert '"/api/sync/revisions?resource=canonical-state&after=0"' in source
+    assert '"unknown revision stream resource"' in source
+    assert '"authenticated revision stream"' in source
+    assert '"revision stream exposed protected detail"' in source
     assert '"/js/top3-bank.js"' in source
     assert '"/js/top3-episode.js"' in source
     assert '"validateSongInput" in response.text' in source

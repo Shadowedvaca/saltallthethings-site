@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+import logging
 import os
 
 import jwt
@@ -186,8 +187,39 @@ def test_token_lifetime_requires_valid_expiry():
     assert sync_routes._token_is_expired({})
     assert sync_routes._token_is_expired({"exp": "not-a-timestamp"})
     assert not sync_routes._token_is_expired(
-        {"exp": datetime.now() + timedelta(minutes=1)}
+        {"exp": datetime.now(timezone.utc) + timedelta(minutes=1)}
     )
+
+
+@pytest.mark.asyncio
+async def test_stream_lifecycle_logs_are_bounded_and_payload_free(
+    monkeypatch, caplog
+):
+    protected = "private-top3-pick-must-not-be-logged"
+
+    async def committed_revision(_factory, _user_id):
+        return 12
+
+    monkeypatch.setattr(sync_routes, "_read_authorized_revision", committed_revision)
+    caplog.set_level(logging.INFO, logger="satt.routes.sync")
+    user = {**_user(), "protected": protected}
+    response = await sync_routes.subscribe_to_revisions(
+        DisconnectSequence(False, True),
+        sync_routes.CANONICAL_RESOURCE,
+        11,
+        user,
+        object(),
+    )
+    assert "revision\":12" in await anext(response.body_iterator)
+    with pytest.raises(StopAsyncIteration):
+        await anext(response.body_iterator)
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert messages == [
+        "revision_stream_opened resource=canonical-state",
+        "revision_stream_closed resource=canonical-state reason=client-disconnected",
+    ]
+    assert protected not in " ".join(messages)
 
 
 @pytest.mark.asyncio

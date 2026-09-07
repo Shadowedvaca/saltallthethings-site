@@ -109,8 +109,15 @@ test("Post-Production resets only the selected stale transcription and reloads c
   expect(resetRequests).toBe(1);
 });
 
-test("independent authenticated pages converge from a minimal revision signal", async ({ browser }) => {
-  const contexts = await Promise.all([browser.newContext(), browser.newContext()]);
+test("every eligible authenticated workflow converges from a minimal revision signal", async ({ browser }) => {
+  const workflows = [
+    { kind: "config", path: "/config.html" },
+    { kind: "joke", path: "/jokes.html" },
+    { kind: "song", path: "/songs.html" },
+    { kind: "guest", path: "/guests.html" },
+    { kind: "show", path: "/show_management.html" },
+  ];
+  const contexts = await Promise.all(workflows.map(() => browser.newContext()));
   const pages = await Promise.all(contexts.map((context) => context.newPage()));
 
   async function prepare(page, kind) {
@@ -129,6 +136,13 @@ test("independent authenticated pages converge from a minimal revision signal", 
         guestAssignments: [], showSlots: [], assignments: {},
         revision: advanced ? 2 : 1,
       };
+      if (advanced && kind === "config") state.config = { titleCount: 7 };
+      if (advanced && kind === "joke") {
+        state.jokes = [{
+          id: "joke-remote", text: "Canonical Joke", status: "unused",
+          source: "manual", createdAt: "2026-09-07T12:00:00Z", usedByIdeaId: null,
+        }];
+      }
       if (advanced && kind === "song") {
         state.songs = [{
           id: "song-remote", artist: "Remote Artist", title: "Canonical Song",
@@ -142,6 +156,14 @@ test("independent authenticated pages converge from a minimal revision signal", 
           status: "active", totalAppearances: 0, appearanceHistory: [],
         }];
       }
+      if (advanced && kind === "show") {
+        state.ideas = [{
+          id: "show-remote", rawNotes: "Canonical notes", titles: ["Canonical Show"],
+          selectedTitle: "Canonical Show", summary: "Canonical summary", outline: [],
+          status: "processed", createdAt: "2026-09-07T12:00:00Z",
+          updatedAt: "2026-09-07T12:00:00Z", imageFileId: null,
+        }];
+      }
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(state) });
     });
     await page.route("**/api/sync/revisions**", async (route) => {
@@ -153,22 +175,83 @@ test("independent authenticated pages converge from a minimal revision signal", 
         body: 'id: canonical-state:2\nevent: revision\ndata: {"resource":"canonical-state","revision":2}\n\n',
       });
     });
+    if (kind === "show") {
+      await page.route("**/api/top3/**", async (route) => {
+        const pathname = new URL(route.request().url()).pathname;
+        const body = pathname === "/api/top3/concepts"
+          ? { revision: 2, concepts: [] }
+          : { revision: 2, assignment: null };
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+      });
+    }
     return {
       exportCalls: () => exportCalls,
       streamCalls: () => streamCalls,
     };
   }
 
-  const song = await prepare(pages[0], "song");
-  const guest = await prepare(pages[1], "guest");
-  await Promise.all([pages[0].goto("/songs.html"), pages[1].goto("/guests.html")]);
-  await expect(pages[0].getByRole("heading", { name: /Canonical Song/ })).toBeVisible();
-  await expect(pages[1].getByRole("heading", { name: "Canonical Guest" })).toBeVisible();
-  expect(song.exportCalls()).toBeGreaterThanOrEqual(2);
-  expect(guest.exportCalls()).toBeGreaterThanOrEqual(2);
-  expect(song.streamCalls()).toBeGreaterThanOrEqual(1);
-  expect(guest.streamCalls()).toBeGreaterThanOrEqual(1);
+  const counters = await Promise.all(workflows.map((workflow, index) => prepare(pages[index], workflow.kind)));
+  await Promise.all(workflows.map((workflow, index) => pages[index].goto(workflow.path)));
+  await expect(pages[0].locator("#titleCount")).toHaveValue("7");
+  await expect(pages[1].locator("#jokesList")).toContainText("Canonical Joke");
+  await expect(pages[2].getByRole("heading", { name: /Canonical Song/ })).toBeVisible();
+  await expect(pages[3].getByRole("heading", { name: "Canonical Guest" })).toBeVisible();
+  await expect(pages[4].locator("#ideasList")).toContainText("Canonical Show");
+  for (const counter of counters) {
+    expect(counter.exportCalls()).toBeGreaterThanOrEqual(2);
+    expect(counter.streamCalls()).toBeGreaterThanOrEqual(1);
+  }
+  await Promise.all(pages.map((page) => page.reload()));
+  await expect(pages[0].locator("#titleCount")).toHaveValue("7");
+  await expect(pages[1].locator("#jokesList")).toContainText("Canonical Joke");
+  await expect(pages[2].getByRole("heading", { name: /Canonical Song/ })).toBeVisible();
+  await expect(pages[3].getByRole("heading", { name: "Canonical Guest" })).toBeVisible();
+  await expect(pages[4].locator("#ideasList")).toContainText("Canonical Show");
   await Promise.all(contexts.map((context) => context.close()));
+});
+
+test("an interrupted revision stream catches up after the server returns", async ({ page }) => {
+  await isolateNetwork(page);
+  await page.addInitScript(() => {
+    const payload = btoa(JSON.stringify({ exp: 4102444800, is_admin: false }));
+    localStorage.setItem("satt_jwt", JSON.stringify({ token: `test.${payload}.signature` }));
+  });
+  let exportCalls = 0;
+  let streamCalls = 0;
+  await page.route("**/api/export", async (route) => {
+    exportCalls += 1;
+    const advanced = exportCalls > 1;
+    await route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({
+        config: {}, ideas: [], jokes: [],
+        songs: advanced ? [{
+          id: "song-after-restart", artist: "Recovered Artist", title: "Recovered Song",
+          youtubeUrl: "https://youtu.be/abcdef1", privateNotes: "", status: "unused",
+          assignedIdeaId: null,
+        }] : [],
+        guests: [], guestAssignments: [], showSlots: [], assignments: {},
+        revision: advanced ? 2 : 1,
+      }),
+    });
+  });
+  await page.route("**/api/sync/revisions**", async (route) => {
+    streamCalls += 1;
+    if (streamCalls === 1) {
+      await route.fulfill({ status: 503, body: "temporarily unavailable" });
+      return;
+    }
+    await route.fulfill({
+      status: 200, contentType: "text/event-stream",
+      body: 'event: revision\ndata: {"resource":"canonical-state","revision":2}\n\n',
+    });
+  });
+
+  await page.goto("/songs.html");
+  await expect(page.locator(".sync-notice")).toContainText("disconnected");
+  await expect(page.getByRole("heading", { name: /Recovered Song/ })).toBeVisible({ timeout: 5000 });
+  expect(exportCalls).toBeGreaterThanOrEqual(2);
+  expect(streamCalls).toBe(2);
 });
 
 test("a newer revision never overwrites a Song Bank draft before explicit acceptance", async ({ browser }) => {

@@ -142,12 +142,45 @@ of preserving unsaved work rather than mixing revisions.
 
 No migration, external provider, secret, or infrastructure change is required.
 The existing app container and reverse proxy carry the stream; buffering is
-disabled for this response. Bounded application access logs can diagnose
-authorization or response failures without logging token values or signal
-payloads.
+disabled for this response.
+
+The application emits exactly one `revision_stream_opened` record after a
+subscription has passed authentication/resource checks and one
+`revision_stream_closed` record when the generator observes client disconnect,
+token expiry, account deactivation, or cancellation. These records contain the
+fixed resource label and a bounded reason only. They do not contain a user ID,
+token, cursor, revision, payload, URL query, canonical record, Top 3 activity,
+or credential. Existing access logs remain the source for response status; use
+bounded application logs only when diagnosing connection failures.
+
+Capacity follows a deliberately simple model: one browser page owns at most one
+stream; each stream performs one small revision/account query per second in a
+short-lived database session; idle heartbeats are emitted every 15 seconds;
+and no in-memory subscriber registry or per-stream background task is retained.
+The browser permits only one active retry timer, backs off from one second to a
+30-second cap, and cancels both stream and timer on logout/navigation. The
+current single Uvicorn worker is therefore suitable for the small authenticated
+operator group, but this is not a general high-fan-out notification service.
+Before materially increasing concurrent users, measure open connections,
+database query rate, proxy timeouts, and worker event-loop latency in the target
+environment rather than assuming linear headroom.
+
+Development and test deployment smoke opens the authenticated endpoint from
+inside the application container, asks for immediate catch-up from the prior
+revision, and checks the exact minimal event. It also proves unauthenticated
+rejection and rejects a Top 3-shaped resource without exposing private activity.
+The browser suite exercises all five eligible pages, explicit dirty-work
+resolution, failed-stream reconnect/catch-up, and persistent canonical state
+after reload. Deterministic coordinator tests cap retry delay and prove that
+repeated failures never multiply timers. Hosted container recovery separately
+restarts the application after a forced health mismatch and verifies the same
+immutable image and database remain healthy.
 
 A code rollback removes the shared coordinator and subscription endpoint while
 leaving canonical mutation and `If-Match` behavior unchanged. A missing or
 disconnected notification stream leaves the last acknowledged state visible;
 ordinary page reload and conflict recovery remain available. No database
-rollback is needed.
+rollback is needed. Roll back application and static assets together to the
+prior compatible exact-SHA artifact; mixed old/new page assets are unsupported.
+Existing canonical data remains compatible and the notification clients make
+no mutations that require reversal.

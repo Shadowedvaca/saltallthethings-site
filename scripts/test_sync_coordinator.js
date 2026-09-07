@@ -173,6 +173,23 @@ async function testReconnectCatchUpAndBackoff() {
   test.coordinator.stop("test-complete");
 }
 
+async function testRetryIsCappedAndNeverMultipliesTimers() {
+  const test = harness();
+  test.coordinator.start();
+  const expected = [1000, 2000, 4000, 8000, 16000, 30000, 30000];
+  for (const delay of expected) {
+    test.connections.at(-1).pending.reject(new Error("server restarting"));
+    await settle();
+    assert.equal(test.clock.activeCount(), 1, "one failed stream schedules one retry");
+    assert.equal(test.statuses.at(-1).retryInMs, delay);
+    assert.equal(test.clock.runNext(), delay);
+    await settle();
+  }
+  assert.equal(test.connections.length, expected.length + 1);
+  test.coordinator.stop("test-complete");
+  assert.equal(test.clock.activeCount(), 0);
+}
+
 async function testDirtyConflictAndExplicitCatchUp() {
   const test = harness();
   test.coordinator.start();
@@ -272,6 +289,7 @@ async function main() {
   await testCoalescesSignals();
   await testSignalDuringReloadGetsOneFollowUpCatchUp();
   await testReconnectCatchUpAndBackoff();
+  await testRetryIsCappedAndNeverMultipliesTimers();
   await testDirtyConflictAndExplicitCatchUp();
   await testFailureAndTeardown();
   await testAuthLifecycle();
