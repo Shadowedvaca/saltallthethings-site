@@ -160,6 +160,8 @@ jobs:
               sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' \
               < /dev/null | gzip -c > "$backup"
             chmod 0600 "$backup"
+            gzip -t "$backup"
+            echo "Verified SATT development pre-deploy backup at $backup"
             find /opt/satt-platform/backups \
               -maxdepth 1 -type f -name 'pre-deploy-*.sql.gz' -mtime +14 -delete
           fi

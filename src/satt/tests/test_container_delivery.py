@@ -331,6 +331,8 @@ def test_nonproduction_deployments_follow_shared_host_contract():
             "trap release_lock EXIT",
             'exit "$status"',
             "logs --no-color --tail 100 app database",
+            'gzip -t "$backup"',
+            f"Verified SATT {environment} pre-deploy backup at $backup",
         ):
             assert required in source
 
