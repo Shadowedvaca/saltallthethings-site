@@ -38,6 +38,15 @@ must not be reused.
 - The deployment workflow operates only in `/opt/satt-platform` and the
   `satt-development` Compose project. It does not prune global Docker images or
   restart another application's containers.
+- SATT coordinates its remote mutation phase with every other application on
+  the shared host by holding `/run/lock/shared-platform-deployment.lock`. It
+  waits for at most 2700 seconds and never replaces this common protocol with
+  an application-specific lock or installed helper.
+- After acquiring the lock and before changing the checkout, backup set,
+  image, containers, or database, deployment requires at least 12 GiB of free
+  root-disk space, 1 GiB of configured swap, and 2 GiB of combined available
+  memory plus free swap. Admission failure leaves the active SATT environment
+  unchanged.
 
 ## Server bootstrap
 
@@ -80,14 +89,25 @@ uses `ssh-keyscan` to trust a key observed during deployment.
 1. accepts an explicit `codex/*` branch;
 2. resolves that branch through read-only checkout to one immutable commit;
 3. connects using strict known-host verification;
-4. fetches and checks out only the resolved commit on the server;
-5. creates a compressed, SATT-only pre-deploy database backup when a database
+4. waits for and acquires the common shared-host deployment lock, verifies the
+   common resource thresholds, and only then fetches or changes active state;
+5. fetches and checks out only the resolved commit on the server;
+6. creates a compressed, SATT-only pre-deploy database backup when a database
    already exists;
-6. builds the shared application image and starts only the
+7. builds the shared application image and starts only the
    `satt-development` services;
-7. waits for Compose health and verifies local and public health report
+8. waits for Compose health and, while still holding the lock, verifies local
+   health, migration state, and authenticated smoke behavior; then verifies
+   public health reports
    `development`, version `unassigned`, and the exact resolved commit; and
-8. prints at most 100 lines of SATT app/database logs on failure.
+9. prints at most 100 lines of SATT app/database logs on failure and records
+   lock acquisition, admission, and release without exposing secrets.
+
+The lock covers exact-SHA checkout, scoped backup retention, on-host image
+build, container activation, migrations, local health, migration verification,
+authenticated smoke, diagnostics, and SATT-scoped cleanup. The GitHub Actions
+concurrency group remains an additional same-repository guard; it does not
+replace the cross-repository host lock.
 
 Manual dispatch:
 

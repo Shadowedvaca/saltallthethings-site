@@ -40,6 +40,15 @@ reused.
 - The deployment workflow operates only in `/opt/satt-platform` and the
   `satt-test` Compose project. It does not prune global Docker state or restart
   another application's containers.
+- SATT coordinates its remote mutation phase with every other application on
+  the shared host by holding `/run/lock/shared-platform-deployment.lock`. It
+  waits for at most 2700 seconds and never depends on an installed shared
+  helper.
+- After acquiring the lock and before changing the checkout, backup set,
+  image, containers, or database, deployment requires at least 12 GiB of free
+  root-disk space, 1 GiB of configured swap, and 2 GiB of combined available
+  memory plus free swap. Admission failure leaves the active SATT test
+  environment unchanged.
 
 ## Server bootstrap
 
@@ -82,16 +91,26 @@ names:
 1. runs only for a pushed commit on `main`;
 2. checks out and records exactly `github.sha`;
 3. connects using strict known-host verification;
-4. fetches and checks out only that immutable commit on the server;
-5. creates a compressed SATT-only pre-deploy database backup when a database
+4. waits for and acquires the common shared-host deployment lock, verifies the
+   common resource thresholds, and only then fetches or changes active state;
+5. fetches and checks out only that immutable commit on the server;
+6. creates a compressed SATT-only pre-deploy database backup when a database
    already exists;
-6. builds the shared image and starts only the `satt-test` services;
-7. waits for Compose health and verifies local/public metadata report `test`,
+7. builds the shared image and starts only the `satt-test` services;
+8. waits for Compose health and, while still holding the lock, verifies local
+   metadata, migration state, and integration smoke; then verifies public
+   metadata reports `test`,
    version `unassigned`, and the exact commit;
-8. verifies Alembic revision `0009`;
-9. runs ephemeral registration, login/reload, protected export, public-route,
+9. verifies the expected Alembic revision;
+10. runs ephemeral registration, login/reload, protected export, public-route,
    and unauthenticated-rejection checks and removes the temporary identity; and
-10. prints at most 100 lines of SATT app/database logs on failure.
+11. prints at most 100 lines of SATT app/database logs on failure and records
+    lock acquisition, admission, and release without exposing secrets.
+
+The lock covers exact-SHA checkout, scoped backup retention, on-host image
+build, container activation, migrations, local health, migration verification,
+authenticated smoke, diagnostics, and SATT-scoped cleanup. Repository-level
+GitHub concurrency remains additive to this cross-repository host contract.
 
 Approval and Integration Cadence are defined in
 `reference/work-management.md`. The workflow runs only for the exact commit
