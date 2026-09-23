@@ -15,7 +15,7 @@ jobs:
   deploy:
     name: Deploy approved main commit to test
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 75
     environment: test
     env:
       TEST_HOST: ${{ secrets.TEST_HOST }}
@@ -80,6 +80,41 @@ jobs:
             exit 1
           fi
 
+          lock_path=/run/lock/shared-platform-deployment.lock
+          echo "Waiting up to 2700 seconds for shared deployment lock: $lock_path"
+          exec 9>"$lock_path"
+          if ! flock -w 2700 9; then
+            echo "ERROR: timed out waiting for shared deployment lock"
+            exit 1
+          fi
+          echo "Shared deployment lock acquired for SATT test at commit $deploy_sha"
+
+          release_lock() {
+            status=$?
+            trap - EXIT
+            if [ "$status" -ne 0 ] && declare -F compose >/dev/null; then
+              echo "==> Bounded SATT test diagnostics"
+              compose ps || true
+              compose logs --no-color --tail 100 app database || true
+            fi
+            echo "Shared deployment lock released for SATT test with status $status"
+            exec 9>&-
+            exit "$status"
+          }
+          trap release_lock EXIT
+
+          root_available_kib="$(df -Pk / | awk 'NR == 2 {print $4}')"
+          swap_total_kib="$(awk '/^SwapTotal:/ {print $2}' /proc/meminfo)"
+          mem_available_kib="$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)"
+          swap_free_kib="$(awk '/^SwapFree:/ {print $2}' /proc/meminfo)"
+          headroom_kib="$((mem_available_kib + swap_free_kib))"
+          printf 'Shared deployment admission: root_available_kib=%s swap_total_kib=%s headroom_kib=%s\n' \
+            "$root_available_kib" "$swap_total_kib" "$headroom_kib"
+          test "$root_available_kib" -ge 12582912
+          test "$swap_total_kib" -ge 1048576
+          test "$headroom_kib" -ge 2097152
+          echo "Shared deployment admission passed before SATT test mutation"
+
           cd /opt/satt-platform
           test -f .env
           test "$(stat -c '%a' .env)" = "600"
@@ -106,16 +141,6 @@ jobs:
             find /opt/satt-platform/backups \
               -maxdepth 1 -type f -name 'pre-deploy-*.sql.gz' -mtime +14 -delete
           fi
-
-          failure_logs() {
-            status=$?
-            trap - EXIT
-            echo "==> Bounded SATT test diagnostics"
-            compose ps || true
-            compose logs --no-color --tail 100 app database || true
-            exit "$status"
-          }
-          trap failure_logs EXIT
 
           compose build --pull app
           compose up -d --wait --remove-orphans database app
@@ -145,7 +170,6 @@ jobs:
             --expected-commit "$deploy_sha" \
             < /dev/null
 
-          trap - EXIT
           echo "Test deploy verified at commit $deploy_sha"
           REMOTE
 

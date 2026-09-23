@@ -39,6 +39,15 @@ TLS, GitHub environment, and secret provisioning requires explicit
 authorization. The detailed bootstrap, validation, cleanup, and rollback
 procedure is in `docs/development-environment.md`.
 
+Development and test share their hosts with other repositories. Each SATT
+workflow therefore waits up to 45 minutes for the OS-provided
+`/run/lock/shared-platform-deployment.lock`, applies the common disk, swap, and
+memory admission thresholds after acquiring it, and holds it through every
+active remote mutation and local verification. SATT owns its workflow logic;
+there is no host-installed deployment manager or shared helper. Existing
+GitHub concurrency controls remain additive, and all cleanup stays within the
+SATT checkout, Compose project, and backup directory.
+
 ## Isolated test implementation
 
 SATT test uses `/opt/satt-platform` on `my-web-apps-test`, loopback port `8300`,

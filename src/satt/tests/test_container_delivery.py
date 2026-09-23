@@ -307,6 +307,50 @@ def test_development_deploy_is_manual_immutable_and_isolated():
         assert forbidden not in source
 
 
+def test_nonproduction_deployments_follow_shared_host_contract():
+    for path, environment in (
+        (DEV_WORKFLOW_PATH, "development"),
+        (TEST_WORKFLOW_PATH, "test"),
+    ):
+        source = path.read_text(encoding="utf-8")
+        workflow = yaml.safe_load(source)
+
+        assert workflow["jobs"]["deploy"]["timeout-minutes"] == 75
+        for required in (
+            "/run/lock/shared-platform-deployment.lock",
+            "flock -w 2700 9",
+            f"Shared deployment lock acquired for SATT {environment}",
+            f"Shared deployment lock released for SATT {environment}",
+            "root_available_kib",
+            "swap_total_kib",
+            "headroom_kib",
+            'test "$root_available_kib" -ge 12582912',
+            'test "$swap_total_kib" -ge 1048576',
+            'test "$headroom_kib" -ge 2097152',
+            f"admission passed before SATT {environment} mutation",
+            "trap release_lock EXIT",
+            'exit "$status"',
+            "logs --no-color --tail 100 app database",
+        ):
+            assert required in source
+
+        admission = source.index("root_available_kib=")
+        checkout = source.index('git checkout --detach "$deploy_sha"')
+        backup = source.index("pre-deploy-$(date")
+        build = source.index("compose build --pull app")
+        health = source.index("http://127.0.0.1:8300/api/health")
+        smoke = source.index("python -m satt.scripts.environment_smoke")
+        assert admission < checkout < backup < build < health < smoke
+
+        for forbidden in (
+            "docker system prune",
+            "docker builder prune",
+            "docker image prune",
+            "docker volume prune",
+        ):
+            assert forbidden not in source
+
+
 def test_registered_workflow_is_manual_development_only():
     source = (REPOSITORY_ROOT / ".github/workflows/deploy.yml").read_text(
         encoding="utf-8"
